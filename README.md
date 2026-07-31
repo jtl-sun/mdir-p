@@ -23,6 +23,8 @@ manage files quickly and efficiently from the keyboard.
 - Copy, move, rename, delete, search, drive selection, and editable paths
 - Safe, size-limited text viewing and editing with `F3` and `F4`
 - Total Commander-inspired default theme
+- Configurable top shortcut bar for files, folders, programs, websites,
+  PowerShell commands, and MDIR-P actions
 - Windows Terminal and Korean IME support
 
 ## Requirements
@@ -64,24 +66,87 @@ python -m mdir
 
 ## Main Keys
 
-| Key | Action |
-| --- | --- |
-| `Tab`, `Left`, `Right` | Switch file pane |
-| `Enter` | Open a file or directory |
-| `Space` | Mark an item |
-| `F2` | Rename |
-| `F3` | View a supported text file |
-| `F4` | Edit a supported text file |
-| `F5` | Copy |
-| `F6` | Move |
-| `F7` | Create a directory |
-| `F8` | Delete |
-| `F9` | Select a drive |
-| `F10` | Quit |
-| `F12` | Toggle the AI terminal |
-| `Ctrl+F` | Advanced search |
-| `Ctrl+F3` | Toggle Preview |
-| `Ctrl+P` | Open the command palette and theme selector |
+| Key                    | Action                                      |
+| ---------------------- | ------------------------------------------- |
+| `Tab`, `Left`, `Right` | Switch file pane                            |
+| `Enter`                | Open a file or directory                    |
+| `Space`                | Mark an item                                |
+| `F2`                   | Rename                                      |
+| `F3`                   | View a supported text file                  |
+| `F4`                   | Edit a supported text file                  |
+| `F5`                   | Copy                                        |
+| `F6`                   | Move                                        |
+| `F7`                   | Create a directory                          |
+| `F8`                   | Delete                                      |
+| `F9`                   | Select a drive                              |
+| `F10`                  | Quit                                        |
+| `F12`                  | Toggle the AI terminal                      |
+| `Ctrl+F`               | Advanced search                             |
+| `Ctrl+F3`              | Toggle Preview                              |
+| `Ctrl+P`               | Open the command palette and theme selector |
+
+## Top Shortcut Bar
+
+The shortcut bar sits directly below the title bar. It can open folders in a
+chosen file pane, launch files or programs, open websites, run PowerShell
+commands, or trigger selected MDIR-P actions.
+
+Click **Edit Links** to open the built-in Link Manager. It supports:
+
+- Editing the name, type, target, pane, and program arguments
+- Adding and removing links
+- Moving links up or down
+- Browsing for a file or folder
+- Saving changes directly to the top bar
+
+The Link Manager stores its settings in:
+
+```text
+%USERPROFILE%\.mdir-p-shortcuts.json
+```
+
+Up to 16 shortcut buttons are displayed. **Reload** remains available when the
+JSON file is changed with an external editor.
+The supported `type` values are `folder`, `file`, `program`, `web`, `command`,
+and `action`.
+
+```json
+[
+  {
+    "label": "Downloads",
+    "type": "folder",
+    "target": "{home}\\Downloads",
+    "pane": "active",
+    "args": []
+  },
+  {
+    "label": "Calculator",
+    "type": "program",
+    "target": "calc.exe",
+    "pane": "active",
+    "args": []
+  },
+  {
+    "label": "MDIR GitHub",
+    "type": "web",
+    "target": "https://github.com/jtl-sun/mdir-p",
+    "pane": "active",
+    "args": []
+  },
+  {
+    "label": "Preview",
+    "type": "action",
+    "target": "toggle_preview",
+    "pane": "active",
+    "args": []
+  }
+]
+```
+
+Folder shortcuts accept `active`, `left`, or `right` for `pane`. Available
+placeholders are `{home}`, `{project}`, `{current}`, `{left}`, and `{right}`.
+Supported actions are `toggle_ai_terminal`, `toggle_preview`, `search`,
+`powershell_here`, `refresh_all`, and `hidden_system`.
 
 ## AI and Local Commands
 
