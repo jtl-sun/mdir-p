@@ -4,13 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mdir-p"
-version = "2.16.0"
+dynamic = ["version"]
 description = "A fast dual-pane PowerShell file manager with AI and document preview."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 dependencies = [
-    "textual>=1.0,<9",
+    "textual==8.2.8",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
@@ -28,6 +28,9 @@ preview = [
     "openpyxl>=3.1",
     "xlrd>=2.0",
 ]
+dev = [
+    "build>=1.2",
+]
 
 [project.scripts]
 m = "mdir.__main__:main"
@@ -39,3 +42,6 @@ Issues = "https://github.com/jtl-sun/mdir-p/issues"
 
 [tool.setuptools.packages.find]
 include = ["mdir*"]
+
+[tool.setuptools.dynamic]
+version = {attr = "mdir.__version__"}

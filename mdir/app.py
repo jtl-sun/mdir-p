@@ -44,9 +44,10 @@ from .theme import (
     TOTAL_COMMANDER_THEME,
     install_file_colors,
 )
+from . import __version__
 
 
-VERSION = "2.16"
+VERSION = __version__
 HOTKEY_POLL_SECONDS = 0.04
 HOTKEY_DEDUP_SECONDS = 0.22
 VK_CONTROL = 0x11

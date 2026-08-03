@@ -14,23 +14,10 @@ from .ui.dialogs import (
     CopyRequest,
 )
 from .ui.prompt import CompactPromptScreen
-from .ui.rename import SlowRenameDataTable
 from .ui.viewer import CompactViewerScreen
 
 
 KOREAN_WIDTH_COMPATIBILITY = enable_windows_korean_width_compatibility()
-
-# Install the current compact widgets before either file pane is composed.
-legacy.MDirDataTable = SlowRenameDataTable
-legacy.PromptScreen = CompactPromptScreen
-
-
-# MDIR-P uses compact, cancellable dialogs for all bottom-menu prompts.
-# The inherited action methods resolve ConfirmScreen from the legacy module at
-# runtime, so this replacement also covers Move and Delete.
-legacy.ConfirmScreen = CompactConfirmScreen
-legacy.ViewerScreen = CompactViewerScreen
-
 
 def windows_volume_label(drive: str) -> str:
     """Return a Windows volume label without querying drive capacity."""
@@ -59,6 +46,11 @@ def windows_volume_label(drive: str) -> str:
 
 
 class BaseApp(AIShellApp):
+    """Application layer that selects the current dialogs explicitly."""
+
+    PROMPT_SCREEN = CompactPromptScreen
+    CONFIRM_SCREEN = CompactConfirmScreen
+    VIEWER_SCREEN = CompactViewerScreen
     TITLE = "MDIR-P"
     SUB_TITLE = "Dual Pane File Manager / Codex AI / Visible Korean IME Cursor"
 
