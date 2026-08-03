@@ -19,12 +19,14 @@ from .file_pane import (
     EditablePathFilePane,
     EditablePathApp,
 )
+from .ui.rename import SlowRenameDataTable
 from . import core as legacy
 
 
 LARGE_DIRECTORY_THRESHOLD = 20_000
 DRIVE_POLL_INTERVAL_SECONDS = 10.0
 DRIVE_USAGE_CACHE_SECONDS = 30.0
+DIRECTORY_POLL_INTERVAL_SECONDS = 0.75
 FILE_LIST_BACKGROUND = "#1e1e1e"
 INITIAL_LISTING_DELAY_SECONDS = 0.01
 INITIAL_ROW_BATCH_SIZE = 2_000
@@ -41,6 +43,26 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         self.initial_listing_complete = False
         self._initial_listing_started = False
         self._listing_generation = 0
+        self._directory_change_token: tuple[int, int] | None = None
+
+    @staticmethod
+    def _read_directory_change_token(path: Path) -> tuple[int, int] | None:
+        """Read the inexpensive metadata Windows updates for entry changes."""
+        try:
+            stat = path.stat()
+            return (int(stat.st_mtime_ns), int(stat.st_ctime_ns))
+        except OSError:
+            return None
+
+    def directory_changed(self, token: tuple[int, int] | None) -> bool:
+        """Return whether an external change occurred after the last scan."""
+        return (
+            self.initial_listing_complete
+            and self.cached_path == self.current_path
+            and token is not None
+            and self._directory_change_token is not None
+            and token != self._directory_change_token
+        )
 
     def compose(self) -> ComposeResult:
         """Keep summary and detail information in one fixed bottom area."""
@@ -49,7 +71,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
             id=f"{self.id}_path",
             classes="pane_path",
         )
-        table = legacy.MDirDataTable(cursor_type="row", zebra_stripes=False)
+        table = SlowRenameDataTable(cursor_type="row", zebra_stripes=False)
         self._add_columns(table)
         yield table
         with Vertical(classes="pane_footer"):
@@ -60,6 +82,9 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         super()._scan_directory()
         self.large_directory_mode = (
             len(self.cached_entries) >= LARGE_DIRECTORY_THRESHOLD
+        )
+        self._directory_change_token = self._read_directory_change_token(
+            self.current_path
         )
 
     def _prepare_cached_rows(
@@ -227,11 +252,13 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         entry: CachedEntry,
     ) -> tuple[str, str, str]:
         return (
-            entry.extension
-            or (
-                ""
-                if entry.is_directory
-                else entry.path.suffix.lower().lstrip(".")
+            legacy.display_extension(
+                entry.extension
+                or (
+                    ""
+                    if entry.is_directory
+                    else entry.path.suffix.lower().lstrip(".")
+                )
             ),
             entry.size_text
             or (
@@ -391,10 +418,12 @@ class FastFileManagerApp(EditablePathApp):
     }
 
     FilePane .pane_footer {
-        dock: bottom;
-        height: 5;
-        min-height: 5;
-        max-height: 5;
+        /* Keep the detail area in normal layout flow. A docked footer can be
+           pushed below the visible pane when Windows Terminal has fewer rows
+           after the shortcut bar is added. */
+        height: 4;
+        min-height: 4;
+        max-height: 4;
         padding: 0;
         margin: 0;
         background: #080808;
@@ -409,15 +438,16 @@ class FastFileManagerApp(EditablePathApp):
 
     FilePane .pane_footer .pane_info {
         dock: none;
-        height: 4;
-        min-height: 4;
-        max-height: 4;
+        height: 3;
+        min-height: 3;
+        max-height: 3;
     }
     """
 
     def __init__(self) -> None:
         self._last_drive_poll = 0.0
         self._drive_usage_cache: dict[str, tuple[float, str]] = {}
+        self._directory_poll_timer = None
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -431,6 +461,10 @@ class FastFileManagerApp(EditablePathApp):
     def on_mount(self) -> None:
         """Replace the startup cover only after two stable layout frames."""
         super().on_mount()
+        self._directory_poll_timer = self.set_interval(
+            DIRECTORY_POLL_INTERVAL_SECONDS,
+            self._poll_directory_changes,
+        )
         self.call_after_refresh(self._stabilize_startup_frame)
         # A short fallback timer guarantees removal even when a terminal
         # coalesces the two startup refresh notifications into one frame.
@@ -452,6 +486,75 @@ class FastFileManagerApp(EditablePathApp):
         except Exception:
             pass
         self.active.table.focus()
+
+    def _poll_directory_changes(self) -> None:
+        """Check both directory timestamps without blocking the UI thread."""
+        paths = (
+            ("left", self.left.current_path),
+            ("right", self.right.current_path),
+        )
+        self._read_directory_tokens_in_background(paths)
+
+    @work(thread=True, exclusive=True, group="mdir-directory-poll")
+    def _read_directory_tokens_in_background(
+        self,
+        paths: tuple[tuple[str, Path], tuple[str, Path]],
+    ) -> None:
+        snapshots = tuple(
+            (
+                side,
+                path,
+                LargeDirectoryFilePane._read_directory_change_token(path),
+            )
+            for side, path in paths
+        )
+        self.call_from_thread(self._apply_directory_changes, snapshots)
+
+    def _apply_directory_changes(
+        self,
+        snapshots: tuple[
+            tuple[str, Path, tuple[int, int] | None],
+            ...,
+        ],
+    ) -> None:
+        """Refresh only panes whose displayed directory actually changed."""
+        refreshed: list[str] = []
+        for side, observed_path, token in snapshots:
+            pane = self.left if side == "left" else self.right
+            if pane.current_path != observed_path:
+                continue
+            if not pane.directory_changed(token):
+                continue
+
+            selected = pane.selected_path()
+            keep_name = selected.name if selected is not None else None
+            previous_row = max(0, pane.table.cursor_row)
+            pane.refresh_listing(keep_name=keep_name)
+
+            if (
+                keep_name is not None
+                and selected not in pane.row_by_path
+                and pane.table.row_count
+            ):
+                pane.table.move_cursor(
+                    row=min(previous_row, pane.table.row_count - 1),
+                    column=0,
+                )
+                pane.update_info()
+            refreshed.append(side.title())
+
+        if refreshed:
+            self.set_status(
+                "Auto-updated panel" +
+                ("s: " if len(refreshed) > 1 else ": ") +
+                ", ".join(refreshed)
+            )
+
+    def on_unmount(self) -> None:
+        if self._directory_poll_timer is not None:
+            self._directory_poll_timer.stop()
+            self._directory_poll_timer = None
+        super().on_unmount()
 
     def set_active(self, side: str) -> None:
         """Change focus without recalculating unchanged drive information."""

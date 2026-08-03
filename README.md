@@ -43,6 +43,9 @@ python -m venv .venv
 pip install -e ".[preview]"
 ```
 
+The tested Textual version is pinned by `pyproject.toml`, so a fresh install
+uses the same UI framework version as the automated tests.
+
 ## Run
 
 After installation, any of these commands starts MDIR-P:
@@ -71,6 +74,10 @@ python -m mdir
 | `Tab`, `Left`, `Right` | Switch file pane                            |
 | `Enter`                | Open a file or directory                    |
 | `Space`                | Mark an item                                |
+| `Shift+Up/Down`        | Extend or shrink the marked range           |
+| `Shift+Home/End`       | Mark from the anchor to the first/last row  |
+| `Shift+Click`          | Mark from the anchor to the clicked row     |
+| Right-button drag      | Toggle every crossed row                    |
 | `F2`                   | Rename                                      |
 | `F3`                   | View a supported text file                  |
 | `F4`                   | Edit a supported text file                  |
@@ -159,7 +166,8 @@ access is intended.
 ```text
 mdir/
 |-- app.py          Main application and event routing
-|-- core.py         Core file-manager widgets and operations
+|-- core.py         Shared file-manager widgets and operations
+|-- base.py         Current dialogs and Windows drive integration
 |-- file_pane.py    Cached metadata and editable paths
 |-- fast_app.py     Large-directory and startup optimizations
 |-- ai/             AI providers and conversation panel
@@ -167,11 +175,18 @@ mdir/
 `-- ui/             Dialogs, search, rename, and text viewer
 ```
 
+The repository has one supported launcher: `python -m mdir` (also installed as
+`m` and `mdir`). Old version-named launchers and generated build directories
+are intentionally excluded.
+
 ## Validation
 
 ```powershell
 python -m mdir --check
 python -m unittest discover -s tests -v
 ```
+
+GitHub Actions runs the same self-check, test suite, and wheel build on Windows
+for every push and pull request.
 
 MDIR-P is released under the [MIT License](LICENSE).

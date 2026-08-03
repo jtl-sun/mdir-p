@@ -126,8 +126,7 @@ class AIShellApp(legacy.MDir):
             table = self.right.table
             if hasattr(table, "_reset_slow_click"):
                 table._reset_slow_click()
-            table._right_dragging = False
-            table._drag_rows_seen.clear()
+            table.end_right_drag()
             table._resize_key = None
             table._resize_next_key = None
             self.call_after_refresh(self._restore_right_file_focus)
