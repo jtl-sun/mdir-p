@@ -800,6 +800,7 @@ def self_check() -> int:
     print("Preview starts disabled and uses bounded background rendering")
     print("F3/F4 accept bounded text files only")
     print("Large directories use cached metadata and batched row insertion")
+    print("Copy, Move, and Delete use cancellable background workers")
     print(f"Top shortcut bar supports up to {MAX_SHORTCUTS} user links")
     required = {".jpg", ".png", ".pdf", ".xlsx", ".xls"}
     if not required.issubset(PREVIEW_EXTENSIONS):

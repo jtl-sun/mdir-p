@@ -518,6 +518,14 @@ class FastFileManagerApp(EditablePathApp):
         ],
     ) -> None:
         """Refresh only panes whose displayed directory actually changed."""
+        # Large copy/move/delete and ZIP jobs can change a directory hundreds
+        # of times per second.  Rebuilding a 20,000-row table for intermediate
+        # states wastes time and can make the UI appear stalled.  Each worker
+        # performs one authoritative refresh when it finishes.
+        if getattr(self, "_file_operation_busy", False) or getattr(
+            self, "_archive_busy", False
+        ):
+            return
         refreshed: list[str] = []
         for side, observed_path, token in snapshots:
             pane = self.left if side == "left" else self.right
@@ -585,6 +593,39 @@ class FastFileManagerApp(EditablePathApp):
                 include_hidden_system=self.show_hidden_system,
             ),
             result_selected,
+        )
+
+    def action_folder_size(self) -> None:
+        """Calculate recursive folder size without blocking the UI thread."""
+        path = self.active.selected_path()
+        if not path or not path.is_dir():
+            self.set_status("Ctrl+G works on a directory.")
+            return
+        self.set_status(f"Calculating folder size: {path.name} ...")
+        self._calculate_folder_size_in_background(path)
+
+    @work(thread=True, exclusive=True, group="mdir-folder-size")
+    def _calculate_folder_size_in_background(self, path: Path) -> None:
+        size, count, truncated = legacy.safe_folder_size(path)
+        self.call_from_thread(
+            self._finish_folder_size,
+            path,
+            size,
+            count,
+            truncated,
+        )
+
+    def _finish_folder_size(
+        self,
+        path: Path,
+        size: int,
+        count: int,
+        truncated: bool,
+    ) -> None:
+        extra = " (stopped early)" if truncated else ""
+        self.set_status(
+            f"{path.name}: {legacy.human_size(size)} "
+            f"in {count:,} file(s){extra}"
         )
 
     def _reveal_search_result(self, path: Path, side: str) -> bool:
