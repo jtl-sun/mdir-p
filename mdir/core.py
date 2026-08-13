@@ -554,8 +554,7 @@ class ViewerScreen(ModalScreen[None]):
             )
 
         try:
-            with Image.open(self.path) as source:
-                img = source.convert("RGB")
+            img = Image.open(self.path).convert("RGB")
             original_size = img.size
 
             max_w, max_h = 64, 42
@@ -1659,10 +1658,13 @@ class MDir(App):
         Binding("shift+pageup", "shift_select_page_up", "Select Page Up", show=False, priority=True),
         Binding("shift+pagedown", "shift_select_page_down", "Select Page Down", show=False, priority=True),
         Binding("f2", "rename", "Rename"),
+        Binding("ctrl+f2", "batch_rename", "Batch Rename", show=False),
         Binding("f3", "view", "View"),
         Binding("f4", "edit", "Edit"),
         Binding("f5", "copy", "Copy"),
         Binding("f6", "move", "Move"),
+        Binding("alt+f5", "compress_zip", "ZIP", show=False),
+        Binding("alt+f6", "extract_zip", "Unzip", show=False),
         Binding("f7", "mkdir", "MkDir"),
         Binding("f8", "delete", "Delete"),
         Binding("delete", "delete", "Delete", show=False),
@@ -1678,7 +1680,9 @@ class MDir(App):
         Binding("ctrl+h", "hidden_system", "Hidden/System", show=False),
         Binding("ctrl+w", "column_widths", "Column widths", show=False),
         Binding("ctrl+shift+w", "reset_column_widths", "Reset widths", show=False),
-        Binding("ctrl+p", "properties", "Properties", show=False),
+        # Ctrl+P belongs to Textual's command palette.  Keeping Properties on
+        # Alt+Enter avoids shadowing that built-in application command.
+        Binding("alt+enter", "properties", "Properties", show=False),
         Binding("ctrl+g", "folder_size", "Folder size", show=False),
         Binding("shift+f10", "powershell_here", "PowerShell", show=False),
         Binding("alt+f1", "drive_left", "Left drive", show=False),

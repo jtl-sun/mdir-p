@@ -21,6 +21,12 @@ manage files quickly and efficiently from the keyboard.
 - Mouse-wheel zoom and drag-to-pan in Preview
 - Optional AI terminal with Codex, PowerShell, and Ollama providers
 - Copy, move, rename, delete, search, drive selection, and editable paths
+- Responsive background Copy, Move, and Delete for batches exceeding 1,000
+  items, with live progress and cancellation
+- Advanced file search with filename patterns, content search, depth and
+  hidden/system controls, live progress, cancellation, and clickable results
+- Safe batch rename with live preview, tokens, counters, and find/replace
+- Built-in ZIP compression and secure ZIP extraction without extra software
 - Safe, size-limited text viewing and editing with `F3` and `F4`
 - Total Commander-inspired default theme
 - Configurable top shortcut bar for files, folders, programs, websites,
@@ -33,18 +39,67 @@ manage files quickly and efficiently from the keyboard.
 - Python 3.11 or newer
 - PowerShell or Windows Terminal
 
-## Install
+## Installation on Windows
+
+### Method 1: Install after downloading the ZIP (recommended)
+
+1. Download the repository as a ZIP file and extract it.
+2. Open the extracted folder. Confirm that `pyproject.toml` is visible there.
+3. Right-click an empty area in the folder and select **Open in Terminal**.
+4. Run the following commands in PowerShell:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install --upgrade ".[preview]"
+python -m mdir
+```
+
+Do not enter an old Wheel filename such as
+`mdir_p-2.17.0-py3-none-any.whl`. GitHub source ZIP files normally do not
+include a Wheel. Installing `.[preview]` uses the current source version in
+the folder.
+
+If `pyproject.toml` is not shown, the terminal is in the wrong folder. Move
+into the inner extracted folder first. For example:
+
+```powershell
+cd .\mdir-p-2.22.0-github
+python -m pip install --upgrade ".[preview]"
+```
+
+### Method 2: Install with Git
 
 ```powershell
 git clone https://github.com/jtl-sun/mdir-p.git
 cd mdir-p
+python -m pip install --upgrade ".[preview]"
+```
+
+### Optional: Use a virtual environment
+
+```powershell
 python -m venv .venv
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 .\.venv\Scripts\Activate.ps1
-pip install -e ".[preview]"
+python -m pip install --upgrade ".[preview]"
 ```
 
 The tested Textual version is pinned by `pyproject.toml`, so a fresh install
 uses the same UI framework version as the automated tests.
+
+## Upgrade
+
+After replacing the local files with a newer GitHub version, open PowerShell
+in the folder containing `pyproject.toml` and run:
+
+```powershell
+python -m pip install --upgrade ".[preview]"
+python -m mdir
+```
+
+Files installed by an older version are updated automatically. Personal
+settings such as shortcuts are stored separately under the user profile and
+are not removed by this command.
 
 ## Run
 
@@ -67,6 +122,47 @@ python -m mdir
 .\start_mdir_p.ps1
 ```
 
+## PowerShell Script Policy Error
+
+If PowerShell reports that `start_mdir_p.ps1` or `Activate.ps1` cannot be
+loaded because script execution is disabled, the application itself is not
+damaged. You can always start it without a PowerShell script:
+
+```powershell
+python -m mdir
+```
+
+To allow scripts only in the current PowerShell window, run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+.\start_mdir_p.ps1
+```
+
+To allow locally created and downloaded scripts for the current Windows user:
+
+```powershell
+Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+Unblock-File .\start_mdir_p.ps1
+.\start_mdir_p.ps1
+```
+
+When PowerShell asks for confirmation, enter `Y`. Administrator privileges
+are normally not required for `CurrentUser` or `Process` scope.
+
+## Troubleshooting Installation
+
+- **`No matching distribution found` or Wheel file not found:** Do not use an
+  old `.whl` filename. Run `python -m pip install --upgrade ".[preview]"` in
+  the folder containing `pyproject.toml`.
+- **`python` is not recognized:** Install Python 3.11 or newer from
+  [python.org](https://www.python.org/downloads/windows/) and enable **Add
+  python.exe to PATH** during installation.
+- **`m` or `mdir` is not recognized after installation:** Close and reopen
+  PowerShell, or run the reliable fallback `python -m mdir`.
+- **The old version still opens:** Reinstall from the new source folder using
+  `python -m pip install --upgrade --force-reinstall ".[preview]"`.
+
 ## Main Keys
 
 | Key                    | Action                                      |
@@ -79,10 +175,13 @@ python -m mdir
 | `Shift+Click`          | Mark from the anchor to the clicked row     |
 | Right-button drag      | Toggle every crossed row                    |
 | `F2`                   | Rename                                      |
+| `Ctrl+F2`              | Batch rename selected items                 |
 | `F3`                   | View a supported text file                  |
 | `F4`                   | Edit a supported text file                  |
 | `F5`                   | Copy                                        |
 | `F6`                   | Move                                        |
+| `Alt+F5`               | Compress selected items to ZIP              |
+| `Alt+F6`               | Extract the selected ZIP file               |
 | `F7`                   | Create a directory                          |
 | `F8`                   | Delete                                      |
 | `F9`                   | Select a drive                              |
@@ -90,7 +189,146 @@ python -m mdir
 | `F12`                  | Toggle the AI terminal                      |
 | `Ctrl+F`               | Advanced search                             |
 | `Ctrl+F3`              | Toggle Preview                              |
+| `Ctrl+G`               | Calculate selected folder size              |
+| `Ctrl+H`               | Show or hide hidden/system items            |
+| `Ctrl+R`               | Refresh both panes                          |
+| `F11`                  | Refresh connected drives                    |
+| `Ctrl+N/E/S/D`         | Sort by name/extension/size/modified date   |
+| `Ctrl+W`               | Edit column widths                          |
+| `Ctrl+Shift+W`         | Reset column widths                         |
+| `Shift+F10`            | Open PowerShell in the current folder       |
+| `Alt+F1`, `Alt+F2`     | Select the left or right drive              |
 | `Ctrl+P`               | Open the command palette and theme selector |
+| `Alt+Enter`            | Show properties for the selected item       |
+
+When several items are marked, `F2` opens Batch Rename automatically. The
+same tool is always available with `Ctrl+F2`. Its live preview supports `[N]`
+(current name), `[E]` (extension), `[C]` (counter), `[YMD]` (modified date),
+and `[hms]` (modified time), plus ranges such as `[N1-5]` and literal or
+regular-expression replacement.
+MDIR-P validates duplicate names, existing targets, and invalid Windows names
+before making any changes.
+
+## File Management Workflow
+
+- The pane with the bright border is active; file operations use the other
+  pane as the default destination.
+- Mark several items with `Space`, Shift selection, or right-button drag. If
+  nothing is marked, the item under the cursor is used.
+- `F5` copies and supports **Save As** for one selected item. `F6` moves.
+- Copy, Move, and Delete run in the background, so the interface remains
+  responsive even when more than 1,000 items are selected. The progress
+  window updates in batches to avoid unnecessary screen redraws; press `Esc`
+  or select **Cancel** to stop after the current top-level item.
+- `F8` permanently deletes only after a confirmation window. Windows Recycle
+  Bin is not used, so verify the selected names carefully.
+- Click a column header to sort and click it again to reverse the order. Drag
+  the visible column separator to resize it; widths are saved automatically.
+- Edit the blue path field at the top of either pane to go directly to a
+  folder. Environment variables such as `%USERPROFILE%` are accepted.
+- External file changes and removable-drive changes are detected
+  automatically. Use `Ctrl+R` or `F11` when an immediate manual refresh is
+  preferred.
+
+## Find Files
+
+Press `Ctrl+F` to open the **Find Files** window. The active pane's current
+folder is used as the initial search location.
+
+- Enter a complete or partial filename, or wildcard patterns such as `*.jpg`
+  and `report-??.xlsx`.
+- Separate several filename patterns with semicolons, for example
+  `*.jpg; *.png; *.webp`.
+- Enable **Regular expression** for advanced filename matching.
+- Search files, directories, or both, with optional case sensitivity.
+- Include all subfolders or limit the search to a selected depth.
+- Include hidden/system entries when needed.
+- Enter **Text contains** to search inside common text files up to 16 MB.
+- Set a result limit between 500 and 10,000 items.
+- Press **Stop** or `Esc` while searching to cancel safely.
+- Select a result and press `Enter`, or click **Open location**, to return to
+  the file pane with that item highlighted.
+
+Filename and content searching runs in the background, so the main file
+manager remains responsive during large searches. Content search intentionally
+skips files larger than 16 MB to avoid reading very large or binary files into
+memory.
+
+## ZIP Compression and Extraction
+
+MDIR-P uses Windows-compatible ZIP files and does not require 7-Zip, WinRAR,
+or another external archive program.
+
+### Create a ZIP
+
+1. Mark one or more files or folders with `Space`, `Shift`, or the mouse.
+2. Press `Alt+F5`.
+3. Check or edit the ZIP filename and location. The default destination is
+   always the opposite pane: left-pane selections create the ZIP in the right
+   pane, and right-pane selections create it in the left pane.
+4. Choose Fast, Normal, or Maximum compression.
+5. Enable **Overwrite existing ZIP** only when the old archive should be
+   replaced, then select **Create ZIP**.
+
+If the suggested ZIP name already exists, mDIR automatically proposes the next
+available name, for example `images (2).zip`. If you manually enter an existing
+name without enabling overwrite, the window stays open so you can change the
+name or approve replacement; the archive operation does not fail or close the
+window.
+
+Folder structure and empty folders are preserved. The ZIP is first written to
+a temporary file and replaces the destination only after creation succeeds.
+Save the ZIP outside any folder that is itself being compressed; this prevents
+the temporary archive from being included in its own input.
+
+### Extract a ZIP
+
+1. Select exactly one `.zip` file.
+2. Press `Alt+F6`.
+3. Check or edit the destination folder. The default destination is always
+   the opposite pane: a ZIP selected in the left pane extracts into the right
+   pane, and a ZIP selected in the right pane extracts into the left pane.
+4. Enable **Overwrite existing files** only when replacement is intended,
+   then select **Extract**.
+
+If the opposite pane's directory is unavailable, mDIR safely falls back to
+the directory containing the ZIP. The destination remains editable in the
+Extract ZIP window.
+
+Extraction blocks unsafe parent paths, absolute paths, drive paths, and
+symbolic links inside an archive. Existing files are not overwritten unless
+the option is explicitly enabled. RAR, 7Z, TAR, and other formats are not
+included in this version.
+
+ZIP creation and extraction run in a background worker. The panes remain
+responsive while a large archive is processed, and a second ZIP operation is
+prevented until the first one finishes.
+
+## Preview and Text Tools
+
+- `Ctrl+F3` opens the Preview panel for BMP, GIF, HEIC/HEIF, JPEG, PNG, TIFF,
+  WebP, PDF, XLS, XLSM, and XLSX-family files when the optional preview
+  dependencies are installed.
+- Image and document preparation is bounded and runs in the background.
+  Oversized images are downsampled before terminal rendering.
+- `F3` views supported text files up to 3 MiB. `F4` edits supported text files
+  up to 8 MiB. Binary and unsupported document formats are refused rather
+  than being loaded into memory as text.
+- The `.[preview]` installation command in this README installs Pillow,
+  PyMuPDF, openpyxl, and xlrd for the full Preview feature set.
+
+## Performance and Safety
+
+- Directory entries are read with one `os.scandir` metadata pass and retained
+  in a cache for sorting, selection, summaries, and incremental repainting.
+- Large tables are inserted in batches so the interface can draw during
+  startup. Searches, Preview rendering, folder-size calculation, drive scans,
+  and ZIP work run outside the UI thread.
+- Content search is limited to 16 MiB per file; folder-size calculation stops
+  after 20,000 files; Preview source images are bounded before rendering.
+- Batch rename uses temporary names and rollback. ZIP creation publishes an
+  archive only after successful completion, and ZIP extraction validates the
+  whole member tree before it writes files.
 
 ## Top Shortcut Bar
 
@@ -168,6 +406,7 @@ mdir/
 |-- app.py          Main application and event routing
 |-- core.py         Shared file-manager widgets and operations
 |-- base.py         Current dialogs and Windows drive integration
+|-- file_operations.py  Background Copy, Move, and Delete engine
 |-- file_pane.py    Cached metadata and editable paths
 |-- fast_app.py     Large-directory and startup optimizations
 |-- ai/             AI providers and conversation panel
@@ -188,5 +427,15 @@ python -m unittest discover -s tests -v
 
 GitHub Actions runs the same self-check, test suite, and wheel build on Windows
 for every push and pull request.
+
+The 2.22.0 maintenance audit also verifies 1,005-item Copy, Move, and Delete,
+background responsiveness and cancellation, shortcut ownership, selection and
+auto-scroll, cached listing/sorting, automatic refresh, batch-rename rollback,
+search patterns/content/cancellation, Preview navigation, safe text limits,
+shortcut configuration, ZIP round trips, overwrite rules, path traversal,
+symbolic links, invalid names, member-tree conflicts, archive self-input, and
+left-to-right/right-to-left ZIP destination defaults. It also verifies that
+`Enter` confirms Move and permanent Delete dialogs. During an active file
+operation, `Esc` requests cancellation after the current top-level item.
 
 MDIR-P is released under the [MIT License](LICENSE).
