@@ -1,5 +1,41 @@
 # Changelog
 
+## 2.23.1
+
+- Added `INSTALL_MDIR.bat` for double-click installation and updates without
+  manually selecting a Python version or entering pip commands.
+- The installer uses a private environment under `%LOCALAPPDATA%\mDIR`,
+  creates permanent `m` and `mdir` launchers, adds them to the user PATH, and
+  creates the mDIR desktop shortcut automatically.
+- Clicking any empty area inside the left or right file table now activates
+  that pane; a filename or populated cell is no longer required.
+- Clicking the path, information, summary, or background area of a file pane
+  also activates the corresponding side.
+- Right-button selection begins in the clicked pane even when the first press
+  lands on empty table space.
+- Preserved editable path focus while switching panes with the mouse.
+- Added two-direction blank-area mouse activation regression coverage.
+
+## 2.23.0
+
+- Changed the active Windows console and Windows Terminal tab title to `mDIR`
+  while the program is running, then restores the previous title on exit.
+- Added a multi-resolution mDIR application icon for classic console windows,
+  package resources, and shortcuts.
+- Added `install_mdir_shortcut.ps1` to create a clearly identifiable mDIR
+  desktop shortcut with the bundled icon.
+- Added package and regression checks for the icon resource and window title.
+
+## 2.22.1
+
+- Extended same-row double-click recognition to 0.95 seconds for terminals
+  that end the native click chain earlier than expected.
+- Delayed mouse-triggered Rename until a clearly slower repeated click, from
+  1.10 through 3.00 seconds after selecting the same row.
+- Kept normal native double-click, `Enter`, and `F2` behavior unchanged.
+- Added regression coverage for extended double-click, rename timing bounds,
+  expired clicks, and clicks on a different row.
+
 ## 2.22.0
 
 - Moved Copy, Move, and permanent Delete filesystem work to a background

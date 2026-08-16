@@ -41,7 +41,23 @@ manage files quickly and efficiently from the keyboard.
 
 ## Installation on Windows
 
-### Method 1: Install after downloading the ZIP (recommended)
+### Easy installation or update (recommended)
+
+1. Click **Code > Download ZIP** on this GitHub page.
+2. Extract the downloaded ZIP.
+3. Open the extracted `mdir-p-main` folder.
+4. Double-click **`INSTALL_MDIR.bat`**.
+
+The installer creates a private environment under `%LOCALAPPDATA%\mDIR`,
+installs Preview support, creates permanent `m` and `mdir` commands, adds the
+command folder to the user PATH, and places an **mDIR** shortcut on the
+desktop. To update later, download the newest ZIP and double-click the same
+file again. Personal settings are preserved.
+
+If Windows SmartScreen appears, choose **More info > Run anyway** only after
+confirming that the ZIP came from this repository.
+
+### Manual installation from the ZIP
 
 1. Download the repository as a ZIP file and extract it.
 2. Open the extracted folder. Confirm that `pyproject.toml` is visible there.
@@ -63,16 +79,16 @@ If `pyproject.toml` is not shown, the terminal is in the wrong folder. Move
 into the inner extracted folder first. For example:
 
 ```powershell
-cd .\mdir-p-2.22.0-github
-python -m pip install --upgrade ".[preview]"
+cd .\mdir-p-main
+python -m pip install --no-cache-dir --force-reinstall ".[preview]"
 ```
 
-### Method 2: Install with Git
+### Install with Git
 
 ```powershell
 git clone https://github.com/jtl-sun/mdir-p.git
 cd mdir-p
-python -m pip install --upgrade ".[preview]"
+.\INSTALL_MDIR.bat
 ```
 
 ### Optional: Use a virtual environment
@@ -89,17 +105,15 @@ uses the same UI framework version as the automated tests.
 
 ## Upgrade
 
-After replacing the local files with a newer GitHub version, open PowerShell
-in the folder containing `pyproject.toml` and run:
+Download the newest ZIP and double-click `INSTALL_MDIR.bat` again. For a Git
+checkout, run:
 
 ```powershell
-python -m pip install --upgrade ".[preview]"
-python -m mdir
+git pull
+.\INSTALL_MDIR.bat
 ```
 
-Files installed by an older version are updated automatically. Personal
-settings such as shortcuts are stored separately under the user profile and
-are not removed by this command.
+Personal settings such as shortcuts are stored separately and are not removed.
 
 ## Run
 

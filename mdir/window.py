@@ -4,12 +4,120 @@ import ctypes
 import os
 import time
 from ctypes import wintypes
+from pathlib import Path
 
 
 DEFAULT_WINDOW_WIDTH = 1480
 DEFAULT_WINDOW_HEIGHT = 850
 WINDOW_WORK_AREA_MARGIN = 32
 WINDOW_RESIZE_SETTLE_SECONDS = 0.015
+APP_WINDOW_TITLE = "mDIR"
+WM_SETICON = 0x0080
+ICON_SMALL = 0
+ICON_BIG = 1
+IMAGE_ICON = 1
+LR_LOADFROMFILE = 0x0010
+_APP_ICON_HANDLES: list[int] = []
+
+
+def terminal_icon_path() -> Path:
+    """Return the packaged multi-resolution mDIR icon."""
+    return Path(__file__).resolve().parent / "assets" / "mdir.ico"
+
+
+def set_terminal_title(title: str = APP_WINDOW_TITLE) -> str | None:
+    """Set the active console/Windows Terminal tab title on Windows."""
+    if os.name != "nt":
+        return None
+    try:
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GetConsoleTitleW.argtypes = [wintypes.LPWSTR, wintypes.DWORD]
+        kernel32.GetConsoleTitleW.restype = wintypes.DWORD
+        kernel32.SetConsoleTitleW.argtypes = [wintypes.LPCWSTR]
+        kernel32.SetConsoleTitleW.restype = wintypes.BOOL
+        buffer = ctypes.create_unicode_buffer(1024)
+        length = kernel32.GetConsoleTitleW(buffer, len(buffer))
+        previous = buffer.value if length else ""
+        if not kernel32.SetConsoleTitleW(title):
+            return None
+        return previous
+    except (AttributeError, OSError):
+        return None
+
+
+def restore_terminal_title(previous_title: str | None) -> None:
+    """Restore the title that was visible before mDIR started."""
+    if os.name != "nt" or previous_title is None:
+        return
+    try:
+        ctypes.windll.kernel32.SetConsoleTitleW(previous_title)
+    except (AttributeError, OSError):
+        pass
+
+
+def set_terminal_icon(icon_path: Path | None = None) -> bool:
+    """Apply the mDIR icon to a classic Windows console window."""
+    if os.name != "nt":
+        return False
+    path = icon_path or terminal_icon_path()
+    if not path.is_file():
+        return False
+    try:
+        user32 = _configure_user32()
+        window = user32.GetForegroundWindow()
+        if not window:
+            return False
+        class_name_buffer = ctypes.create_unicode_buffer(256)
+        if not user32.GetClassNameW(
+            window,
+            class_name_buffer,
+            len(class_name_buffer),
+        ):
+            return False
+        if class_name_buffer.value != "ConsoleWindowClass":
+            return False
+
+        user32.LoadImageW.argtypes = [
+            wintypes.HINSTANCE,
+            wintypes.LPCWSTR,
+            wintypes.UINT,
+            ctypes.c_int,
+            ctypes.c_int,
+            wintypes.UINT,
+        ]
+        user32.LoadImageW.restype = wintypes.HANDLE
+        user32.SendMessageW.argtypes = [
+            wintypes.HWND,
+            wintypes.UINT,
+            wintypes.WPARAM,
+            wintypes.LPARAM,
+        ]
+        user32.SendMessageW.restype = wintypes.LPARAM
+
+        loaded: list[int] = []
+        for icon_kind, size in ((ICON_SMALL, 16), (ICON_BIG, 32)):
+            handle = user32.LoadImageW(
+                None,
+                str(path),
+                IMAGE_ICON,
+                size,
+                size,
+                LR_LOADFROMFILE,
+            )
+            if handle:
+                loaded.append(int(handle))
+                user32.SendMessageW(window, WM_SETICON, icon_kind, int(handle))
+        _APP_ICON_HANDLES.extend(loaded)
+        return bool(loaded)
+    except (AttributeError, OSError):
+        return False
+
+
+def set_terminal_identity() -> str | None:
+    """Apply the mDIR title and the supported terminal-window icon."""
+    previous_title = set_terminal_title()
+    set_terminal_icon()
+    return previous_title
 
 
 def centered_window_bounds(

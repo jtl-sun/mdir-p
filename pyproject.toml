@@ -43,5 +43,8 @@ Issues = "https://github.com/jtl-sun/mdir-p/issues"
 [tool.setuptools.packages.find]
 include = ["mdir*"]
 
+[tool.setuptools.package-data]
+mdir = ["assets/*.ico"]
+
 [tool.setuptools.dynamic]
 version = {attr = "mdir.__version__"}

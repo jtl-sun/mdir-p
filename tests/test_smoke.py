@@ -8,6 +8,7 @@ import json
 import threading
 import time
 import zipfile
+import struct
 from pathlib import Path
 from unittest.mock import patch
 
@@ -53,9 +54,77 @@ from mdir.ui.archive import (
 )
 from mdir.file_operations import FileOperationResult, run_file_operation
 from mdir.ui.dialogs import FileOperationProgressScreen
+from mdir.window import APP_WINDOW_TITLE, terminal_icon_path
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    def test_easy_windows_installer_is_included(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        batch = root / "INSTALL_MDIR.bat"
+        installer = root / "install_windows.ps1"
+
+        self.assertTrue(batch.is_file())
+        self.assertTrue(installer.is_file())
+        installer_text = installer.read_text(encoding="utf-8")
+        self.assertIn('Join-Path $env:LOCALAPPDATA "mDIR"', installer_text)
+        self.assertIn("--force-reinstall", installer_text)
+        self.assertIn('Join-Path $Desktop "mDIR.lnk"', installer_text)
+
+    def test_mdir_window_title_and_icon_resource(self) -> None:
+        self.assertEqual(APP_WINDOW_TITLE, "mDIR")
+        icon = terminal_icon_path()
+        self.assertTrue(icon.is_file())
+        reserved, image_type, image_count = struct.unpack(
+            "<HHH", icon.read_bytes()[:6]
+        )
+        self.assertEqual((reserved, image_type), (0, 1))
+        self.assertGreaterEqual(image_count, 4)
+
+    def test_slow_click_rename_waits_beyond_extended_double_click(self) -> None:
+        from mdir.ui.rename import SlowRenameDataTable
+
+        table = SlowRenameDataTable()
+        table._rename_click_row = 7
+        table._rename_click_time = 10.0
+
+        self.assertEqual(table._repeated_click_action(7, 10.80), "open")
+        self.assertIsNone(table._repeated_click_action(7, 11.00))
+        self.assertEqual(table._repeated_click_action(7, 11.11), "rename")
+        self.assertIsNone(table._repeated_click_action(8, 11.50))
+
+    async def test_clicking_empty_table_space_switches_both_panes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_dir = root / "left"
+            right_dir = root / "right"
+            left_dir.mkdir()
+            right_dir.mkdir()
+
+            app = MDirApp()
+            app.left_start = left_dir
+            app.right_start = right_dir
+            app._save_paths = lambda: None
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(100):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                await pilot.click("#right DataTable", offset=(45, 10))
+                await pilot.pause()
+                self.assertEqual(app.active_side, "right")
+                self.assertTrue(app.right.table.has_focus)
+
+                await pilot.click("#left DataTable", offset=(45, 10))
+                await pilot.pause()
+                self.assertEqual(app.active_side, "left")
+                self.assertTrue(app.left.table.has_focus)
+                app.exit()
+
     def test_more_than_one_thousand_files_copy_move_and_delete(self) -> None:
         """Large batches complete without per-item UI work or lost files."""
         with tempfile.TemporaryDirectory() as directory:
