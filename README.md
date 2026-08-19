@@ -52,7 +52,8 @@ The installer creates a private environment under `%LOCALAPPDATA%\mDIR`,
 installs Preview support, creates permanent `m` and `mdir` commands, adds the
 command folder to the user PATH, and places an **mDIR** shortcut on the
 desktop. To update later, download the newest ZIP and double-click the same
-file again. Personal settings are preserved.
+file again. The installer verifies that the installed version exactly matches
+the downloaded source. Personal settings are preserved.
 
 If Windows SmartScreen appears, choose **More info > Run anyway** only after
 confirming that the ZIP came from this repository.

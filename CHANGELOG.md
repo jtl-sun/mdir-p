@@ -8,6 +8,10 @@
 - Changed path bars, active-pane borders, and active cursor rows to a clear
   green palette so the selected pane and item are easier to distinguish.
 - Added unit and interactive regression coverage for segment navigation.
+- Launchers now use Python safe-path mode so an older `mdir` source folder in
+  the current directory cannot shadow the newly installed 2.23.2 package.
+- The Windows installer now compares the source and installed versions and
+  stops with a clear error instead of reporting success on a version mismatch.
 
 ## 2.23.1
 

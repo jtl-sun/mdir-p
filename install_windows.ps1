@@ -29,6 +29,13 @@ $VenvPython = Join-Path $VenvRoot "Scripts\python.exe"
 $BinRoot = Join-Path $InstallRoot "bin"
 $IconSource = Join-Path $PSScriptRoot "mdir\assets\mdir.ico"
 $InstalledIcon = Join-Path $InstallRoot "mdir.ico"
+$VersionFile = Join-Path $PSScriptRoot "mdir\__init__.py"
+
+$VersionSource = Get-Content -LiteralPath $VersionFile -Raw
+if ($VersionSource -notmatch '__version__\s*=\s*"([^"]+)"') {
+    throw "Could not read the mDIR source version from $VersionFile."
+}
+$ExpectedVersion = $Matches[1]
 
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $BinRoot -Force | Out-Null
@@ -55,7 +62,7 @@ if (Test-Path -LiteralPath $IconSource) {
     Copy-Item -LiteralPath $IconSource -Destination $InstalledIcon -Force
 }
 
-$Launcher = "@echo off`r`n`"$VenvPython`" -m mdir %*`r`n"
+$Launcher = "@echo off`r`n`"$VenvPython`" -P -m mdir %*`r`n"
 Set-Content -LiteralPath (Join-Path $BinRoot "m.cmd") -Value $Launcher -Encoding Ascii
 Set-Content -LiteralPath (Join-Path $BinRoot "mdir.cmd") -Value $Launcher -Encoding Ascii
 
@@ -74,7 +81,7 @@ $ShortcutPath = Join-Path $Desktop "mDIR.lnk"
 $Shell = New-Object -ComObject WScript.Shell
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
 $Shortcut.TargetPath = $VenvPython
-$Shortcut.Arguments = "-m mdir"
+$Shortcut.Arguments = "-P -m mdir"
 $Shortcut.WorkingDirectory = [Environment]::GetFolderPath("UserProfile")
 if (Test-Path -LiteralPath $InstalledIcon) {
     $Shortcut.IconLocation = "$InstalledIcon,0"
@@ -82,9 +89,13 @@ if (Test-Path -LiteralPath $InstalledIcon) {
 $Shortcut.Description = "mDIR dual-pane file manager"
 $Shortcut.Save()
 
-$Version = & $VenvPython -c "import mdir; print(mdir.__version__)"
+$Version = & $VenvPython -P -c "import mdir; print(mdir.__version__)"
 if ($LASTEXITCODE -ne 0) {
     throw "mDIR validation failed after installation."
+}
+$Version = $Version.Trim()
+if ($Version -ne $ExpectedVersion) {
+    throw "mDIR version mismatch. Expected $ExpectedVersion but installed $Version."
 }
 
 Write-Host ""

@@ -127,6 +127,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('Join-Path $env:LOCALAPPDATA "mDIR"', installer_text)
         self.assertIn("--force-reinstall", installer_text)
         self.assertIn('Join-Path $Desktop "mDIR.lnk"', installer_text)
+        self.assertIn('" -P -m mdir %*', installer_text)
+        self.assertIn('$Shortcut.Arguments = "-P -m mdir"', installer_text)
+        self.assertIn("$Version -ne $ExpectedVersion", installer_text)
 
     def test_mdir_window_title_and_icon_resource(self) -> None:
         self.assertEqual(APP_WINDOW_TITLE, "mDIR")
