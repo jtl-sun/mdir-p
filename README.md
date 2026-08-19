@@ -238,8 +238,11 @@ before making any changes.
   Bin is not used, so verify the selected names carefully.
 - Click a column header to sort and click it again to reverse the order. Drag
   the visible column separator to resize it; widths are saved automatically.
-- Edit the blue path field at the top of either pane to go directly to a
-  folder. Environment variables such as `%USERPROFILE%` are accepted.
+- Click any folder name in the green path bar to jump directly to that level.
+  For example, clicking `PO` in `D:\\pg\\wk\\PO\\Orders` opens
+  `D:\\pg\\wk\\PO`. Click the final folder to keep editing the full path, or
+  drag to select text. Environment variables such as `%USERPROFILE%` are
+  accepted.
 - External file changes and removable-drive changes are detected
   automatically. Use `Ctrl+R` or `F11` when an immediate manual refresh is
   preferred.

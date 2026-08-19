@@ -55,9 +55,67 @@ from mdir.ui.archive import (
 from mdir.file_operations import FileOperationResult, run_file_operation
 from mdir.ui.dialogs import FileOperationProgressScreen
 from mdir.window import APP_WINDOW_TITLE, terminal_icon_path
+from mdir.file_pane import DirectoryPathInput, path_segment_target
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    def test_clicked_path_segment_builds_cumulative_directory(self) -> None:
+        windows_path = r"D:\pg\wk\PO\912-JQ\Request samples"
+        self.assertEqual(
+            path_segment_target(windows_path, windows_path.index("PO") + 1),
+            r"D:\pg\wk\PO",
+        )
+        self.assertEqual(path_segment_target(windows_path, 0), "D:\\")
+
+    async def test_clicking_path_segment_navigates_that_pane(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            parent = root / "parent"
+            child = parent / "child"
+            child.mkdir(parents=True)
+
+            app = MDirApp()
+            app.left_start = child
+            app.right_start = root
+            app._save_paths = lambda: None
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                path_input = app.left.query_one(
+                    ".pane_path", DirectoryPathInput
+                )
+                click_index = path_input.value.index("parent") + 2
+                await pilot.click(path_input, offset=(click_index + 1, 0))
+                await pilot.pause()
+
+                self.assertEqual(app.left.current_path, parent.resolve())
+                self.assertEqual(app.active_side, "left")
+                self.assertEqual(
+                    path_input.styles.background.hex,
+                    "#146B3A",
+                )
+                right_path = app.right.query_one(
+                    ".pane_path", DirectoryPathInput
+                )
+                self.assertEqual(
+                    right_path.styles.background.hex,
+                    "#173522",
+                )
+
+                final_index = path_input.value.index("parent") + 2
+                await pilot.click(path_input, offset=(final_index + 1, 0))
+                await pilot.pause()
+                self.assertEqual(app.left.current_path, parent.resolve())
+                self.assertTrue(path_input.has_focus)
+                self.assertEqual(
+                    path_input.styles.background.hex,
+                    "#178F4B",
+                )
+                app.exit()
+
     def test_easy_windows_installer_is_included(self) -> None:
         root = Path(__file__).resolve().parents[1]
         batch = root / "INSTALL_MDIR.bat"

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from rich.text import Text
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.coordinate import Coordinate
@@ -19,6 +19,33 @@ from .ui.rename import SlowRenameDataTable
 
 
 AI_SELECTOR_WIDTH = 30
+
+
+def path_segment_target(path_text: str, character_index: int) -> str | None:
+    """Return the cumulative directory represented by a clicked character."""
+    text = path_text.strip()
+    if not text:
+        return None
+
+    index = max(0, min(int(character_index), len(text) - 1))
+    separators = "\\/"
+    if text[index] in separators:
+        if index == 0:
+            return text[0]
+        index -= 1
+
+    following = [
+        position
+        for separator in separators
+        if (position := text.find(separator, index + 1)) >= 0
+    ]
+    end = min(following) if following else len(text)
+    target = text[:end].rstrip(separators)
+
+    # A Windows drive root must retain its trailing separator (``D:\\``).
+    if len(target) == 2 and target[1] == ":":
+        target += "\\"
+    return target or text[0]
 
 
 class DirectoryPathInput(Input):
@@ -36,6 +63,39 @@ class DirectoryPathInput(Input):
 
     class Cancelled(Message):
         """Request cancellation without changing the current directory."""
+
+    class SegmentClicked(Message):
+        """Request navigation to the cumulative clicked path segment."""
+
+        def __init__(self, path: str) -> None:
+            super().__init__()
+            self.path = path
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._path_click_moved = False
+
+    async def _on_mouse_down(self, event: events.MouseDown) -> None:
+        self._path_click_moved = False
+        await super()._on_mouse_down(event)
+
+    async def _on_mouse_move(self, event: events.MouseMove) -> None:
+        before = self.selection
+        await super()._on_mouse_move(event)
+        if self.selection != before:
+            self._path_click_moved = True
+
+    async def _on_mouse_up(self, event: events.MouseUp) -> None:
+        selection = self.selection
+        await super()._on_mouse_up(event)
+        if event.button != 1 or self._path_click_moved:
+            return
+        start, end = selection
+        if start != end:
+            return
+        target = path_segment_target(self.value, end)
+        if target is not None:
+            self.post_message(self.SegmentClicked(target))
 
     def action_cancel_path_edit(self) -> None:
         self.post_message(self.Cancelled())
@@ -469,6 +529,18 @@ class EditablePathFilePane(BaseFilePane):
             self.app.set_status(f"Invalid directory: {entered_path} ({exc})")
             return False
 
+        try:
+            current = self.current_path.resolve()
+        except (OSError, RuntimeError):
+            current = self.current_path
+        if candidate == current:
+            # Clicking the final segment keeps the field ready for manual
+            # editing instead of needlessly rescanning the same directory.
+            path_input = self.query_one(".pane_path", DirectoryPathInput)
+            path_input.value = str(self.current_path)
+            path_input.focus()
+            return True
+
         self.current_path = candidate
         self.marked.clear()
         self.refresh_listing()
@@ -495,6 +567,14 @@ class EditablePathFilePane(BaseFilePane):
         self.app.set_status("Directory path edit cancelled.")
         event.stop()
 
+    @on(DirectoryPathInput.SegmentClicked)
+    def path_segment_clicked(
+        self,
+        event: DirectoryPathInput.SegmentClicked,
+    ) -> None:
+        self.navigate_to_path(event.path)
+        event.stop()
+
 
 class EditablePathApp(BaseApp):
     """AI-enabled file manager with editable paths and cached metadata."""
@@ -511,20 +591,40 @@ class EditablePathApp(BaseApp):
         max-width: {AI_SELECTOR_WIDTH};
     }}
 
-    FilePane .pane_path {{
+    FilePane {{
+        border: round #31523c;
+    }}
+
+    FilePane.active {{
+        border: heavy #35d477;
+    }}
+
+    FilePane DirectoryPathInput.pane_path {{
         height: 1;
         min-height: 1;
         max-height: 1;
         border: none;
         padding: 0 1;
-        background: #0000aa;
+        background: #173522;
+        color: #d9ffe5;
+    }}
+
+    FilePane.active DirectoryPathInput.pane_path {{
+        background: #146b3a;
+        color: white;
+        text-style: bold;
+    }}
+
+    FilePane DirectoryPathInput.pane_path:focus {{
+        border: none;
+        background: #178f4b;
         color: white;
     }}
 
-    FilePane .pane_path:focus {{
-        border: none;
-        background: #075985;
+    FilePane.active DataTable > .datatable--cursor {{
+        background: #176b45;
         color: white;
+        text-style: bold;
     }}
     """
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.23.2
+
+- Made every directory segment in the path bar clickable. Clicking `PO` in
+  `D:\\pg\\wk\\PO\\...` immediately opens `D:\\pg\\wk\\PO` in that pane.
+- Kept drag selection and direct keyboard editing available in the path bar.
+- Changed path bars, active-pane borders, and active cursor rows to a clear
+  green palette so the selected pane and item are easier to distinguish.
+- Added unit and interactive regression coverage for segment navigation.
+
 ## 2.23.1
 
 - Added `INSTALL_MDIR.bat` for double-click installation and updates without
