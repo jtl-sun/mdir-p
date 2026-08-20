@@ -637,6 +637,53 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 [pair.target.name for pair in pairs], ["al.jpg", "be.png"]
             )
 
+    def test_batch_rename_deletes_text_and_appends_counter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            items = [root / "project_dev.pdf", root / "sample_dev.xlsx"]
+            for item in items:
+                item.write_bytes(b"test")
+
+            pairs, errors = build_rename_pairs(
+                items,
+                BatchRenameOptions(
+                    name_pattern="[N]",
+                    extension_pattern="[E]",
+                    find_text="_dev",
+                    replace_text="ignored",
+                    delete_found_text=True,
+                    append_counter=True,
+                    counter_separator="_",
+                    start=1,
+                    step=1,
+                    digits=1,
+                ),
+            )
+
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                [pair.target.name for pair in pairs],
+                ["project_1.pdf", "sample_2.xlsx"],
+            )
+
+    def test_batch_rename_find_does_not_change_extension(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "report.pdf"
+            source.write_bytes(b"test")
+
+            pairs, errors = build_rename_pairs(
+                [source],
+                BatchRenameOptions(
+                    name_pattern="[N]",
+                    extension_pattern="[E]",
+                    find_text="pdf",
+                    delete_found_text=True,
+                ),
+            )
+
+            self.assertEqual(errors, [])
+            self.assertEqual(pairs[0].target.name, "report.pdf")
+
     def test_batch_rename_rejects_duplicates_and_rolls_back_safely(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

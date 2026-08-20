@@ -40,6 +40,9 @@ class BatchRenameOptions:
     step: int = 1
     digits: int = 3
     regex: bool = False
+    delete_found_text: bool = False
+    append_counter: bool = False
+    counter_separator: str = "_"
 
 
 def _split_name(path: Path) -> tuple[str, str]:
@@ -92,23 +95,17 @@ def build_rename_pairs(
         ).lstrip(".")
 
         if options.find_text:
+            replacement = "" if options.delete_found_text else options.replace_text
             try:
                 if options.regex:
-                    new_stem = re.sub(
-                        options.find_text, options.replace_text, new_stem
-                    )
-                    new_extension = re.sub(
-                        options.find_text, options.replace_text, new_extension
-                    )
+                    new_stem = re.sub(options.find_text, replacement, new_stem)
                 else:
-                    new_stem = new_stem.replace(
-                        options.find_text, options.replace_text
-                    )
-                    new_extension = new_extension.replace(
-                        options.find_text, options.replace_text
-                    )
+                    new_stem = new_stem.replace(options.find_text, replacement)
             except re.error as exc:
                 return [], [f"Invalid regular expression: {exc}"]
+
+        if options.append_counter:
+            new_stem = f"{new_stem}{options.counter_separator}{values['C']}"
 
         new_name = new_stem + (f".{new_extension}" if new_extension else "")
         if not new_stem or new_name in {".", ".."}:
@@ -180,7 +177,9 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
     .field_label { width: 14; height: 3; content-align: left middle; }
     .field_input { width: 1fr; height: 3; }
     .small_input { width: 12; height: 3; }
+    #counter_separator { width: 8; height: 3; }
     .small_label { width: 9; height: 3; content-align: left middle; }
+    .toggle_button { min-width: 16; width: auto; height: 3; margin-left: 1; }
     #token_row { height: 3; }
     #token_row Button { min-width: 10; width: auto; height: 3; margin-right: 1; }
     #rename_preview { height: 1fr; min-height: 8; margin-top: 1; }
@@ -193,6 +192,8 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
         super().__init__()
         self.items = list(items)
         self.regex_enabled = False
+        self.delete_found_text = True
+        self.append_counter = True
 
     def compose(self) -> ComposeResult:
         with Vertical(id="batch_dialog"):
@@ -202,7 +203,7 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
             )
             with Horizontal(classes="field_row"):
                 yield Label("Name pattern:", classes="field_label")
-                yield Input(value="[N]_[C]", id="name_pattern", classes="field_input")
+                yield Input(value="[N]", id="name_pattern", classes="field_input")
             with Horizontal(id="token_row"):
                 yield Button("[N] Name", id="token_name")
                 yield Button("[C] Counter", id="token_counter")
@@ -212,18 +213,36 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
                 yield Label("Extension:", classes="field_label")
                 yield Input(value="[E]", id="extension_pattern", classes="field_input")
             with Horizontal(classes="field_row"):
-                yield Label("Find:", classes="field_label")
-                yield Input(id="find_text", classes="field_input")
-                yield Label("Replace:", classes="field_label")
-                yield Input(id="replace_text", classes="field_input")
+                yield Label("Find text:", classes="field_label")
+                yield Input(
+                    placeholder="Text to remove from every selected name",
+                    id="find_text",
+                    classes="field_input",
+                )
+                yield Button("Delete: ON", id="delete_toggle", classes="toggle_button")
+                yield Button("Regex: OFF", id="regex_toggle", classes="toggle_button")
             with Horizontal(classes="field_row"):
+                yield Label("Replace with:", classes="field_label")
+                yield Input(
+                    placeholder="Available when Delete is OFF",
+                    id="replace_text",
+                    classes="field_input",
+                    disabled=True,
+                )
+            with Horizontal(classes="field_row"):
+                yield Button(
+                    "Append number: ON",
+                    id="append_counter_toggle",
+                    classes="toggle_button",
+                )
+                yield Label("Separator:", classes="small_label")
+                yield Input(value="_", id="counter_separator")
                 yield Label("Start:", classes="small_label")
                 yield Input(value="1", id="counter_start", classes="small_input")
                 yield Label("Step:", classes="small_label")
                 yield Input(value="1", id="counter_step", classes="small_input")
                 yield Label("Digits:", classes="small_label")
                 yield Input(value="3", id="counter_digits", classes="small_input")
-                yield Button("Regex: OFF", id="regex_toggle")
             yield DataTable(id="rename_preview", zebra_stripes=True)
             yield Static("", id="rename_status")
             with Horizontal(id="rename_actions"):
@@ -252,6 +271,9 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
             step=number("#counter_step", 1),
             digits=number("#counter_digits", 3),
             regex=self.regex_enabled,
+            delete_found_text=self.delete_found_text,
+            append_counter=self.append_counter,
+            counter_separator=self.query_one("#counter_separator", Input).value,
         )
 
     def _refresh_preview(self) -> None:
@@ -285,7 +307,27 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
         if button_id in tokens:
             field = self.query_one("#name_pattern", Input)
             field.value += tokens[button_id]
+            if button_id == "token_counter" and self.append_counter:
+                self.append_counter = False
+                self.query_one("#append_counter_toggle", Button).label = (
+                    "Append number: OFF"
+                )
             field.focus()
+            return
+        if button_id == "delete_toggle":
+            self.delete_found_text = not self.delete_found_text
+            event.button.label = (
+                f"Delete: {'ON' if self.delete_found_text else 'OFF'}"
+            )
+            self.query_one("#replace_text", Input).disabled = self.delete_found_text
+            self._refresh_preview()
+            return
+        if button_id == "append_counter_toggle":
+            self.append_counter = not self.append_counter
+            event.button.label = (
+                f"Append number: {'ON' if self.append_counter else 'OFF'}"
+            )
+            self._refresh_preview()
             return
         if button_id == "regex_toggle":
             self.regex_enabled = not self.regex_enabled

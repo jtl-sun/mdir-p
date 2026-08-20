@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.23.0
+
+- Added a direct **Delete** toggle to Batch Rename so matching text can be
+  removed without entering replacement text.
+- Added a direct **Append number** toggle with separator, start, step, and
+  digit controls for adding sequential numbers at the end of filenames.
+- Changed the quick Batch Rename defaults to preserve the original name,
+  delete matched text, and append a three-digit counter such as `_001`.
+- Limited find/delete and find/replace to the filename stem so extensions are
+  preserved unless they are deliberately changed with the extension pattern.
+
 ## 2.22.0
 
 - Moved Copy, Move, and permanent Delete filesystem work to a background

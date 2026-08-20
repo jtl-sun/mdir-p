@@ -202,10 +202,15 @@ are normally not required for `CurrentUser` or `Process` scope.
 | `Alt+Enter`            | Show properties for the selected item       |
 
 When several items are marked, `F2` opens Batch Rename automatically. The
-same tool is always available with `Ctrl+F2`. Its live preview supports `[N]`
-(current name), `[E]` (extension), `[C]` (counter), `[YMD]` (modified date),
-and `[hms]` (modified time), plus ranges such as `[N1-5]` and literal or
-regular-expression replacement.
+same tool is always available with `Ctrl+F2`. For the most common workflow,
+enter text in **Find text** while **Delete** is ON, then leave **Append number**
+ON to add `_001`, `_002`, and so on at the end of each filename. The separator,
+starting number, step, and digit count are editable, and the extension is kept
+unchanged by this quick operation. Turn **Delete** OFF to replace the matching
+text instead. The live preview also supports `[N]` (current name), `[E]`
+(extension), `[C]` (counter), `[YMD]` (modified date), and `[hms]` (modified
+time), plus ranges such as `[N1-5]` and literal or regular-expression
+replacement.
 MDIR-P validates duplicate names, existing targets, and invalid Windows names
 before making any changes.
 
