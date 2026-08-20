@@ -752,10 +752,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 preview = app.screen.query_one("#rename_preview")
                 self.assertEqual(preview.row_count, 2)
                 options = app.screen._options()
-                self.assertTrue(options.delete_found_text)
-                self.assertTrue(options.append_counter)
+                self.assertFalse(options.delete_found_text)
+                self.assertFalse(options.append_counter)
                 self.assertEqual(options.counter_separator, "_")
                 self.assertEqual(options.name_pattern, "[N]")
+                self.assertEqual(options.digits, 1)
                 await pilot.press("escape")
                 app.exit()
 
@@ -821,6 +822,26 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 [pair.target.name for pair in pairs],
                 ["SpecSheet_A_001.pdf", "SpecSheet_B_002.xlsx"],
             )
+
+    def test_batch_rename_defaults_never_add_a_counter(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "keep-this-name.pdf"
+            source.write_bytes(b"test")
+
+            pairs, errors = build_rename_pairs(
+                [source],
+                BatchRenameOptions(),
+            )
+
+            self.assertEqual(errors, [])
+            self.assertEqual(pairs[0].target.name, "keep-this-name.pdf")
+
+            numbered_pairs, errors = build_rename_pairs(
+                [source],
+                BatchRenameOptions(append_counter=True),
+            )
+            self.assertEqual(errors, [])
+            self.assertEqual(numbered_pairs[0].target.name, "keep-this-name_1.pdf")
 
     def test_batch_rename_rejects_duplicates_and_rolls_back_safely(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

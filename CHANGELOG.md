@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.23.6
+
+- Use the requested safe Batch Rename defaults: name `[N]`, extension `[E]`,
+  text deletion OFF, numbering OFF, `_` separator, start/step/digits `1`, and
+  regex OFF.
+- Keep original names unchanged when Batch Rename first opens; counters are
+  appended only after **End number** is deliberately turned ON.
+
 ## 2.23.5
 
 - Add one-click Batch Rename options to delete found text and append an

@@ -225,6 +225,9 @@ The **Quick options** row covers the two most common jobs without editing a
 pattern: **Delete found text** removes the text entered in Find, and **End
 number** appends the configured counter immediately before the extension.
 Both options update the preview before any file is changed.
+The safe default is `[N]` with **Delete found text: OFF** and **End number:
+OFF**, so filenames remain unchanged until an option is deliberately enabled.
+The counter defaults to one digit (`1`) when numbering is turned on.
 MDIR-P validates duplicate names, existing targets, and invalid Windows names
 before making any changes.
 

@@ -32,13 +32,13 @@ class RenamePair:
 
 @dataclass(frozen=True)
 class BatchRenameOptions:
-    name_pattern: str = "[N]_[C]"
+    name_pattern: str = "[N]"
     extension_pattern: str = "[E]"
     find_text: str = ""
     replace_text: str = ""
     start: int = 1
     step: int = 1
-    digits: int = 3
+    digits: int = 1
     regex: bool = False
     delete_found_text: bool = False
     append_counter: bool = False
@@ -72,8 +72,9 @@ def build_rename_pairs(
 
     if not options.name_pattern:
         return [], ["The name pattern cannot be empty."]
-    if options.digits < 1 or options.digits > 12:
-        return [], ["Counter digits must be between 1 and 12."]
+    uses_counter = "[C]" in options.name_pattern or options.append_counter
+    if uses_counter and (options.digits < 1 or options.digits > 12):
+        return [], ["Choose counter digits between 1 and 12."]
 
     for index, source in enumerate(items):
         stem, extension = _split_name(source)
@@ -82,10 +83,11 @@ def build_rename_pairs(
         except OSError:
             stamp = datetime.now()
         counter = options.start + (index * options.step)
+        counter_digits = max(1, options.digits)
         values = {
             "N": stem,
             "E": extension,
-            "C": f"{counter:0{options.digits}d}",
+            "C": f"{counter:0{counter_digits}d}",
             "YMD": stamp.strftime("%Y%m%d"),
             "hms": stamp.strftime("%H%M%S"),
         }
@@ -210,8 +212,8 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
         super().__init__()
         self.items = list(items)
         self.regex_enabled = False
-        self.delete_found_text = True
-        self.append_counter = True
+        self.delete_found_text = False
+        self.append_counter = False
 
     def compose(self) -> ComposeResult:
         with Vertical(id="batch_dialog"):
@@ -238,12 +240,11 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
                     placeholder="Disabled while Delete is ON",
                     id="replace_text",
                     classes="field_input",
-                    disabled=True,
                 )
             with Horizontal(id="frequent_row"):
                 yield Label("Quick options:", classes="frequent_label")
-                yield Button("Delete found text: ON", id="delete_text_toggle")
-                yield Button("End number: ON", id="append_counter_toggle")
+                yield Button("Delete found text: OFF", id="delete_text_toggle")
+                yield Button("End number: OFF", id="append_counter_toggle")
                 yield Label("Separator:", id="separator_label")
                 yield Input(value="_", id="counter_separator")
             with Horizontal(classes="field_row"):
@@ -252,7 +253,7 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
                 yield Label("Step:", classes="small_label")
                 yield Input(value="1", id="counter_step", classes="small_input")
                 yield Label("Digits:", classes="small_label")
-                yield Input(value="3", id="counter_digits", classes="small_input")
+                yield Input(value="1", id="counter_digits", classes="small_input")
                 yield Button("Regex: OFF", id="regex_toggle")
             yield DataTable(id="rename_preview", zebra_stripes=True)
             yield Static("", id="rename_status")
@@ -280,7 +281,7 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
             replace_text=self.query_one("#replace_text", Input).value,
             start=number("#counter_start", 1),
             step=number("#counter_step", 1),
-            digits=number("#counter_digits", 3),
+            digits=number("#counter_digits", 1),
             regex=self.regex_enabled,
             delete_found_text=self.delete_found_text,
             append_counter=self.append_counter,
@@ -349,6 +350,10 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
                 else "End number: OFF"
             )
             self._refresh_preview()
+            if self.append_counter and not self.query_one(
+                "#counter_digits", Input
+            ).value.strip():
+                self.query_one("#counter_digits", Input).focus()
             return
         if button_id == "rename_cancel":
             self.dismiss(None)
