@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.23.5
+
+- Add one-click Batch Rename options to delete found text and append an
+  automatic counter at the end of each filename.
+- Keep mouse and keyboard input responsive while automatic refreshes insert
+  thousands of rows into a panel.
+- Release stale mouse capture, right-drag scrolling, and column-resize state
+  when Windows Terminal loses focus.
+- Write automatic Python stack diagnostics to
+  `%LOCALAPPDATA%\\mDIR\\mdir-hang.log` if the UI event loop is blocked for
+  15 seconds, making any remaining intermittent freeze diagnosable.
+
 ## 2.23.4
 
 - The MkDir dialog now starts with the selected file or directory name and

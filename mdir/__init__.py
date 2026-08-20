@@ -6,7 +6,7 @@ if TYPE_CHECKING:
     from .app import MDirApp
 
 __all__ = ["MDirApp"]
-__version__ = "2.23.4"
+__version__ = "2.23.5"
 
 
 def __getattr__(name: str):

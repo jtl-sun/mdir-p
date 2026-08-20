@@ -221,6 +221,10 @@ same tool is always available with `Ctrl+F2`. Its live preview supports `[N]`
 (current name), `[E]` (extension), `[C]` (counter), `[YMD]` (modified date),
 and `[hms]` (modified time), plus ranges such as `[N1-5]` and literal or
 regular-expression replacement.
+The **Quick options** row covers the two most common jobs without editing a
+pattern: **Delete found text** removes the text entered in Find, and **End
+number** appends the configured counter immediately before the extension.
+Both options update the preview before any file is changed.
 MDIR-P validates duplicate names, existing targets, and invalid Windows names
 before making any changes.
 

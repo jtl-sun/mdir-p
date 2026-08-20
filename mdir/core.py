@@ -746,6 +746,23 @@ class MDirDataTable(DataTable):
         self._drag_rows_seen.clear()
         self._right_drag_last_row = None
 
+    def cancel_pointer_interaction(self) -> None:
+        """Release mouse state when the terminal loses application focus.
+
+        Windows Terminal may not deliver the final mouse-up event when a
+        shortcut opens another application.  Leaving capture or the drag
+        scroll timer active in that case can make the table consume every UI
+        cycle until mDIR is closed.
+        """
+        self._resize_key = None
+        self._resize_next_key = None
+        self._resize_snapshot.clear()
+        self.end_right_drag()
+        try:
+            self.release_mouse()
+        except Exception:
+            pass
+
     def _render_boundaries(self) -> list[tuple[str, int]]:
         """Return actual rendered right-edge x positions for all columns.
 

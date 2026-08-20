@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 import sys
 import tempfile
@@ -56,10 +57,12 @@ from mdir.file_operations import FileOperationResult, run_file_operation
 from mdir.ui.dialogs import FileOperationProgressScreen
 from mdir.window import APP_WINDOW_TITLE, terminal_icon_path
 from mdir.file_pane import (
+    CachedEntry,
     DirectoryPathInput,
     display_directory_path,
     path_segment_target,
 )
+from mdir.fast_app import AUTO_REFRESH_ROW_BATCH_SIZE
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
@@ -748,6 +751,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertIsInstance(app.screen, BatchRenameScreen)
                 preview = app.screen.query_one("#rename_preview")
                 self.assertEqual(preview.row_count, 2)
+                options = app.screen._options()
+                self.assertTrue(options.delete_found_text)
+                self.assertTrue(options.append_counter)
+                self.assertEqual(options.counter_separator, "_")
+                self.assertEqual(options.name_pattern, "[N]")
                 await pilot.press("escape")
                 app.exit()
 
@@ -780,6 +788,38 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(errors, [])
             self.assertEqual(
                 [pair.target.name for pair in pairs], ["al.jpg", "be.png"]
+            )
+
+    def test_batch_rename_delete_text_and_append_counter_at_end(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            items = [
+                root / "dev_SpecSheet_A.pdf",
+                root / "dev_SpecSheet_B.xlsx",
+            ]
+            for item in items:
+                item.write_bytes(b"test")
+
+            pairs, errors = build_rename_pairs(
+                items,
+                BatchRenameOptions(
+                    name_pattern="[N]",
+                    extension_pattern="[E]",
+                    find_text="dev_",
+                    replace_text="ignored while delete is enabled",
+                    delete_found_text=True,
+                    append_counter=True,
+                    counter_separator="_",
+                    start=1,
+                    step=1,
+                    digits=3,
+                ),
+            )
+
+            self.assertEqual(errors, [])
+            self.assertEqual(
+                [pair.target.name for pair in pairs],
+                ["SpecSheet_A_001.pdf", "SpecSheet_B_002.xlsx"],
             )
 
     def test_batch_rename_rejects_duplicates_and_rolls_back_safely(self) -> None:
@@ -1089,6 +1129,93 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(table.cursor_row, end_row)
                 self.assertGreater(int(table.scroll_offset.y), 0)
                 table.end_right_drag()
+                app.exit()
+
+    async def test_app_blur_releases_stale_pointer_interactions(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                table = app.left.table
+                table._resize_key = "name"
+                table._resize_next_key = "extension"
+                table._resize_snapshot = {"name": 40, "extension": 12}
+                table._right_dragging = True
+                table._right_drag_scroll_direction = 1
+
+                app.on_app_blur(None)
+
+                self.assertIsNone(table._resize_key)
+                self.assertIsNone(table._resize_next_key)
+                self.assertEqual(table._resize_snapshot, {})
+                self.assertFalse(table._right_dragging)
+                self.assertEqual(table._right_drag_scroll_direction, 0)
+                app.exit()
+
+    async def test_auto_refresh_rows_are_inserted_in_responsive_batches(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                pane = app.left
+                count = AUTO_REFRESH_ROW_BATCH_SIZE * 3 + 17
+                pane.cached_entries = [
+                    CachedEntry(
+                        path=root / f"item-{index:05d}.jpg",
+                        is_directory=False,
+                        size=index,
+                        modified=0.0,
+                        name_casefold=f"item-{index:05d}.jpg",
+                        extension="jpg",
+                        size_text=f"{index} B",
+                        modified_text="1970-01-01 00:00:00",
+                    )
+                    for index in range(count)
+                ]
+
+                batch_sizes: list[int] = []
+                original_add_rows = pane.table.add_rows
+
+                def add_rows_instrumented(rows):
+                    batch = list(rows)
+                    batch_sizes.append(len(batch))
+                    return original_add_rows(batch)
+
+                with patch.object(
+                    pane.table,
+                    "add_rows",
+                    side_effect=add_rows_instrumented,
+                ):
+                    rendered = await pane.render_cached_rows_responsively(
+                        generation=pane._listing_generation,
+                    )
+
+                self.assertTrue(rendered)
+                self.assertEqual(pane.table.row_count, count + 1)
+                self.assertGreater(len(batch_sizes), 1)
+                self.assertLessEqual(
+                    max(batch_sizes),
+                    AUTO_REFRESH_ROW_BATCH_SIZE,
+                )
+                await asyncio.sleep(0)
                 app.exit()
 
     def test_filename_and_extension_are_visually_separated(self) -> None:

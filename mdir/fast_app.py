@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import faulthandler
 import itertools
 import os
+import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 from rich.text import Text
@@ -32,6 +35,10 @@ DIRECTORY_POLL_INTERVAL_SECONDS = 0.75
 FILE_LIST_BACKGROUND = "#1e1e1e"
 INITIAL_LISTING_DELAY_SECONDS = 0.01
 INITIAL_ROW_BATCH_SIZE = 2_000
+AUTO_REFRESH_ROW_BATCH_SIZE = 500
+UI_HEARTBEAT_INTERVAL_SECONDS = 1.0
+UI_HANG_THRESHOLD_SECONDS = 15.0
+UI_HANG_WATCHDOG_INTERVAL_SECONDS = 2.0
 
 
 class LargeDirectoryFilePane(EditablePathFilePane):
@@ -153,6 +160,33 @@ class LargeDirectoryFilePane(EditablePathFilePane):
 
         self.update_info()
         self.update_summary()
+
+    async def render_cached_rows_responsively(
+        self,
+        keep_name: str | None = None,
+        *,
+        generation: int | None = None,
+    ) -> bool:
+        """Render an automatic refresh without monopolizing the UI loop."""
+        rows, target_row = self._prepare_cached_rows(keep_name)
+        total_rows = len(rows)
+
+        for offset in range(0, total_rows, AUTO_REFRESH_ROW_BATCH_SIZE):
+            if generation is not None and generation != self._listing_generation:
+                return False
+            end = min(offset + AUTO_REFRESH_ROW_BATCH_SIZE, total_rows)
+            self.table.add_rows(rows[offset:end])
+            if offset == 0 and self.table.row_count:
+                self.table.move_cursor(row=target_row, column=0)
+            await asyncio.sleep(0)
+
+        if generation is not None and generation != self._listing_generation:
+            return False
+        if self.table.row_count:
+            self.table.move_cursor(row=target_row, column=0)
+        self.update_info()
+        self.update_summary()
+        return True
 
     def on_mount(self) -> None:
         """Mount an immediately visible pane and defer expensive row insertion."""
@@ -456,6 +490,11 @@ class FastFileManagerApp(EditablePathApp):
         self._directory_poll_running = False
         self._directory_refresh_running = False
         self._directory_poll_timer = None
+        self._ui_heartbeat = time.monotonic()
+        self._ui_heartbeat_timer = None
+        self._hang_watchdog_stop = threading.Event()
+        self._hang_watchdog_thread: threading.Thread | None = None
+        self._hang_reported = False
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -473,6 +512,12 @@ class FastFileManagerApp(EditablePathApp):
             DIRECTORY_POLL_INTERVAL_SECONDS,
             self._poll_directory_changes,
         )
+        self._ui_heartbeat_timer = self.set_interval(
+            UI_HEARTBEAT_INTERVAL_SECONDS,
+            self._record_ui_heartbeat,
+        )
+        if os.name == "nt":
+            self._start_hang_watchdog()
         self.call_after_refresh(self._stabilize_startup_frame)
         # A short fallback timer guarantees removal even when a terminal
         # coalesces the two startup refresh notifications into one frame.
@@ -494,6 +539,59 @@ class FastFileManagerApp(EditablePathApp):
         except Exception:
             pass
         self.active.table.focus()
+
+    def _record_ui_heartbeat(self) -> None:
+        """Record that Textual's event loop is still processing callbacks."""
+        self._ui_heartbeat = time.monotonic()
+
+    @staticmethod
+    def _hang_log_path() -> Path:
+        base = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
+        return base / "mDIR" / "mdir-hang.log"
+
+    def _start_hang_watchdog(self) -> None:
+        """Dump all Python thread stacks if the UI loop stops responding."""
+        if self._hang_watchdog_thread is not None:
+            return
+        self._hang_watchdog_stop.clear()
+        self._hang_watchdog_thread = threading.Thread(
+            target=self._watch_ui_heartbeat,
+            name="mdir-ui-watchdog",
+            daemon=True,
+        )
+        self._hang_watchdog_thread.start()
+
+    def _watch_ui_heartbeat(self) -> None:
+        while not self._hang_watchdog_stop.wait(
+            UI_HANG_WATCHDOG_INTERVAL_SECONDS
+        ):
+            elapsed = time.monotonic() - self._ui_heartbeat
+            if elapsed < UI_HANG_THRESHOLD_SECONDS:
+                self._hang_reported = False
+                continue
+            if self._hang_reported:
+                continue
+            self._hang_reported = True
+            try:
+                path = self._hang_log_path()
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with path.open("a", encoding="utf-8") as log:
+                    log.write(
+                        "\n=== mDIR UI hang detected "
+                        f"{datetime.now().isoformat(timespec='seconds')} "
+                        f"(no heartbeat for {elapsed:.1f}s) ===\n"
+                    )
+                    log.flush()
+                    faulthandler.dump_traceback(file=log, all_threads=True)
+                    log.write("=== end dump ===\n")
+            except Exception:
+                # Diagnostics must never make a healthy application unstable.
+                pass
+
+    def on_app_blur(self, event: events.AppBlur) -> None:
+        """Prevent a missed mouse-up from trapping input after focus changes."""
+        for pane in (self.left, self.right):
+            pane.table.cancel_pointer_interaction()
 
     def _poll_directory_changes(self) -> None:
         """Check both directory timestamps without blocking the UI thread."""
@@ -625,11 +723,29 @@ class FastFileManagerApp(EditablePathApp):
 
     def _finish_background_directory_refresh(self, results) -> None:
         """Install background scan results only when their pane is unchanged."""
-        self._directory_refresh_running = False
         if getattr(self, "_file_operation_busy", False) or getattr(
             self, "_archive_busy", False
         ):
+            self._directory_refresh_running = False
             return
+
+        self.run_worker(
+            self._install_background_directory_refresh(results),
+            name="directory-refresh-render",
+            group="mdir-directory-render",
+            exclusive=True,
+            exit_on_error=False,
+        )
+
+    async def _install_background_directory_refresh(self, results) -> None:
+        """Apply scan results in small batches so input remains responsive."""
+        try:
+            await self._install_background_directory_refresh_inner(results)
+        finally:
+            self._directory_refresh_running = False
+
+    async def _install_background_directory_refresh_inner(self, results) -> None:
+        """Install results that still belong to the displayed directories."""
 
         refreshed: list[str] = []
         errors: list[str] = []
@@ -659,7 +775,12 @@ class FastFileManagerApp(EditablePathApp):
                 len(entries) >= LARGE_DIRECTORY_THRESHOLD
             )
             pane._directory_change_token = final_token
-            pane._render_cached_rows(keep_name)
+            rendered = await pane.render_cached_rows_responsively(
+                keep_name,
+                generation=generation,
+            )
+            if not rendered:
+                continue
 
             if (
                 keep_name is not None
@@ -688,6 +809,10 @@ class FastFileManagerApp(EditablePathApp):
         if self._directory_poll_timer is not None:
             self._directory_poll_timer.stop()
             self._directory_poll_timer = None
+        if self._ui_heartbeat_timer is not None:
+            self._ui_heartbeat_timer.stop()
+            self._ui_heartbeat_timer = None
+        self._hang_watchdog_stop.set()
         super().on_unmount()
 
     def set_active(self, side: str, *, focus_table: bool = True) -> None:
