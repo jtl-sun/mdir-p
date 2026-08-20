@@ -18,6 +18,7 @@ from .file_pane import (
     DirectoryPathInput,
     EditablePathFilePane,
     EditablePathApp,
+    display_directory_path,
 )
 from .ui.rename import SlowRenameDataTable
 from . import core as legacy
@@ -67,7 +68,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
     def compose(self) -> ComposeResult:
         """Keep summary and detail information in one fixed bottom area."""
         yield DirectoryPathInput(
-            value=str(self.current_path),
+            value=display_directory_path(self.current_path),
             id=f"{self.id}_path",
             classes="pane_path",
         )
@@ -420,12 +421,14 @@ class FastFileManagerApp(EditablePathApp):
     FilePane .pane_footer {
         /* Keep the detail area in normal layout flow. A docked footer can be
            pushed below the visible pane when Windows Terminal has fewer rows
-           after the shortcut bar is added. */
-        height: 4;
-        min-height: 4;
-        max-height: 4;
-        padding: 0;
+           after the shortcut bar is added. The pale yellow rule and one-row
+           inset visually separate the listing from directory information. */
+        height: 6;
+        min-height: 6;
+        max-height: 6;
+        padding: 1 0 0 0;
         margin: 0;
+        border-top: solid #E6D98A;
         background: #080808;
     }
 

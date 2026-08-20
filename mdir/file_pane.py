@@ -48,6 +48,15 @@ def path_segment_target(path_text: str, character_index: int) -> str | None:
     return target or text[0]
 
 
+def display_directory_path(path: Path | str) -> str:
+    """Format a directory for the path bar with a trailing separator."""
+    text = str(path)
+    if not text or text.endswith(("\\", "/")):
+        return text
+    separator = "\\" if "\\" in text else os.sep
+    return text + separator
+
+
 class DirectoryPathInput(Input):
     """Single-line editable directory path for a file pane."""
 
@@ -133,7 +142,7 @@ class EditablePathFilePane(BaseFilePane):
 
     def compose(self) -> ComposeResult:
         yield DirectoryPathInput(
-            value=str(self.current_path),
+            value=display_directory_path(self.current_path),
             id=f"{self.id}_path",
             classes="pane_path",
         )
@@ -142,6 +151,14 @@ class EditablePathFilePane(BaseFilePane):
         yield table
         yield Static("", classes="pane_info")
         yield Static("", classes="pane_summary")
+
+    def _update_path_bar(self, text: str) -> None:
+        """Show the editable directory path with a trailing separator."""
+        path_widget = self.query_one(".pane_path")
+        if isinstance(path_widget, DirectoryPathInput):
+            path_widget.value = display_directory_path(self.current_path)
+        else:
+            super()._update_path_bar(text)
 
     @staticmethod
     def _name_text(entry: CachedEntry, marked: bool) -> Text:
@@ -502,7 +519,7 @@ class EditablePathFilePane(BaseFilePane):
 
     def _restore_path_and_focus_table(self) -> None:
         path_input = self.query_one(".pane_path", DirectoryPathInput)
-        path_input.value = str(self.current_path)
+        path_input.value = display_directory_path(self.current_path)
         self.table.focus()
 
     def navigate_to_path(self, entered_path: str) -> bool:
@@ -523,9 +540,9 @@ class EditablePathFilePane(BaseFilePane):
             if not candidate.is_dir():
                 raise NotADirectoryError("path is not a directory")
         except (OSError, RuntimeError) as exc:
-            self.query_one(".pane_path", DirectoryPathInput).value = str(
-                self.current_path
-            )
+            self.query_one(
+                ".pane_path", DirectoryPathInput
+            ).value = display_directory_path(self.current_path)
             self.app.set_status(f"Invalid directory: {entered_path} ({exc})")
             return False
 
@@ -537,7 +554,7 @@ class EditablePathFilePane(BaseFilePane):
             # Clicking the final segment keeps the field ready for manual
             # editing instead of needlessly rescanning the same directory.
             path_input = self.query_one(".pane_path", DirectoryPathInput)
-            path_input.value = str(self.current_path)
+            path_input.value = display_directory_path(self.current_path)
             path_input.focus()
             return True
 

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.23.3
+
+- Directory paths in both green path bars now always end with a separator,
+  such as `D:\\pg\\wk\\PO\\`.
+- Kept internal `Path` values unchanged so navigation, sorting, and file
+  operations continue to use normalized directory paths.
+- Added a small gap and a pale yellow separator between each file list and
+  its directory summary/detail information.
+- Added regression coverage for Windows-style and native path formatting.
+
 ## 2.23.2
 
 - Made every directory segment in the path bar clickable. Clicking `PO` in

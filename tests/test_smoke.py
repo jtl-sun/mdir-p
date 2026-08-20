@@ -55,10 +55,24 @@ from mdir.ui.archive import (
 from mdir.file_operations import FileOperationResult, run_file_operation
 from mdir.ui.dialogs import FileOperationProgressScreen
 from mdir.window import APP_WINDOW_TITLE, terminal_icon_path
-from mdir.file_pane import DirectoryPathInput, path_segment_target
+from mdir.file_pane import (
+    DirectoryPathInput,
+    display_directory_path,
+    path_segment_target,
+)
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    def test_directory_path_display_ends_with_separator(self) -> None:
+        self.assertEqual(
+            display_directory_path(r"D:\pg\wk\PO"),
+            "D:\\pg\\wk\\PO\\",
+        )
+        self.assertEqual(
+            display_directory_path("D:\\pg\\wk\\PO\\"),
+            "D:\\pg\\wk\\PO\\",
+        )
+
     def test_clicked_path_segment_builds_cumulative_directory(self) -> None:
         windows_path = r"D:\pg\wk\PO\912-JQ\Request samples"
         self.assertEqual(
@@ -87,6 +101,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 path_input = app.left.query_one(
                     ".pane_path", DirectoryPathInput
                 )
+                self.assertTrue(path_input.value.endswith(os.sep))
                 click_index = path_input.value.index("parent") + 2
                 await pilot.click(path_input, offset=(click_index + 1, 0))
                 await pilot.pause()
@@ -1109,8 +1124,17 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
                 summary = app.left.query_one(".pane_summary")
                 details = app.left.query_one(".pane_info")
+                footer = app.left.query_one(".pane_footer")
                 summary_text = str(summary.render())
                 self.assertTrue(details.visible)
+                self.assertEqual(footer.region.height, 6)
+                self.assertEqual(footer.styles.padding.top, 1)
+                self.assertEqual(footer.styles.border_top[0], "solid")
+                self.assertEqual(
+                    footer.styles.border_top[1].hex,
+                    "#E6D98A",
+                )
+                self.assertGreater(summary.region.y, app.left.table.region.bottom)
                 self.assertEqual(summary.content_region.height, 1)
                 self.assertIn("Capacity:", summary_text)
                 self.assertIn("Files:", summary_text)
