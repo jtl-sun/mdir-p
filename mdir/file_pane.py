@@ -127,6 +127,61 @@ class CachedEntry:
     modified_text: str = ""
 
 
+def scan_directory_entries(
+    path: Path,
+    show_hidden_system: bool,
+) -> list[CachedEntry]:
+    """Read directory metadata without touching Textual widget state."""
+    scanned: list[CachedEntry] = []
+    with os.scandir(path) as directory:
+        for item in directory:
+            try:
+                stat = item.stat()
+                attributes = int(getattr(stat, "st_file_attributes", 0))
+                if not show_hidden_system:
+                    if os.name == "nt":
+                        hidden = bool(
+                            attributes & legacy.FILE_ATTRIBUTE_HIDDEN
+                            or attributes & legacy.FILE_ATTRIBUTE_SYSTEM
+                        )
+                    else:
+                        hidden = item.name.startswith(".")
+                    if hidden:
+                        continue
+
+                is_directory = stat_module.S_ISDIR(stat.st_mode)
+                if (
+                    not is_directory
+                    and not stat_module.S_ISREG(stat.st_mode)
+                ):
+                    continue
+                scanned.append(
+                    CachedEntry(
+                        path=Path(item.path),
+                        is_directory=is_directory,
+                        size=0 if is_directory else int(stat.st_size),
+                        modified=float(stat.st_mtime),
+                        name_casefold=item.name.casefold(),
+                        extension=(
+                            ""
+                            if is_directory
+                            else os.path.splitext(item.name)[1]
+                            .lower()
+                            .lstrip(".")
+                        ),
+                        size_text=(
+                            "<DIR>"
+                            if is_directory
+                            else legacy.human_size(int(stat.st_size))
+                        ),
+                        modified_text=legacy.fmt_time(float(stat.st_mtime)),
+                    )
+                )
+            except OSError:
+                continue
+    return scanned
+
+
 class EditablePathFilePane(BaseFilePane):
     """File pane with a directly editable directory path bar."""
 
@@ -221,65 +276,24 @@ class EditablePathFilePane(BaseFilePane):
 
     def _scan_directory(self) -> None:
         """Scan once and retain all metadata needed by the table and summary."""
-        scanned: list[CachedEntry] = []
+        scanned = scan_directory_entries(
+            self.current_path,
+            self.show_hidden_system,
+        )
+        self._apply_scanned_entries(scanned, self.current_path)
 
-        with os.scandir(self.current_path) as directory:
-            for item in directory:
-                try:
-                    stat = item.stat()
-                    attributes = int(
-                        getattr(stat, "st_file_attributes", 0)
-                    )
-                    if not self.show_hidden_system:
-                        if os.name == "nt":
-                            hidden = bool(
-                                attributes & legacy.FILE_ATTRIBUTE_HIDDEN
-                                or attributes & legacy.FILE_ATTRIBUTE_SYSTEM
-                            )
-                        else:
-                            hidden = item.name.startswith(".")
-                        if hidden:
-                            continue
-
-                    is_directory = stat_module.S_ISDIR(stat.st_mode)
-                    if (
-                        not is_directory
-                        and not stat_module.S_ISREG(stat.st_mode)
-                    ):
-                        continue
-                    scanned.append(
-                        CachedEntry(
-                            path=Path(item.path),
-                            is_directory=is_directory,
-                            size=0 if is_directory else int(stat.st_size),
-                            modified=float(stat.st_mtime),
-                            name_casefold=item.name.casefold(),
-                            extension=(
-                                ""
-                                if is_directory
-                                else os.path.splitext(item.name)[1]
-                                .lower()
-                                .lstrip(".")
-                            ),
-                            size_text=(
-                                "<DIR>"
-                                if is_directory
-                                else legacy.human_size(int(stat.st_size))
-                            ),
-                            modified_text=legacy.fmt_time(
-                                float(stat.st_mtime)
-                            ),
-                        )
-                    )
-                except OSError:
-                    continue
-
+    def _apply_scanned_entries(
+        self,
+        scanned: list[CachedEntry],
+        scanned_path: Path,
+    ) -> None:
+        """Install a completed scan on the UI thread and sort its cache."""
         self.cached_entries = scanned
         self.metadata_by_path = {
             entry.path: entry for entry in scanned
         }
         self.marked.intersection_update(self.metadata_by_path)
-        self.cached_path = self.current_path
+        self.cached_path = scanned_path
         self.total_file_count = sum(
             not entry.is_directory for entry in scanned
         )

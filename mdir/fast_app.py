@@ -19,6 +19,7 @@ from .file_pane import (
     EditablePathFilePane,
     EditablePathApp,
     display_directory_path,
+    scan_directory_entries,
 )
 from .ui.rename import SlowRenameDataTable
 from . import core as legacy
@@ -450,6 +451,10 @@ class FastFileManagerApp(EditablePathApp):
     def __init__(self) -> None:
         self._last_drive_poll = 0.0
         self._drive_usage_cache: dict[str, tuple[float, str]] = {}
+        self._drive_usage_pending: set[str] = set()
+        self._drive_scan_running = False
+        self._directory_poll_running = False
+        self._directory_refresh_running = False
         self._directory_poll_timer = None
         super().__init__()
 
@@ -492,13 +497,19 @@ class FastFileManagerApp(EditablePathApp):
 
     def _poll_directory_changes(self) -> None:
         """Check both directory timestamps without blocking the UI thread."""
+        # Cancelling a Textual thread worker cannot interrupt a Windows
+        # filesystem call that is already blocked on a sleeping/disconnected
+        # drive. Never start a replacement while the previous poll is alive.
+        if self._directory_poll_running:
+            return
+        self._directory_poll_running = True
         paths = (
             ("left", self.left.current_path),
             ("right", self.right.current_path),
         )
         self._read_directory_tokens_in_background(paths)
 
-    @work(thread=True, exclusive=True, group="mdir-directory-poll")
+    @work(thread=True, group="mdir-directory-poll")
     def _read_directory_tokens_in_background(
         self,
         paths: tuple[tuple[str, Path], tuple[str, Path]],
@@ -511,7 +522,17 @@ class FastFileManagerApp(EditablePathApp):
             )
             for side, path in paths
         )
-        self.call_from_thread(self._apply_directory_changes, snapshots)
+        self.call_from_thread(self._finish_directory_poll, snapshots)
+
+    def _finish_directory_poll(
+        self,
+        snapshots: tuple[
+            tuple[str, Path, tuple[int, int] | None],
+            ...,
+        ],
+    ) -> None:
+        self._directory_poll_running = False
+        self._apply_directory_changes(snapshots)
 
     def _apply_directory_changes(
         self,
@@ -529,7 +550,10 @@ class FastFileManagerApp(EditablePathApp):
             self, "_archive_busy", False
         ):
             return
-        refreshed: list[str] = []
+        if self._directory_refresh_running:
+            return
+
+        requests = []
         for side, observed_path, token in snapshots:
             pane = self.left if side == "left" else self.right
             if pane.current_path != observed_path:
@@ -540,11 +564,108 @@ class FastFileManagerApp(EditablePathApp):
             selected = pane.selected_path()
             keep_name = selected.name if selected is not None else None
             previous_row = max(0, pane.table.cursor_row)
-            pane.refresh_listing(keep_name=keep_name)
+            requests.append(
+                (
+                    side,
+                    observed_path,
+                    token,
+                    keep_name,
+                    previous_row,
+                    pane.show_hidden_system,
+                    pane._listing_generation,
+                )
+            )
+
+        if requests:
+            self._directory_refresh_running = True
+            self._refresh_changed_directories_in_background(tuple(requests))
+
+    @work(thread=True, group="mdir-directory-refresh")
+    def _refresh_changed_directories_in_background(self, requests) -> None:
+        """Scan changed directories without blocking keyboard or mouse input."""
+        results = []
+        for (
+            side,
+            observed_path,
+            _observed_token,
+            keep_name,
+            previous_row,
+            show_hidden_system,
+            generation,
+        ) in requests:
+            try:
+                entries = scan_directory_entries(
+                    observed_path,
+                    show_hidden_system,
+                )
+                final_token = LargeDirectoryFilePane._read_directory_change_token(
+                    observed_path
+                )
+                error = None
+            except Exception as exc:
+                entries = None
+                final_token = None
+                error = str(exc)
+            results.append(
+                (
+                    side,
+                    observed_path,
+                    final_token,
+                    keep_name,
+                    previous_row,
+                    generation,
+                    entries,
+                    error,
+                )
+            )
+        self.call_from_thread(
+            self._finish_background_directory_refresh,
+            tuple(results),
+        )
+
+    def _finish_background_directory_refresh(self, results) -> None:
+        """Install background scan results only when their pane is unchanged."""
+        self._directory_refresh_running = False
+        if getattr(self, "_file_operation_busy", False) or getattr(
+            self, "_archive_busy", False
+        ):
+            return
+
+        refreshed: list[str] = []
+        errors: list[str] = []
+        for (
+            side,
+            observed_path,
+            final_token,
+            keep_name,
+            previous_row,
+            generation,
+            entries,
+            error,
+        ) in results:
+            pane = self.left if side == "left" else self.right
+            if (
+                pane.current_path != observed_path
+                or pane._listing_generation != generation
+            ):
+                continue
+            if entries is None:
+                if error:
+                    errors.append(f"{side.title()}: {error}")
+                continue
+
+            pane._apply_scanned_entries(entries, observed_path)
+            pane.large_directory_mode = (
+                len(entries) >= LARGE_DIRECTORY_THRESHOLD
+            )
+            pane._directory_change_token = final_token
+            pane._render_cached_rows(keep_name)
 
             if (
                 keep_name is not None
-                and selected not in pane.row_by_path
+                and not any(
+                    entry.path.name == keep_name for entry in entries
+                )
                 and pane.table.row_count
             ):
                 pane.table.move_cursor(
@@ -560,6 +681,8 @@ class FastFileManagerApp(EditablePathApp):
                 ("s: " if len(refreshed) > 1 else ": ") +
                 ", ".join(refreshed)
             )
+        elif errors:
+            self.set_status("Auto-refresh unavailable: " + " | ".join(errors))
 
     def on_unmount(self) -> None:
         if self._directory_poll_timer is not None:
@@ -678,9 +801,22 @@ class FastFileManagerApp(EditablePathApp):
         cached = self._drive_usage_cache.get(drive)
         if cached and now - cached[0] < DRIVE_USAGE_CACHE_SECONDS:
             return cached[1]
+        if drive not in self._drive_usage_pending:
+            self._drive_usage_pending.add(drive)
+            self._read_drive_usage_in_background(drive)
+        # Keep showing a previous value while it is refreshed. A disconnected
+        # network drive may never answer, but it must not freeze the UI.
+        return cached[1] if cached else f"{drive}  checking capacity..."
+
+    @work(thread=True, group="mdir-drive-usage")
+    def _read_drive_usage_in_background(self, drive: str) -> None:
         value = legacy.drive_usage_text(drive)
-        self._drive_usage_cache[drive] = (now, value)
-        return value
+        self.call_from_thread(self._apply_drive_usage, drive, value)
+
+    def _apply_drive_usage(self, drive: str, value: str) -> None:
+        self._drive_usage_pending.discard(drive)
+        self._drive_usage_cache[drive] = (time.monotonic(), value)
+        self.update_drive_bar()
 
     def update_drive_bar(self) -> None:
         """Update drive buttons while caching potentially slow capacity calls."""
@@ -729,15 +865,23 @@ class FastFileManagerApp(EditablePathApp):
     def auto_detect_drives(self) -> None:
         """Schedule a throttled drive scan outside the UI thread."""
         now = time.monotonic()
-        if now - self._last_drive_poll < DRIVE_POLL_INTERVAL_SECONDS:
+        if (
+            self._drive_scan_running
+            or now - self._last_drive_poll < DRIVE_POLL_INTERVAL_SECONDS
+        ):
             return
         self._last_drive_poll = now
+        self._drive_scan_running = True
         self._scan_drives_in_background()
 
-    @work(thread=True, exclusive=True, group="mdir-drive-scan")
+    @work(thread=True, group="mdir-drive-scan")
     def _scan_drives_in_background(self) -> None:
         latest = legacy.list_windows_drives()
-        self.call_from_thread(self._apply_detected_drives, latest)
+        self.call_from_thread(self._finish_drive_scan, latest)
+
+    def _finish_drive_scan(self, latest: list[str]) -> None:
+        self._drive_scan_running = False
+        self._apply_detected_drives(latest)
 
     def _apply_detected_drives(self, latest: list[str]) -> None:
         if latest == self.available_drives:

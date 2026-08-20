@@ -2383,6 +2383,9 @@ class MDir(App):
         )
 
     def action_mkdir(self) -> None:
+        selected = self.active.selected_path()
+        initial_name = selected.name if selected is not None else ""
+
         def got_name(name: Optional[str]) -> None:
             if not name:
                 return
@@ -2395,7 +2398,10 @@ class MDir(App):
             except Exception as exc:
                 self.set_status(f"MkDir failed: {exc}")
 
-        self.push_screen(self.PROMPT_SCREEN("New directory name:"), got_name)
+        self.push_screen(
+            self.PROMPT_SCREEN("New directory name:", initial_name),
+            got_name,
+        )
 
     def action_delete(self) -> None:
         items = self.active.selected_items()

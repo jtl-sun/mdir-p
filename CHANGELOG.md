@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.23.4
+
+- The MkDir dialog now starts with the selected file or directory name and
+  selects the whole value, making it easy to edit into a new directory name.
+- The parent-directory (`..`) row continues to open MkDir with an empty name.
+- Prevented idle directory and drive polling from accumulating blocked worker
+  threads when a network, removable, or sleeping drive stops responding.
+- Moved automatic directory rescans and drive-capacity reads off the UI thread
+  so delayed filesystem calls cannot block keyboard or mouse input.
+
 ## 2.23.3
 
 - Directory paths in both green path bars now always end with a separator,

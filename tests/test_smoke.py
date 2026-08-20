@@ -814,6 +814,49 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(BaseApp.CONFIRM_SCREEN, CompactConfirmScreen)
         self.assertIs(BaseApp.VIEWER_SCREEN, CompactViewerScreen)
 
+    async def test_mkdir_uses_selected_name_as_editable_default(self) -> None:
+        from textual.widgets import Input
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            selected_file = root / "Req-20260817-New developments.xlsx"
+            selected_file.write_text("sample", encoding="utf-8")
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                app.left.table.move_cursor(
+                    row=app.left.row_by_path[selected_file],
+                    column=0,
+                )
+                app.action_mkdir()
+                await pilot.pause()
+
+                field = app.screen.query_one("#compact_input", Input)
+                self.assertEqual(field.value, selected_file.name)
+                self.assertEqual(field.selection.start, 0)
+                self.assertEqual(field.selection.end, len(selected_file.name))
+
+                new_name = "Req-20260817-New developments revised"
+                field.value = new_name
+                await pilot.press("enter")
+                for _ in range(100):
+                    if (root / new_name).is_dir():
+                        break
+                    await pilot.pause(0.02)
+
+                self.assertTrue((root / new_name).is_dir())
+                app.exit()
+
     async def test_enter_confirms_move_and_delete_dialogs(self) -> None:
         """Move/Delete must run when Enter is pressed on their dialog."""
         from textual.widgets import Button
@@ -1097,6 +1140,83 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn(victim, app.left.entries)
                 self.assertNotIn(victim, app.right.entries)
                 app.exit()
+
+    async def test_blocked_idle_poll_does_not_freeze_input_or_multiply_workers(
+        self,
+    ) -> None:
+        from mdir.fast_app import LargeDirectoryFilePane
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for index in range(3):
+                (root / f"item-{index}.txt").write_text(
+                    str(index),
+                    encoding="utf-8",
+                )
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                        and not app._directory_poll_running
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                app._directory_poll_timer.stop()
+                started = threading.Event()
+                release = threading.Event()
+                calls = 0
+                original = LargeDirectoryFilePane._read_directory_change_token
+
+                def blocked_token(path: Path):
+                    nonlocal calls
+                    calls += 1
+                    started.set()
+                    release.wait(timeout=3)
+                    return original(path)
+
+                with patch.object(
+                    LargeDirectoryFilePane,
+                    "_read_directory_change_token",
+                    side_effect=blocked_token,
+                ):
+                    app._poll_directory_changes()
+                    for _ in range(100):
+                        if started.is_set():
+                            break
+                        await pilot.pause(0.01)
+
+                    app._poll_directory_changes()
+                    await pilot.pause(0.05)
+                    self.assertEqual(calls, 1)
+
+                    before = app.left.table.cursor_row
+                    await pilot.press("down")
+                    self.assertNotEqual(app.left.table.cursor_row, before)
+
+                    release.set()
+                    for _ in range(100):
+                        if not app._directory_poll_running:
+                            break
+                        await pilot.pause(0.01)
+                app.exit()
+
+    def test_drive_capacity_refresh_is_scheduled_only_once(self) -> None:
+        app = MDirApp()
+        with patch.object(app, "_read_drive_usage_in_background") as worker:
+            first = app._cached_drive_usage_text("Z:")
+            second = app._cached_drive_usage_text("Z:")
+
+        self.assertEqual(first, "Z:  checking capacity...")
+        self.assertEqual(second, first)
+        worker.assert_called_once_with("Z:")
 
     async def test_pane_details_remain_visible_below_summary(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
