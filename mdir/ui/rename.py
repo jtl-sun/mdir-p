@@ -40,8 +40,12 @@ class SlowRenameDataTable(legacy.MDirDataTable):
         ),
     ]
 
-    EXTENDED_DOUBLE_CLICK_MAX_SECONDS = 0.95
-    SLOW_CLICK_MIN_SECONDS = 1.10
+    # Windows Terminal does not always preserve Textual's click-chain value,
+    # so classify two chain=1 clicks ourselves. Keep a short dead zone
+    # between Open and Rename: a quick pair opens the item, while an
+    # intentionally slower pair starts inline rename.
+    FAST_DOUBLE_CLICK_MAX_SECONDS = 0.75
+    SLOW_CLICK_MIN_SECONDS = 1.00
     SLOW_CLICK_MAX_SECONDS = 3.00
 
     def __init__(self, *args, **kwargs) -> None:
@@ -58,7 +62,7 @@ class SlowRenameDataTable(legacy.MDirDataTable):
         if row != self._rename_click_row:
             return None
         elapsed = now - self._rename_click_time
-        if 0.0 <= elapsed <= self.EXTENDED_DOUBLE_CLICK_MAX_SECONDS:
+        if 0.0 <= elapsed <= self.FAST_DOUBLE_CLICK_MAX_SECONDS:
             return "open"
         if self.SLOW_CLICK_MIN_SECONDS <= elapsed <= self.SLOW_CLICK_MAX_SECONDS:
             return "rename"

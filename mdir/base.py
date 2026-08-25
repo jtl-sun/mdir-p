@@ -4,7 +4,7 @@ import os
 import time
 from pathlib import Path
 from threading import Event
-from typing import Optional
+from typing import Mapping, Optional
 
 from textual import work
 
@@ -18,7 +18,13 @@ from .ui.dialogs import (
     CopyRequest,
     FileOperationProgressScreen,
 )
-from .file_operations import FileOperation, FileOperationResult, run_file_operation
+from .file_operations import (
+    PERMANENT_DELETE_THRESHOLD_BYTES,
+    FileOperation,
+    FileOperationResult,
+    destination_conflicts,
+    run_file_operation,
+)
 from .ui.batch_rename import (
     BatchRenameScreen,
     RenamePair,
@@ -39,6 +45,110 @@ from .ui.archive import (
 
 
 KOREAN_WIDTH_COMPATIBILITY = enable_windows_korean_width_compatibility()
+
+
+def move_confirmation_message(
+    items: list[Path],
+    destination: Path,
+    metadata_by_path: Mapping[Path, object] | None = None,
+) -> str:
+    """Build a compact Move summary without listing selected filenames.
+
+    Cached pane metadata is preferred so selecting thousands of files does not
+    trigger thousands of additional filesystem calls just to open the dialog.
+    Folder contents are intentionally not scanned here; the displayed capacity
+    is the total of the selected files, matching the pane's capacity summary.
+    """
+    file_count = 0
+    folder_count = 0
+    total_size = 0
+    metadata = metadata_by_path or {}
+
+    for path in items:
+        entry = metadata.get(path)
+        if entry is not None:
+            is_directory = bool(getattr(entry, "is_directory", False))
+            size = int(getattr(entry, "size", 0))
+        else:
+            try:
+                is_directory = path.is_dir()
+                size = 0 if is_directory else int(path.stat().st_size)
+            except OSError:
+                is_directory = False
+                size = 0
+
+        if is_directory:
+            folder_count += 1
+        else:
+            file_count += 1
+            total_size += size
+
+    return (
+        f"Selected: {file_count:,} file(s), {folder_count:,} folder(s)\n"
+        f"Total file size: {legacy.human_size(total_size)}\n"
+        f"Move to:\n{destination}"
+    )
+
+
+def overwrite_confirmation_message(
+    operation: FileOperation,
+    conflicts: list[Path],
+) -> str:
+    """Build a small warning without expanding a large selection list."""
+    count = len(conflicts)
+    noun = "item" if count == 1 else "items"
+    verb = "exists" if count == 1 else "exist"
+    pronoun = "it" if count == 1 else "them"
+    preview = "\n".join(path.name for path in conflicts[:3])
+    remainder = count - min(count, 3)
+    if remainder:
+        preview += f"\n... and {remainder:,} more"
+    return (
+        f"{count:,} same-name {noun} already {verb}.\n"
+        f"{operation.title()} will overwrite {pronoun}. Continue?\n"
+        f"{preview}"
+    )
+
+
+def delete_confirmation_message(
+    items: list[Path],
+    metadata_by_path: Mapping[Path, object] | None = None,
+) -> str:
+    """Summarize which selected items are recycled or permanently deleted."""
+    file_count = 0
+    folder_count = 0
+    total_size = 0
+    permanent_count = 0
+    metadata = metadata_by_path or {}
+
+    for path in items:
+        entry = metadata.get(path)
+        if entry is not None:
+            is_directory = bool(getattr(entry, "is_directory", False))
+            size = int(getattr(entry, "size", 0))
+        else:
+            try:
+                is_directory = path.is_dir() and not path.is_symlink()
+                size = 0 if is_directory else int(path.stat().st_size)
+            except OSError:
+                is_directory = False
+                size = 0
+
+        if is_directory:
+            folder_count += 1
+            continue
+        file_count += 1
+        total_size += size
+        if size >= PERMANENT_DELETE_THRESHOLD_BYTES:
+            permanent_count += 1
+
+    recycled_count = len(items) - permanent_count
+    return (
+        f"Selected: {file_count:,} file(s), {folder_count:,} folder(s)\n"
+        f"Total file size: {legacy.human_size(total_size)}\n"
+        f"Recycle Bin: {recycled_count:,} item(s)\n"
+        f"Permanent delete (10 GB or larger): {permanent_count:,} file(s)"
+    )
 
 def windows_volume_label(drive: str) -> str:
     """Return a Windows volume label without querying drive capacity."""
@@ -339,12 +449,40 @@ class BaseApp(AIShellApp):
                 self.set_status("Copy cancelled.")
                 return
 
-            self._start_file_operation(
-                "copy",
-                tuple(items),
+            selected = tuple(items)
+            conflicts = destination_conflicts(
+                selected,
                 destination,
-                source_side,
                 new_name=request.new_name,
+            )
+
+            def start_copy(overwrite: bool = False) -> None:
+                self._start_file_operation(
+                    "copy",
+                    selected,
+                    destination,
+                    source_side,
+                    new_name=request.new_name,
+                    overwrite=overwrite,
+                )
+
+            if not conflicts:
+                start_copy()
+                return
+
+            def overwrite_confirmed(ok: bool) -> None:
+                if not ok:
+                    self.set_status("Copy cancelled; existing items kept.")
+                    return
+                start_copy(overwrite=True)
+
+            self.push_screen(
+                self.CONFIRM_SCREEN(
+                    overwrite_confirmation_message("copy", conflicts),
+                    title="Overwrite warning",
+                    compact=True,
+                ),
+                overwrite_confirmed,
             )
 
         self.push_screen(
@@ -358,21 +496,48 @@ class BaseApp(AIShellApp):
             self.set_status("Nothing selected.")
             return
         destination = self.passive.current_path
-        names = ", ".join(path.name for path in items[:3])
-        if len(items) > 3:
-            names += f" (+{len(items) - 3})"
         source_side = self.active_side
+        message = move_confirmation_message(
+            items,
+            destination,
+            getattr(self.active, "metadata_by_path", None),
+        )
 
         def confirmed(ok: bool) -> None:
             if not ok:
                 self.set_status("Move cancelled.")
                 return
-            self._start_file_operation(
-                "move", tuple(items), destination, source_side
+            selected = tuple(items)
+            conflicts = destination_conflicts(selected, destination)
+            if not conflicts:
+                self._start_file_operation(
+                    "move", selected, destination, source_side
+                )
+                return
+
+            def overwrite_confirmed(overwrite_ok: bool) -> None:
+                if not overwrite_ok:
+                    self.set_status("Move cancelled; existing items kept.")
+                    return
+                self._start_file_operation(
+                    "move",
+                    selected,
+                    destination,
+                    source_side,
+                    overwrite=True,
+                )
+
+            self.push_screen(
+                self.CONFIRM_SCREEN(
+                    overwrite_confirmation_message("move", conflicts),
+                    title="Overwrite warning",
+                    compact=True,
+                ),
+                overwrite_confirmed,
             )
 
         self.push_screen(
-            self.CONFIRM_SCREEN(f"Move {names}\nTO:\n{destination} ?"),
+            self.CONFIRM_SCREEN(message, title="Move"),
             confirmed,
         )
 
@@ -381,10 +546,11 @@ class BaseApp(AIShellApp):
         if not items:
             self.set_status("Nothing selected.")
             return
-        names = "\n".join(f"  {path.name}" for path in items[:4])
-        if len(items) > 4:
-            names += f"\n  ... and {len(items) - 4} more"
         source_side = self.active_side
+        message = delete_confirmation_message(
+            items,
+            getattr(self.active, "metadata_by_path", None),
+        )
 
         def confirmed(ok: bool) -> None:
             if not ok:
@@ -395,9 +561,7 @@ class BaseApp(AIShellApp):
             )
 
         self.push_screen(
-            self.CONFIRM_SCREEN(
-                "PERMANENT DELETE - cannot be undone:\n" + names
-            ),
+            self.CONFIRM_SCREEN(message, title="Delete"),
             confirmed,
         )
 
@@ -409,6 +573,7 @@ class BaseApp(AIShellApp):
         source_side: str,
         *,
         new_name: str | None = None,
+        overwrite: bool = False,
     ) -> None:
         """Open progress UI and start the filesystem work off the UI thread."""
         if self._file_operation_busy:
@@ -429,6 +594,7 @@ class BaseApp(AIShellApp):
             destination,
             source_side,
             new_name,
+            overwrite,
             cancel_event,
         )
 
@@ -440,6 +606,7 @@ class BaseApp(AIShellApp):
         destination: Path | None,
         source_side: str,
         new_name: str | None,
+        overwrite: bool,
         cancel_event: Event,
     ) -> None:
         """Run large file batches without blocking the Textual event loop."""
@@ -462,6 +629,7 @@ class BaseApp(AIShellApp):
                 items,
                 destination,
                 new_name=new_name,
+                overwrite=overwrite,
                 cancel_event=cancel_event,
                 progress=report,
             )
@@ -519,6 +687,11 @@ class BaseApp(AIShellApp):
         summary = (
             f"{result.operation.title()}: {result.completed:,} completed"
         )
+        if result.operation == "delete":
+            summary += (
+                f" ({result.recycled:,} recycled, "
+                f"{result.permanently_deleted:,} permanently deleted)"
+            )
         if result.skipped:
             summary += f", {result.skipped:,} skipped"
         if result.errors:

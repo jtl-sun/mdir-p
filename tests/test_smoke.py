@@ -53,8 +53,14 @@ from mdir.ui.archive import (
     extract_zip_archive,
     next_available_zip_path,
 )
-from mdir.file_operations import FileOperationResult, run_file_operation
-from mdir.ui.dialogs import FileOperationProgressScreen
+from mdir.file_operations import (
+    PERMANENT_DELETE_THRESHOLD_BYTES,
+    FileOperationResult,
+    destination_conflicts,
+    run_file_operation,
+    should_permanently_delete,
+)
+from mdir.ui.dialogs import CompactConfirmScreen, FileOperationProgressScreen
 from mdir.window import APP_WINDOW_TITLE, terminal_icon_path
 from mdir.file_pane import (
     CachedEntry,
@@ -63,9 +69,86 @@ from mdir.file_pane import (
     path_segment_target,
 )
 from mdir.fast_app import AUTO_REFRESH_ROW_BATCH_SIZE
+from mdir.base import delete_confirmation_message, move_confirmation_message
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    def test_delete_policy_recycles_small_files_and_folders(self) -> None:
+        self.assertFalse(
+            should_permanently_delete(is_directory=False, size=1024)
+        )
+        self.assertFalse(
+            should_permanently_delete(
+                is_directory=True,
+                size=PERMANENT_DELETE_THRESHOLD_BYTES * 100,
+            )
+        )
+        self.assertTrue(
+            should_permanently_delete(
+                is_directory=False,
+                size=PERMANENT_DELETE_THRESHOLD_BYTES,
+            )
+        )
+
+    def test_delete_confirmation_is_compact_and_shows_destination_policy(
+        self,
+    ) -> None:
+        small = Path("small-private-name.m4a")
+        large = Path("large-private-name.mkv")
+        folder = Path("private-folder")
+        metadata = {
+            small: CachedEntry(small, False, 1024, 0),
+            large: CachedEntry(
+                large,
+                False,
+                PERMANENT_DELETE_THRESHOLD_BYTES,
+                0,
+            ),
+            folder: CachedEntry(folder, True, 0, 0),
+        }
+
+        message = delete_confirmation_message(
+            [small, large, folder], metadata
+        )
+
+        self.assertIn("Selected: 2 file(s), 1 folder(s)", message)
+        self.assertIn("Recycle Bin: 2 item(s)", message)
+        self.assertIn("Permanent delete (10 GB or larger): 1 file(s)", message)
+        self.assertNotIn("private-name", message)
+        self.assertNotIn("private-folder", message)
+
+    def test_move_confirmation_is_compact_and_uses_cached_sizes(self) -> None:
+        destination = Path(r"F:\destination")
+        files = [Path(f"very-long-private-name-{index}.m4a") for index in range(8)]
+        folder = Path("selected-folder")
+        metadata = {
+            path: CachedEntry(
+                path=path,
+                is_directory=False,
+                size=10 * 1024 * 1024,
+                modified=0,
+            )
+            for path in files
+        }
+        metadata[folder] = CachedEntry(
+            path=folder,
+            is_directory=True,
+            size=0,
+            modified=0,
+        )
+
+        message = move_confirmation_message(
+            files + [folder],
+            destination,
+            metadata,
+        )
+
+        self.assertIn("Selected: 8 file(s), 1 folder(s)", message)
+        self.assertIn("Total file size: 80 MB", message)
+        self.assertIn(f"Move to:\n{destination}", message)
+        self.assertNotIn("very-long-private-name", message)
+        self.assertNotIn("selected-folder", message)
+
     def test_directory_path_display_ends_with_separator(self) -> None:
         self.assertEqual(
             display_directory_path(r"D:\pg\wk\PO"),
@@ -159,17 +242,20 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((reserved, image_type), (0, 1))
         self.assertGreaterEqual(image_count, 4)
 
-    def test_slow_click_rename_waits_beyond_extended_double_click(self) -> None:
+    def test_fast_double_click_opens_and_slow_double_click_renames(self) -> None:
         from mdir.ui.rename import SlowRenameDataTable
 
         table = SlowRenameDataTable()
         table._rename_click_row = 7
         table._rename_click_time = 10.0
 
-        self.assertEqual(table._repeated_click_action(7, 10.80), "open")
-        self.assertIsNone(table._repeated_click_action(7, 11.00))
-        self.assertEqual(table._repeated_click_action(7, 11.11), "rename")
-        self.assertIsNone(table._repeated_click_action(8, 11.50))
+        self.assertEqual(table._repeated_click_action(7, 10.40), "open")
+        self.assertEqual(table._repeated_click_action(7, 10.75), "open")
+        self.assertIsNone(table._repeated_click_action(7, 10.90))
+        self.assertEqual(table._repeated_click_action(7, 11.00), "rename")
+        self.assertEqual(table._repeated_click_action(7, 13.00), "rename")
+        self.assertIsNone(table._repeated_click_action(7, 13.01))
+        self.assertIsNone(table._repeated_click_action(8, 10.50))
 
     async def test_clicking_empty_table_space_switches_both_panes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -235,6 +321,42 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(delete_result.completed, 1_005)
             self.assertFalse(delete_result.errors)
             self.assertFalse(any(moved.iterdir()))
+
+    def test_copy_and_move_require_explicit_overwrite_approval(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_dir = root / "source"
+            destination = root / "destination"
+            source_dir.mkdir()
+            destination.mkdir()
+
+            source = source_dir / "same-name.txt"
+            target = destination / source.name
+            source.write_text("new copy", encoding="utf-8")
+            target.write_text("existing copy", encoding="utf-8")
+
+            self.assertEqual(
+                destination_conflicts([source], destination),
+                [target],
+            )
+            blocked = run_file_operation("copy", [source], destination)
+            self.assertEqual(blocked.completed, 0)
+            self.assertEqual(blocked.skipped, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), "existing copy")
+
+            copied = run_file_operation(
+                "copy", [source], destination, overwrite=True
+            )
+            self.assertEqual(copied.completed, 1)
+            self.assertEqual(target.read_text(encoding="utf-8"), "new copy")
+
+            source.write_text("new move", encoding="utf-8")
+            moved = run_file_operation(
+                "move", [source], destination, overwrite=True
+            )
+            self.assertEqual(moved.completed, 1)
+            self.assertFalse(source.exists())
+            self.assertEqual(target.read_text(encoding="utf-8"), "new move")
 
     def test_large_file_operation_can_cancel_between_items(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -877,6 +999,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_mkdir_uses_selected_name_as_editable_default(self) -> None:
         from textual.widgets import Input
+        from mdir.ui.inputs import ThinCursorInput
 
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -903,9 +1026,16 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
 
                 field = app.screen.query_one("#compact_input", Input)
+                self.assertIsInstance(field, ThinCursorInput)
                 self.assertEqual(field.value, selected_file.name)
                 self.assertEqual(field.selection.start, 0)
                 self.assertEqual(field.selection.end, len(selected_file.name))
+                field.cursor_position = 4
+                field._cursor_visible = True
+                rendered = field.render_line(0).text
+                self.assertIn("│", rendered)
+                self.assertIn("Req-", rendered)
+                self.assertIn("20260817-New developments.xlsx", rendered)
 
                 new_name = "Req-20260817-New developments revised"
                 field.value = new_name
@@ -983,6 +1113,59 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertFalse(moved.exists())
                 app.exit()
 
+    async def test_copy_and_move_show_small_warning_before_overwrite(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_root = root / "left"
+            right_root = root / "right"
+            left_root.mkdir()
+            right_root.mkdir()
+            source = left_root / "same-name.txt"
+            target = right_root / source.name
+            source.write_text("new", encoding="utf-8")
+            target.write_text("keep", encoding="utf-8")
+
+            app = MDirApp()
+            app.left_start = left_root
+            app.right_start = right_root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                app.left.marked = {source}
+                app.action_copy()
+                await pilot.pause()
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertIsInstance(app.screen, CompactConfirmScreen)
+                self.assertEqual(app.screen.dialog_title, "Overwrite warning")
+                self.assertLessEqual(app.screen.preferred_width, 58)
+                await pilot.press("escape")
+                await pilot.pause()
+                self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+                self.assertTrue(source.exists())
+
+                app.left.marked = {source}
+                app.action_move()
+                await pilot.pause()
+                await pilot.press("enter")
+                await pilot.pause()
+                self.assertIsInstance(app.screen, CompactConfirmScreen)
+                self.assertEqual(app.screen.dialog_title, "Overwrite warning")
+                await pilot.press("escape")
+                await pilot.pause()
+                self.assertEqual(target.read_text(encoding="utf-8"), "keep")
+                self.assertTrue(source.exists())
+                app.exit()
+
     async def test_background_file_operation_ui_can_cancel_without_freezing(
         self,
     ) -> None:
@@ -1003,6 +1186,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 destination=None,
                 *,
                 new_name=None,
+                overwrite=False,
                 cancel_event=None,
                 progress=None,
             ):
@@ -1052,6 +1236,86 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
                     self.assertFalse(app._file_operation_busy)
                     self.assertFalse(right_root.joinpath(source.name).exists())
+                    app.exit()
+
+    async def test_cancel_immediately_closes_modal_during_stuck_os_call(
+        self,
+    ) -> None:
+        """Cancel must restore input before a non-interruptible call returns."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_root = root / "left"
+            right_root = root / "right"
+            left_root.mkdir()
+            right_root.mkdir()
+            source = left_root / "delayed-delete.txt"
+            source.touch()
+            worker_started = threading.Event()
+            release_worker = threading.Event()
+
+            def stuck_operation(
+                operation,
+                items,
+                destination=None,
+                *,
+                new_name=None,
+                overwrite=False,
+                cancel_event=None,
+                progress=None,
+            ):
+                worker_started.set()
+                release_worker.wait(timeout=5)
+                return FileOperationResult(
+                    operation=operation,
+                    total=len(tuple(items)),
+                    cancelled=bool(
+                        cancel_event is not None and cancel_event.is_set()
+                    ),
+                )
+
+            app = MDirApp()
+            app.left_start = left_root
+            app.right_start = right_root
+            app._save_paths = lambda: None
+
+            with patch("mdir.base.run_file_operation", stuck_operation):
+                async with app.run_test(size=(100, 24)) as pilot:
+                    for _ in range(100):
+                        if (
+                            app.left.initial_listing_complete
+                            and app.right.initial_listing_complete
+                        ):
+                            break
+                        await pilot.pause(0.02)
+
+                    app.set_active("left")
+                    app.left.marked = {source}
+                    app.action_delete()
+                    await pilot.press("enter")
+                    for _ in range(100):
+                        if worker_started.is_set():
+                            break
+                        await pilot.pause(0.01)
+
+                    self.assertIsInstance(
+                        app.screen, FileOperationProgressScreen
+                    )
+                    await pilot.press("escape")
+                    await pilot.pause()
+
+                    self.assertNotIsInstance(
+                        app.screen, FileOperationProgressScreen
+                    )
+                    self.assertTrue(app._file_operation_busy)
+                    app.set_active("right")
+                    self.assertEqual(app.active_side, "right")
+
+                    release_worker.set()
+                    for _ in range(200):
+                        if not app._file_operation_busy:
+                            break
+                        await pilot.pause(0.01)
+                    self.assertFalse(app._file_operation_busy)
                     app.exit()
 
     async def test_shift_range_and_fast_right_drag_do_not_skip_rows(self) -> None:
@@ -1354,6 +1618,106 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                         if not app._directory_poll_running:
                             break
                         await pilot.pause(0.01)
+                app.exit()
+
+    async def test_large_navigation_scan_is_non_blocking_and_prioritizes_first_rows(
+        self,
+    ) -> None:
+        from mdir.fast_app import (
+            FIRST_VISIBLE_ROW_BATCH_SIZE,
+            LISTING_ROW_BATCH_SIZE,
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                started = threading.Event()
+                release = threading.Event()
+                fake_entries = [
+                    CachedEntry(
+                        path=root / f"item-{index:05d}.jpg",
+                        is_directory=False,
+                        size=index,
+                        modified=0.0,
+                        name_casefold=f"item-{index:05d}.jpg",
+                        extension="jpg",
+                        size_text=f"{index} B",
+                        modified_text="1970-01-01 00:00:00",
+                    )
+                    for index in range(LISTING_ROW_BATCH_SIZE + 400)
+                ]
+                batch_sizes: list[int] = []
+                original_add_rows = app.left.table.add_rows
+
+                def blocked_scan(_path, _show_hidden_system):
+                    started.set()
+                    release.wait(timeout=3)
+                    return fake_entries
+
+                def add_rows_instrumented(rows):
+                    batch = list(rows)
+                    batch_sizes.append(len(batch))
+                    return original_add_rows(batch)
+
+                try:
+                    with (
+                        patch(
+                            "mdir.fast_app.scan_directory_entries",
+                            side_effect=blocked_scan,
+                        ),
+                        patch.object(
+                            app.left.table,
+                            "add_rows",
+                            side_effect=add_rows_instrumented,
+                        ),
+                    ):
+                        app.set_active("left")
+                        app.left.refresh_listing()
+                        for _ in range(100):
+                            if started.is_set():
+                                break
+                            await pilot.pause(0.01)
+
+                        self.assertTrue(started.is_set())
+                        self.assertFalse(app.left.initial_listing_complete)
+
+                        # Input remains live even while the filesystem thread
+                        # is deliberately blocked.
+                        await pilot.press("tab")
+                        self.assertEqual(app.active_side, "right")
+
+                        release.set()
+                        for _ in range(300):
+                            if app.left.initial_listing_complete:
+                                break
+                            await pilot.pause(0.01)
+                finally:
+                    release.set()
+
+                self.assertTrue(app.left.initial_listing_complete)
+                self.assertEqual(app.left.table.row_count, len(fake_entries) + 1)
+                self.assertGreater(len(batch_sizes), 1)
+                self.assertLessEqual(
+                    batch_sizes[0],
+                    FIRST_VISIBLE_ROW_BATCH_SIZE,
+                )
+                self.assertLessEqual(
+                    max(batch_sizes[1:]),
+                    LISTING_ROW_BATCH_SIZE,
+                )
                 app.exit()
 
     def test_drive_capacity_refresh_is_scheduled_only_once(self) -> None:

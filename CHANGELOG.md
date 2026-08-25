@@ -1,5 +1,88 @@
 # Changelog
 
+## 2.23.15
+
+- Show a compact warning immediately before Copy or Move would overwrite an
+  existing same-name item.
+- Keep both the source and existing destination unchanged when the overwrite
+  warning is cancelled.
+- Require explicit overwrite approval in the background file-operation engine
+  as a second safety layer.
+
+## 2.23.14
+
+- Recalibrate file-list mouse timing: two clicks within 0.75 seconds open the
+  item, while an intentional slower second click after 1.00 seconds opens
+  Rename.
+- Add a short neutral interval between the two actions to prevent a borderline
+  click from opening the wrong operation.
+
+## 2.23.13
+
+- Replace full-cell block cursors with a thin vertical insertion bar in every
+  single-line input field.
+- Apply the same cursor to Rename, MkDir, Copy/Save As, path editing, search,
+  archive, shortcut, column-width, and Batch Rename fields.
+- Keep drag-selected text visibly highlighted while showing the insertion
+  point independently as a narrow bar.
+
+## 2.23.12
+
+- Make the AI Stop button force-kill the entire Codex, PowerShell, Claude,
+  Gemini, or Ollama process tree instead of only asking the parent process to
+  terminate.
+- Create AI providers in an isolated Windows process group (or POSIX session)
+  so child commands cannot continue after Stop.
+- Run Windows `taskkill /T /F` outside the UI thread, keeping mDIR responsive
+  while the provider tree is being terminated.
+- Arm force-stop during the short startup race so a process launched just
+  after Stop is immediately killed as well.
+
+## 2.23.11
+
+- Close the file-operation progress window immediately when Cancel or Escape
+  is pressed, so a delayed Windows delete/recycle call cannot trap the user in
+  a modal dialog.
+- Let the current non-interruptible Windows filesystem call finish safely in
+  its existing background worker while preventing any later selected items
+  from starting.
+- Keep pane navigation, mouse input, keyboard input, and Quit available after
+  a cancellation request.
+
+## 2.23.10
+
+- Send files smaller than 10 GB and selected folders to the Windows Recycle
+  Bin instead of deleting them permanently.
+- Permanently delete only individual files of 10 GB or larger.
+- Replace Delete's filename list with a compact summary of selected counts,
+  total file size, Recycle Bin items, and permanent-delete items.
+- Never fall back to permanent deletion when Windows cannot recycle an item;
+  report the failure and leave that item untouched.
+
+## 2.23.9
+
+- Replace the long filename list in the Move confirmation with a compact
+  summary showing selected file count, folder count, total selected-file size,
+  and destination directory.
+- Reuse the active pane's cached metadata so the Move dialog opens quickly
+  even when thousands of files are selected.
+
+## 2.23.8
+
+- Move directory scanning off the UI thread when opening, refreshing, or
+  switching large folders, keeping keyboard and mouse input responsive.
+- Show the first 250 rows as soon as scanning finishes, then populate the
+  remaining rows in responsive batches instead of blocking on one full table.
+- Cancel obsolete listing work when the user navigates to another directory
+  before the previous large listing completes.
+
+## 2.23.7
+
+- Prevent slightly slow double-clicks from opening Rename when Windows
+  Terminal loses the native click-chain value.
+- Extend the double-click Open protection window to 1.60 seconds and require
+  at least 2.00 seconds before a repeated click can start Rename.
+
 ## 2.23.6
 
 - Use the requested safe Batch Rename defaults: name `[N]`, extension `[E]`,

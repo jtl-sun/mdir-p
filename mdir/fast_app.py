@@ -34,7 +34,8 @@ DRIVE_USAGE_CACHE_SECONDS = 30.0
 DIRECTORY_POLL_INTERVAL_SECONDS = 0.75
 FILE_LIST_BACKGROUND = "#1e1e1e"
 INITIAL_LISTING_DELAY_SECONDS = 0.01
-INITIAL_ROW_BATCH_SIZE = 2_000
+FIRST_VISIBLE_ROW_BATCH_SIZE = 250
+LISTING_ROW_BATCH_SIZE = 1_500
 AUTO_REFRESH_ROW_BATCH_SIZE = 500
 UI_HEARTBEAT_INTERVAL_SECONDS = 1.0
 UI_HANG_THRESHOLD_SECONDS = 15.0
@@ -225,21 +226,61 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         self._initial_listing_started = True
         self._listing_generation += 1
         generation = self._listing_generation
+        observed_path = self.current_path
         self.run_worker(
-            self._load_initial_listing(generation),
+            self._load_directory_listing(
+                generation,
+                observed_path,
+                None,
+            ),
             name=f"{self.id}-initial-listing",
-            group="initial-listing",
+            group=f"{self.id}-directory-listing",
             exclusive=True,
             exit_on_error=False,
         )
 
-    async def _load_initial_listing(self, generation: int) -> None:
-        """Populate startup rows in responsive batches after the shell is visible."""
+    def _show_listing_loading(self, observed_path: Path) -> None:
+        """Clear stale rows and return control before a directory scan starts."""
+        self.table.clear(columns=False)
+        self.entries.clear()
+        self.row_by_path.clear()
+        self.search_rows.clear()
+        self.cached_entries.clear()
+        self.metadata_by_path.clear()
+        self.cached_path = None
+        self.total_file_count = 0
+        self.total_folder_count = 0
+        self.total_file_size = 0
+        self.query_one(".pane_info", Static).update(
+            f"Loading directory...\nPath: {observed_path}"
+        )
+        self.query_one(".pane_summary", Static).update(
+            "Scanning directory in background..."
+        )
+
+    async def _load_directory_listing(
+        self,
+        generation: int,
+        observed_path: Path,
+        keep_name: str | None,
+    ) -> None:
+        """Scan off the UI thread, then show the first rows immediately."""
         started = time.perf_counter()
         try:
-            self._scan_directory()
+            scanned = await asyncio.to_thread(
+                scan_directory_entries,
+                observed_path,
+                self.show_hidden_system,
+            )
+            directory_token = await asyncio.to_thread(
+                self._read_directory_change_token,
+                observed_path,
+            )
         except (PermissionError, OSError) as exc:
-            if generation != self._listing_generation:
+            if (
+                generation != self._listing_generation
+                or self.current_path != observed_path
+            ):
                 return
             self.cached_entries.clear()
             self.metadata_by_path.clear()
@@ -253,17 +294,33 @@ class LargeDirectoryFilePane(EditablePathFilePane):
             self.update_summary()
             return
 
-        if generation != self._listing_generation:
+        if (
+            generation != self._listing_generation
+            or self.current_path != observed_path
+        ):
             return
 
-        rows, target_row = self._prepare_cached_rows()
+        self._apply_scanned_entries(scanned, observed_path)
+        self.large_directory_mode = len(scanned) >= LARGE_DIRECTORY_THRESHOLD
+        self._directory_change_token = directory_token
+
+        rows, target_row = self._prepare_cached_rows(keep_name)
         total_rows = len(rows)
         self.update_summary()
 
-        for offset in range(0, total_rows, INITIAL_ROW_BATCH_SIZE):
-            if generation != self._listing_generation:
+        offset = 0
+        while offset < total_rows:
+            if (
+                generation != self._listing_generation
+                or self.current_path != observed_path
+            ):
                 return
-            end = min(offset + INITIAL_ROW_BATCH_SIZE, total_rows)
+            batch_size = (
+                FIRST_VISIBLE_ROW_BATCH_SIZE
+                if offset == 0
+                else LISTING_ROW_BATCH_SIZE
+            )
+            end = min(offset + batch_size, total_rows)
             self.table.add_rows(rows[offset:end])
             if offset == 0 and self.table.row_count:
                 self.table.move_cursor(row=target_row, column=0)
@@ -272,9 +329,13 @@ class LargeDirectoryFilePane(EditablePathFilePane):
                     f"Loading items: {end:,} / {total_rows:,}\n"
                     f"Path: {self.current_path}"
                 )
+            offset = end
             await asyncio.sleep(0)
 
-        if generation != self._listing_generation:
+        if (
+            generation != self._listing_generation
+            or self.current_path != observed_path
+        ):
             return
         if self.table.row_count:
             self.table.move_cursor(row=target_row, column=0)
@@ -306,13 +367,29 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         )
 
     def refresh_listing(self, keep_name: str | None = None) -> None:
+        """Start a non-blocking scan whenever the displayed path changes."""
         self._initial_listing_started = True
         self._listing_generation += 1
+        generation = self._listing_generation
+        observed_path = self.current_path
         self.initial_listing_complete = False
-        started = time.perf_counter()
-        super().refresh_listing(keep_name)
-        self.last_listing_seconds = time.perf_counter() - started
-        self.initial_listing_complete = True
+        arrow = "DESC" if self.sort_reverse else "ASC"
+        self._update_path_bar(
+            f"{observed_path}   "
+            f"[Sort: {self.sort_mode.upper()} {arrow}]"
+        )
+        self._show_listing_loading(observed_path)
+        self.run_worker(
+            self._load_directory_listing(
+                generation,
+                observed_path,
+                keep_name,
+            ),
+            name=f"{self.id}-directory-listing",
+            group=f"{self.id}-directory-listing",
+            exclusive=True,
+            exit_on_error=False,
+        )
 
     def set_sort(self, mode: str) -> None:
         """Cancel partial startup insertion before applying a complete sort."""

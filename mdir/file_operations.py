@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import ctypes
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event
@@ -10,6 +11,7 @@ from typing import Callable, Iterable, Literal
 
 FileOperation = Literal["copy", "move", "delete"]
 ProgressCallback = Callable[[int, int, str], None]
+PERMANENT_DELETE_THRESHOLD_BYTES = 10 * 1024**3
 
 
 @dataclass
@@ -21,6 +23,8 @@ class FileOperationResult:
     completed: int = 0
     skipped: int = 0
     cancelled: bool = False
+    recycled: int = 0
+    permanently_deleted: int = 0
     completed_names: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
 
@@ -32,12 +36,88 @@ def _same_path(first: Path, second: Path) -> bool:
     )
 
 
+def _path_exists(path: Path) -> bool:
+    """Return True for normal entries and broken symbolic links."""
+    return os.path.lexists(path)
+
+
+def destination_conflicts(
+    items: Iterable[Path],
+    destination: Path,
+    *,
+    new_name: str | None = None,
+) -> list[Path]:
+    """Return existing top-level targets that would be overwritten."""
+    paths = tuple(Path(item) for item in items)
+    conflicts: list[Path] = []
+    for source in paths:
+        target_name = (
+            new_name if len(paths) == 1 and new_name else source.name
+        )
+        target = Path(destination) / target_name
+        if not _same_path(source, target) and _path_exists(target):
+            conflicts.append(target)
+    return conflicts
+
+
+def _remove_existing_target(path: Path) -> None:
+    """Remove one explicitly approved overwrite target."""
+    if path.is_dir() and not path.is_symlink():
+        shutil.rmtree(path)
+    else:
+        path.unlink()
+
+
+def should_permanently_delete(*, is_directory: bool, size: int) -> bool:
+    """Only individual files of 10 GiB or larger bypass the Recycle Bin."""
+    return not is_directory and size >= PERMANENT_DELETE_THRESHOLD_BYTES
+
+
+def send_to_recycle_bin(path: Path) -> None:
+    """Move one Windows filesystem item to the Recycle Bin.
+
+    A recycle failure is reported to the caller instead of silently falling
+    back to permanent deletion.  On non-Windows systems, deletion retains the
+    previous permanent behavior for development and automated testing.
+    """
+    if os.name != "nt":
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        return
+
+    class SHFILEOPSTRUCTW(ctypes.Structure):
+        _fields_ = [
+            ("hwnd", ctypes.c_void_p),
+            ("wFunc", ctypes.c_uint),
+            ("pFrom", ctypes.c_wchar_p),
+            ("pTo", ctypes.c_wchar_p),
+            ("fFlags", ctypes.c_ushort),
+            # Win32 BOOL is four bytes (not ctypes.c_bool's one byte).
+            ("fAnyOperationsAborted", ctypes.c_int),
+            ("hNameMappings", ctypes.c_void_p),
+            ("lpszProgressTitle", ctypes.c_wchar_p),
+        ]
+
+    source = str(path.resolve(strict=False)) + "\0\0"
+    operation = SHFILEOPSTRUCTW()
+    operation.wFunc = 3  # FO_DELETE
+    operation.pFrom = source
+    operation.fFlags = 0x0040 | 0x0010 | 0x0004 | 0x0400
+    result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation))
+    if result or operation.fAnyOperationsAborted:
+        detail = f"Windows error {result}" if result else "operation aborted"
+        raise OSError(f"Could not move item to Recycle Bin ({detail})")
+
+
 def run_file_operation(
     operation: FileOperation,
     items: Iterable[Path],
     destination: Path | None = None,
     *,
     new_name: str | None = None,
+    overwrite: bool = False,
     cancel_event: Event | None = None,
     progress: ProgressCallback | None = None,
 ) -> FileOperationResult:
@@ -60,10 +140,17 @@ def run_file_operation(
         display_name = source.name
         try:
             if operation == "delete":
-                if source.is_dir() and not source.is_symlink():
-                    shutil.rmtree(source)
-                else:
+                is_directory = source.is_dir() and not source.is_symlink()
+                size = 0 if is_directory else int(source.stat().st_size)
+                if should_permanently_delete(
+                    is_directory=is_directory,
+                    size=size,
+                ):
                     source.unlink()
+                    result.permanently_deleted += 1
+                else:
+                    send_to_recycle_bin(source)
+                    result.recycled += 1
             else:
                 assert destination is not None
                 target_name = (
@@ -77,12 +164,26 @@ def run_file_operation(
                     if progress is not None:
                         progress(index, result.total, display_name)
                     continue
+                target_exists = _path_exists(target)
+                if target_exists and not overwrite:
+                    result.skipped += 1
+                    if progress is not None:
+                        progress(index, result.total, display_name)
+                    continue
                 if operation == "copy":
                     if source.is_dir():
+                        if target_exists and (
+                            not target.is_dir() or target.is_symlink()
+                        ):
+                            _remove_existing_target(target)
                         shutil.copytree(source, target, dirs_exist_ok=True)
                     else:
+                        if target_exists and target.is_dir():
+                            _remove_existing_target(target)
                         shutil.copy2(source, target)
                 else:
+                    if target_exists:
+                        _remove_existing_target(target)
                     shutil.move(str(source), str(target))
                 display_name = target_name
 

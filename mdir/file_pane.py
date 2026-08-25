@@ -11,11 +11,12 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.coordinate import Coordinate
 from textual.message import Message
-from textual.widgets import Input, Static
+from textual.widgets import Static
 
 from .base import BaseApp
 from . import core as legacy
 from .ui.rename import SlowRenameDataTable
+from .ui.inputs import ThinCursorInput as Input
 
 
 AI_SELECTOR_WIDTH = 30

@@ -23,6 +23,7 @@ manage files quickly and efficiently from the keyboard.
 - Copy, move, rename, delete, search, drive selection, and editable paths
 - Responsive background Copy, Move, and Delete for batches exceeding 1,000
   items, with live progress and cancellation
+- Compact overwrite warning before Copy or Move replaces a same-name item
 - Advanced file search with filename patterns, content search, depth and
   hidden/system controls, live progress, cancellation, and clickable results
 - Safe batch rename with live preview, tokens, counters, and find/replace
@@ -237,7 +238,20 @@ before making any changes.
   pane as the default destination.
 - Mark several items with `Space`, Shift selection, or right-button drag. If
   nothing is marked, the item under the cursor is used.
-- `F5` copies and supports **Save As** for one selected item. `F6` moves.
+- `F5` copies and supports **Save As** for one selected item. `F6` moves and
+  shows a compact confirmation with file/folder counts, total selected-file
+  size, and destination instead of listing every filename.
+- `F8` sends files smaller than 10 GB and folders to the Windows Recycle Bin.
+  Individual files of 10 GB or larger are permanently deleted and are counted
+  separately in the confirmation dialog.
+- Cancel or `Esc` closes a Copy/Move/Delete progress window immediately. If a
+  Windows filesystem call is already running, it finishes safely in the
+  background, but no additional selected item is processed.
+- The AI panel's **Stop** button force-stops the complete provider process tree,
+  including child PowerShell commands, instead of allowing a running command
+  to continue after a normal terminate request.
+- All single-line text fields use a thin vertical insertion cursor rather than
+  a full-character block, making mouse-drag text selection easier to read.
 - Copy, Move, and Delete run in the background, so the interface remains
   responsive even when more than 1,000 items are selected. The progress
   window updates in batches to avoid unnecessary screen redraws; press `Esc`

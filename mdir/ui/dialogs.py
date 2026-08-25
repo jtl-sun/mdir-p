@@ -10,7 +10,9 @@ from textual import on
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, ProgressBar, Select, Static
+from textual.widgets import Button, Label, ProgressBar, Select, Static
+
+from .inputs import ThinCursorInput as Input
 
 
 class CompactConfirmScreen(ModalScreen[bool]):
@@ -81,14 +83,20 @@ class CompactConfirmScreen(ModalScreen[bool]):
     }
     """
 
-    def __init__(self, message: str, title: str = "Confirm") -> None:
+    def __init__(
+        self,
+        message: str,
+        title: str = "Confirm",
+        *,
+        compact: bool = False,
+    ) -> None:
         super().__init__()
         self.message = message
         self.dialog_title = title
         lines = message.splitlines() or [message]
         longest = max((cell_len(line) for line in lines), default=20)
         self.preferred_width = max(
-            72,
+            48 if compact else 72,
             longest + 8,
             cell_len("Enter/Y: Yes   N/Esc/X: Cancel") + 6,
         )
@@ -233,13 +241,18 @@ class FileOperationProgressScreen(ModalScreen[None]):
         )
 
     def request_cancel(self) -> None:
+        if self.cancel_event.is_set():
+            return
         self.cancel_event.set()
-        self.query_one("#file_operation_item", Static).update(
-            "Cancelling after the current item..."
+        # A Windows filesystem or Recycle Bin call may not return promptly and
+        # cannot always be interrupted from Python.  Do not trap the user in a
+        # modal while that OS call finishes; the worker remains isolated in the
+        # background and observes the event before starting another item.
+        self.app.set_status(
+            "Cancellation requested. The current filesystem call may finish "
+            "in the background."
         )
-        button = self.query_one("#file_operation_cancel", Button)
-        button.disabled = True
-        button.label = "Cancelling..."
+        self.dismiss(None)
 
     @on(Button.Pressed, "#file_operation_cancel")
     def cancel_clicked(self, event: Button.Pressed) -> None:
