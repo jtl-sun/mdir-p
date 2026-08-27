@@ -67,12 +67,29 @@ from mdir.file_pane import (
     DirectoryPathInput,
     display_directory_path,
     path_segment_target,
+    scan_directory_entries,
 )
 from mdir.fast_app import AUTO_REFRESH_ROW_BATCH_SIZE
 from mdir.base import delete_confirmation_message, move_confirmation_message
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    def test_file_list_sizes_show_complete_comma_separated_bytes(self) -> None:
+        from mdir import core
+        from mdir.ui.search import _display_file_size
+
+        self.assertEqual(core.display_file_size(4_590_867), "4,590,867")
+        self.assertEqual(core.display_file_size(0), "0")
+        self.assertEqual(_display_file_size(23_940_227), "23,940,227")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sample = root / "sample.m4a"
+            sample.write_bytes(b"x" * 12_345)
+            entries = scan_directory_entries(root, False)
+            self.assertEqual(len(entries), 1)
+            self.assertEqual(entries[0].size_text, "12,345")
+
     def test_delete_policy_recycles_small_files_and_folders(self) -> None:
         self.assertFalse(
             should_permanently_delete(is_directory=False, size=1024)
@@ -288,6 +305,72 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
                 self.assertEqual(app.active_side, "left")
                 self.assertTrue(app.left.table.has_focus)
+                app.exit()
+
+    async def test_first_click_selects_row_on_manually_scrolled_page(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            left_dir = root / "left"
+            right_dir = root / "right"
+            left_dir.mkdir()
+            right_dir.mkdir()
+            for index in range(100):
+                (right_dir / f"file-{index:03d}.txt").write_text(
+                    str(index),
+                    encoding="utf-8",
+                )
+
+            app = MDirApp()
+            app.left_start = left_dir
+            app.right_start = right_dir
+            app._save_paths = lambda: None
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(150):
+                    if (
+                        app.left.initial_listing_complete
+                        and app.right.initial_listing_complete
+                        and app.right.table.row_count >= 101
+                    ):
+                        break
+                    await pilot.pause(0.02)
+
+                app.set_active("left")
+                table = app.right.table
+                self.assertEqual(table.cursor_row, 0)
+                for _ in range(50):
+                    if int(table.max_scroll_y) > 0:
+                        break
+                    await pilot.pause(0.02)
+                self.assertGreater(int(table.max_scroll_y), 0)
+                await pilot.pause(0.2)
+                table.scroll_to(
+                    y=55,
+                    animate=False,
+                    force=True,
+                    immediate=True,
+                )
+                await pilot.pause()
+
+                before_scroll = int(table.scroll_offset.y)
+                self.assertGreater(before_scroll, 0)
+                click_offset = (25, 5)
+                clicked_row = (
+                    before_scroll
+                    + click_offset[1]
+                    - int(table.header_height)
+                )
+                self.assertGreater(clicked_row, 0)
+
+                await pilot.click("#right DataTable", offset=click_offset)
+                await pilot.pause()
+
+                self.assertEqual(app.active_side, "right")
+                self.assertEqual(table.cursor_row, clicked_row)
+                self.assertGreater(int(table.scroll_offset.y), 0)
+                self.assertLessEqual(
+                    abs(int(table.scroll_offset.y) - before_scroll),
+                    1,
+                )
                 app.exit()
 
     def test_more_than_one_thousand_files_copy_move_and_delete(self) -> None:
@@ -1032,10 +1115,14 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(field.selection.end, len(selected_file.name))
                 field.cursor_position = 4
                 field._cursor_visible = True
-                rendered = field.render_line(0).text
-                self.assertIn("│", rendered)
-                self.assertIn("Req-", rendered)
-                self.assertIn("20260817-New developments.xlsx", rendered)
+                cursor_on = field.render_line(0)
+                field._cursor_visible = False
+                cursor_off = field.render_line(0)
+                self.assertNotIn("│", cursor_on.text)
+                self.assertEqual(cursor_on.text, cursor_off.text)
+                self.assertEqual(cursor_on.cell_length, cursor_off.cell_length)
+                self.assertIn(selected_file.name, cursor_on.text)
+                self.assertFalse(field.cursor_blink)
 
                 new_name = "Req-20260817-New developments revised"
                 field.value = new_name
@@ -1509,11 +1596,144 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             legacy.display_file_title(path, is_directory=False),
             "sample.design",
         )
-        self.assertEqual(legacy.display_extension(".png"), "   png")
+        self.assertEqual(legacy.display_extension(".png"), "  png")
+        size_cell = legacy.right_aligned_size("4,590,867")
+        self.assertEqual(size_cell.plain, "4,590,867")
+        self.assertEqual(size_cell.justify, "right")
+        directory_cell = legacy.centered_directory_size()
+        self.assertEqual(directory_cell.plain, "<DIR>")
+        self.assertEqual(directory_cell.justify, "center")
+
+    def test_ext_width_migration_runs_only_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / ".mdir-p.json"
+            legacy_config = root / ".mdir18.json"
+            config.write_text(
+                json.dumps(
+                    {
+                        "column_widths": {
+                            "name": 52,
+                            "extension": 12,
+                            "size": 18,
+                            "modified": 22,
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            with (
+                patch.object(legacy, "CONFIG_PATH", config),
+                patch.object(legacy, "LEGACY_CONFIG_PATH", legacy_config),
+            ):
+                first = legacy.MDir._load_column_widths(None)
+                second = legacy.MDir._load_column_widths(None)
+
+            self.assertEqual(first["extension"], 10)
+            self.assertEqual(second["extension"], 10)
+            saved = json.loads(config.read_text(encoding="utf-8"))
+            self.assertEqual(
+                saved["column_layout_version"],
+                legacy.CURRENT_COLUMN_LAYOUT_VERSION,
+            )
         self.assertEqual(
             legacy.display_file_title(Path("folder.name"), is_directory=True),
             "folder.name",
         )
+
+    async def test_ext_header_and_right_aligned_size_survive_resize(self) -> None:
+        from rich.text import Text
+        from textual.coordinate import Coordinate
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sample = root / "sample.txt"
+            sample.write_bytes(b"x" * 4_590)
+            folder = root / "folder"
+            folder.mkdir()
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(120, 28)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                extension_label = app.left.table.columns["extension"].label.plain
+                self.assertIn("Ext", extension_label)
+                self.assertNotIn("Extension", extension_label)
+                self.assertIn("▲ Name", app.left.table.columns["name"].label.plain)
+
+                for key, title in (
+                    ("extension", "Ext"),
+                    ("size", "Size"),
+                    ("modified", "Modified"),
+                ):
+                    header = app.left.table.columns[key].label.plain
+                    body = header[:-1]
+                    self.assertEqual(header[-1], "│")
+                    self.assertEqual(body.strip(), title)
+                    left = len(body) - len(body.lstrip())
+                    right = len(body) - len(body.rstrip())
+                    self.assertLessEqual(abs(left - right), 1)
+
+                app.left.set_sort("ext")
+                self.assertIn(
+                    "▲ Ext",
+                    app.left.table.columns["extension"].label.plain,
+                )
+                self.assertNotIn(
+                    "▲ Name",
+                    app.left.table.columns["name"].label.plain,
+                )
+                app.left.set_sort("ext")
+                self.assertIn(
+                    "▼ Ext",
+                    app.left.table.columns["extension"].label.plain,
+                )
+                for mode, key, title in (
+                    ("size", "size", "Size"),
+                    ("modified", "modified", "Modified"),
+                    ("name", "name", "Name"),
+                ):
+                    app.left.set_sort(mode)
+                    self.assertIn(
+                        f"▲ {title}",
+                        app.left.table.columns[key].label.plain,
+                    )
+
+                row = app.left.row_by_path[sample]
+                size_cell = app.left.table.get_cell_at(Coordinate(row, 2))
+                self.assertIsInstance(size_cell, Text)
+                self.assertEqual(size_cell.plain, "4,590")
+                self.assertEqual(size_cell.justify, "right")
+                folder_row = app.left.row_by_path[folder]
+                folder_cell = app.left.table.get_cell_at(
+                    Coordinate(folder_row, 2)
+                )
+                self.assertIsInstance(folder_cell, Text)
+                self.assertEqual(folder_cell.plain, "<DIR>")
+                self.assertEqual(folder_cell.justify, "center")
+                modified_cell = app.left.table.get_cell_at(
+                    Coordinate(row, 3)
+                )
+                self.assertTrue(modified_cell.startswith("  20"))
+                self.assertEqual(len(modified_cell), 21)
+
+                widths = dict(app.left.column_widths)
+                widths["extension"] = 9
+                app.left.set_column_widths(widths)
+                resized_label = app.left.table.columns["extension"].label.plain
+                self.assertIn("Ext", resized_label)
+                self.assertNotIn("Extension", resized_label)
+                modified_label = app.left.table.columns["modified"].label.plain
+                self.assertEqual(modified_label[:-1].strip(), "Modified")
+                app.exit()
 
     async def test_both_panels_auto_refresh_after_external_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

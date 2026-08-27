@@ -28,27 +28,29 @@ CONFIG_PATH = Path.home() / ".mdir-p.json"
 LEGACY_CONFIG_PATH = Path.home() / ".mdir18.json"
 DEFAULT_COLUMN_WIDTHS = {
     "name": 52,
-    "extension": 12,
-    "size": 12,
-    "modified": 20,
+    "extension": 10,
+    "size": 18,
+    "modified": 22,
 }
+CURRENT_COLUMN_LAYOUT_VERSION = 2
 
 COLUMN_MIN_WIDTHS = {
     "name": 12,
     "extension": 9,
-    "size": 9,
-    "modified": 16,
+    "size": 16,
+    "modified": 21,
 }
 
 COLUMN_HARD_MIN_WIDTHS = {
     "name": 6,
     "extension": 4,
-    "size": 6,
+    "size": 10,
     "modified": 8,
 }
 
 COLUMN_ORDER = ("name", "extension", "size", "modified")
-EXTENSION_GAP = "   "
+EXTENSION_GAP = "  "
+SIZE_MODIFIED_GAP = "  "
 
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"
@@ -97,6 +99,38 @@ def human_size(size: int) -> str:
             return f"{value:,.1f} {unit}" if value < 10 else f"{value:,.0f} {unit}"
         value /= 1024
     return f"{size:,} B"
+
+
+def display_file_size(size: int) -> str:
+    """Format an exact byte count for file-list Size columns."""
+    return f"{max(0, int(size)):,}"
+
+
+def right_aligned_size(value: str) -> Text:
+    """Right-align a file size to the real edge of the Size column."""
+    return Text(
+        value,
+        justify="right",
+        no_wrap=True,
+        overflow="crop",
+        end="",
+    )
+
+
+def centered_directory_size() -> Text:
+    """Center the directory marker within the Size column."""
+    return Text(
+        "<DIR>",
+        justify="center",
+        no_wrap=True,
+        overflow="crop",
+        end="",
+    )
+
+
+def display_modified_text(value: str) -> str:
+    """Reserve a visible two-cell gutter before the Modified column."""
+    return SIZE_MODIFIED_GAP + value
 
 
 def fmt_time(ts: float) -> str:
@@ -366,8 +400,8 @@ class ColumnWidthScreen(ModalScreen[Optional[dict[str, int]]]):
         limits = {
             "name": (12, 120),
             "extension": (5, 30),
-            "size": (7, 24),
-            "modified": (12, 32),
+            "size": (10, 24),
+            "modified": (21, 32),
         }
 
         for key in ("name", "extension", "size", "modified"):
@@ -813,6 +847,27 @@ class MDirDataTable(DataTable):
         return None
 
     async def on_mouse_down(self, event: events.MouseDown) -> None:
+        # Select the rendered row before activating/focusing the pane.  When
+        # the user has scrolled to another page, the keyboard cursor may still
+        # be outside the viewport.  Focusing the pane first can make Textual
+        # scroll that old cursor into view and changes the row underneath the
+        # pointer before the Click event is delivered.
+        if (
+            event.button == 1
+            and not bool(getattr(event, "shift", False))
+        ):
+            try:
+                clicked_row = int(event.style.meta.get("row", -1))
+            except Exception:
+                clicked_row = -1
+            if 0 <= clicked_row < self.row_count:
+                self.move_cursor(
+                    row=clicked_row,
+                    column=0,
+                    animate=False,
+                    scroll=False,
+                )
+
         # Empty table space has no row metadata. Activate the pane before
         # hit-testing so the complete list surface switches panes.
         if event.button in {1, 3}:
@@ -1204,29 +1259,85 @@ class FilePane(Vertical):
         visible_title = title[: max(0, width - 2)]
         return visible_title.ljust(width - 1) + "│"
 
+    @staticmethod
+    def _centered_header_label(title: str, width: int) -> str:
+        """Center a title while retaining the right-edge separator."""
+        width = max(1, int(width))
+        if width == 1:
+            return "│"
+        visible_title = title[: max(0, width - 2)]
+        return visible_title.center(width - 1) + "│"
+
+    def _column_header_title(self, key: str) -> str:
+        titles = {
+            "name": "Name",
+            "extension": "Ext",
+            "size": "Size",
+            "modified": "Modified",
+        }
+        mode_by_key = {
+            "name": "name",
+            "extension": "ext",
+            "size": "size",
+            "modified": "modified",
+        }
+        title = titles[key]
+        if self.sort_mode == mode_by_key[key]:
+            arrow = "▼" if self.sort_reverse else "▲"
+            return f"{arrow} {title}"
+        return title
+
+    def _update_sort_headers(self) -> None:
+        """Refresh all header labels after the sort field/direction changes."""
+        try:
+            table = self.table
+            for key in COLUMN_ORDER:
+                title = self._column_header_title(key)
+                width = self.display_column_widths[key]
+                label_builder = (
+                    self._centered_header_label
+                    if key in {"extension", "size", "modified"}
+                    else self._header_label
+                )
+                table.columns[key].label = Text(label_builder(title, width))
+            table.clear_cached_dimensions()
+            table._clear_caches()
+            table.refresh()
+        except Exception:
+            pass
+
     def _add_columns(self, table: MDirDataTable) -> None:
         widths = self.display_column_widths
 
         table.add_column(
-            self._header_label("Name", widths["name"]),
+            self._header_label(
+                self._column_header_title("name"),
+                widths["name"],
+            ),
             width=widths["name"],
             key="name",
         )
         table.add_column(
-            self._header_label(
-                EXTENSION_GAP + "Extension",
+            self._centered_header_label(
+                self._column_header_title("extension"),
                 widths["extension"],
             ),
             width=widths["extension"],
             key="extension",
         )
         table.add_column(
-            self._header_label("Size", widths["size"]),
+            self._centered_header_label(
+                self._column_header_title("size"),
+                widths["size"],
+            ),
             width=widths["size"],
             key="size",
         )
         table.add_column(
-            self._header_label("Modified", widths["modified"]),
+            self._centered_header_label(
+                self._column_header_title("modified"),
+                widths["modified"],
+            ),
             width=widths["modified"],
             key="modified",
         )
@@ -1307,6 +1418,7 @@ class FilePane(Vertical):
         else:
             self.sort_mode = mode
             self.sort_reverse = False
+        self._update_sort_headers()
         current = self.selected_path()
         self.refresh_listing(keep_name=current.name if current else None)
 
@@ -1331,7 +1443,7 @@ class FilePane(Vertical):
             self.table.add_row(
                 Text("..", style=PARENT_DIRECTORY_STYLE),
                 "",
-                "<DIR>",
+                centered_directory_size(),
                 "",
             )
             self.entries.append(None)
@@ -1360,8 +1472,21 @@ class FilePane(Vertical):
                     if path.is_dir()
                     else display_extension(path.suffix.lower())
                 )
-                size = "<DIR>" if path.is_dir() else human_size(stat.st_size)
-                self.table.add_row(name, extension, size, fmt_time(stat.st_mtime))
+                size = (
+                    "<DIR>"
+                    if path.is_dir()
+                    else display_file_size(stat.st_size)
+                )
+                self.table.add_row(
+                    name,
+                    extension,
+                    (
+                        centered_directory_size()
+                        if path.is_dir()
+                        else right_aligned_size(size)
+                    ),
+                    display_modified_text(fmt_time(stat.st_mtime)),
+                )
                 self.entries.append(path)
             except OSError:
                 continue
@@ -1771,11 +1896,17 @@ class MDir(App):
             if not isinstance(saved, dict):
                 return widths
 
+            try:
+                layout_version = int(data.get("column_layout_version", 0))
+            except (TypeError, ValueError):
+                layout_version = 0
+            migrate_extension_width = layout_version < CURRENT_COLUMN_LAYOUT_VERSION
+
             limits = {
                 "name": (12, 120),
                 "extension": (5, 30),
-                "size": (7, 24),
-                "modified": (12, 32),
+                "size": (10, 24),
+                "modified": (21, 32),
             }
 
             for key, default_value in DEFAULT_COLUMN_WIDTHS.items():
@@ -1784,8 +1915,22 @@ class MDir(App):
                 except (TypeError, ValueError):
                     value = default_value
 
+                if key == "extension" and migrate_extension_width:
+                    value -= 2
+
                 lo, hi = limits[key]
                 widths[key] = max(lo, min(hi, value))
+
+            if migrate_extension_width:
+                data["column_widths"] = dict(widths)
+                data["column_layout_version"] = CURRENT_COLUMN_LAYOUT_VERSION
+                try:
+                    CONFIG_PATH.write_text(
+                        json.dumps(data, ensure_ascii=False, indent=2),
+                        encoding="utf-8",
+                    )
+                except OSError:
+                    pass
 
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             return dict(DEFAULT_COLUMN_WIDTHS)
@@ -1813,6 +1958,7 @@ class MDir(App):
                         "left": str(self.left.current_path),
                         "right": str(self.right.current_path),
                         "column_widths": dict(self.column_widths),
+                        "column_layout_version": CURRENT_COLUMN_LAYOUT_VERSION,
                         "show_hidden_system": bool(self.show_hidden_system),
                     },
                     ensure_ascii=False,

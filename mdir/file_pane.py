@@ -173,7 +173,7 @@ def scan_directory_entries(
                         size_text=(
                             "<DIR>"
                             if is_directory
-                            else legacy.human_size(int(stat.st_size))
+                            else legacy.display_file_size(int(stat.st_size))
                         ),
                         modified_text=legacy.fmt_time(float(stat.st_mtime)),
                     )
@@ -316,7 +316,7 @@ class EditablePathFilePane(BaseFilePane):
                 (
                     Text("..", style=legacy.PARENT_DIRECTORY_STYLE),
                     "",
-                    "<DIR>",
+                    legacy.centered_directory_size(),
                     "",
                 )
             )
@@ -338,11 +338,15 @@ class EditablePathFilePane(BaseFilePane):
                         else legacy.display_extension(entry.path.suffix.lower())
                     ),
                     (
-                        "<DIR>"
+                        legacy.centered_directory_size()
                         if entry.is_directory
-                        else legacy.human_size(entry.size)
+                        else legacy.right_aligned_size(
+                            legacy.display_file_size(entry.size)
+                        )
                     ),
-                    legacy.fmt_time(entry.modified),
+                    legacy.display_modified_text(
+                        legacy.fmt_time(entry.modified)
+                    ),
                 )
             )
 
@@ -402,6 +406,7 @@ class EditablePathFilePane(BaseFilePane):
         else:
             self.sort_mode = mode
             self.sort_reverse = False
+        self._update_sort_headers()
         current = self.selected_path()
         keep_name = current.name if current else None
         if self.cached_path != self.current_path:

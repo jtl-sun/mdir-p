@@ -117,7 +117,10 @@ class SlowRenameDataTable(legacy.MDirDataTable):
         path = pane.entries[row]
         now = monotonic()
 
-        self.move_cursor(row=row, column=0)
+        # MouseDown already anchored the cursor to the rendered row. Avoid
+        # DataTable.move_cursor's preliminary scroll of the previous cursor,
+        # which otherwise makes a page jump before this click is applied.
+        self.move_cursor(row=row, column=0, animate=False, scroll=False)
         self._activate_pane()
 
         repeated_action = self._repeated_click_action(row, now)

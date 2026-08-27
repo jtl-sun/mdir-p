@@ -1,5 +1,65 @@
 # Changelog
 
+## 2.23.23
+
+- Anchor a left mouse click to the rendered file row before pane focus can
+  scroll an off-screen keyboard cursor back into view.
+- Select a file on the newly displayed page with the first click, without an
+  intermediate jump to the top or bottom of the previous cursor's page.
+
+## 2.23.22
+
+- Show `▲` or `▼` before the active sort column's Name, Ext, Size, or Modified
+  header.
+- Update the indicator immediately for header clicks and keyboard sort actions,
+  including direction reversal on a repeated sort.
+- Preserve centered Ext/Size/Modified headers while displaying the indicator.
+
+## 2.23.21
+
+- Reduce the Ext column's right side by two cells.
+- Center the Ext, Size, and Modified headers within their columns while keeping
+  Name left-aligned.
+- Migrate a saved pre-2.23.21 Ext width exactly once so repeated launches do
+  not keep shrinking the column.
+
+## 2.23.20
+
+- Move the two-cell Size/Modified gutter to the beginning of the Modified
+  column so it is a true visible gap between the columns, not trailing content
+  inside Size cells.
+- Widen Modified so its two-cell gutter and complete timestamp remain visible.
+
+## 2.23.19
+
+- Center `<DIR>` markers within the Size column.
+- Reserve exactly two blank cells after right-aligned file byte counts so the
+  Size and Modified values never run together.
+
+## 2.23.18
+
+- Shorten the file-list `Extension` header to `Ext`.
+- Reduce the visual gap before extension values from three cells to two.
+- Right-align exact byte counts and `<DIR>` labels in the Size column.
+- Preserve the `Ext` header after interactive column resizing.
+
+## 2.23.17
+
+- Show the complete exact byte count in file-list Size columns, with thousands
+  separators (for example, `4,590,867`) instead of shortening it to KB/MB/GB.
+- Keep directories labeled `<DIR>` and retain human-readable units in summary
+  and detail areas where exact list sorting is not being displayed.
+- Widen the default Size column so large byte values remain visible.
+
+## 2.23.16
+
+- Stop inserting a real cursor character into filenames during editing, which
+  previously shifted all following characters on every blink.
+- Use Windows Terminal's steady, zero-width vertical insertion cursor so text
+  spacing and selection width remain fixed throughout Rename and every other
+  single-line input dialog.
+- Pause the simulated cursor blink to avoid unnecessary input repaints.
+
 ## 2.23.15
 
 - Show a compact warning immediately before Copy or Move would overwrite an
