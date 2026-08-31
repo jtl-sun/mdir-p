@@ -274,6 +274,136 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(table._repeated_click_action(7, 13.01))
         self.assertIsNone(table._repeated_click_action(8, 10.50))
 
+    def test_first_click_on_another_file_is_always_selection_only(self) -> None:
+        from mdir.ui.rename import SlowRenameDataTable
+
+        table = SlowRenameDataTable()
+        table._rename_click_row = 8
+        table._rename_click_time = 10.0
+
+        table._prepare_left_click_row(
+            clicked_row=12,
+            previous_cursor_row=8,
+        )
+
+        self.assertIsNone(table._rename_click_row)
+        self.assertEqual(table._rename_click_time, 0.0)
+        self.assertTrue(table._consume_selection_only_click(12))
+        self.assertFalse(table._consume_selection_only_click(12))
+
+    def test_selection_click_expires_after_point_two_seconds(self) -> None:
+        from mdir.ui.rename import SlowRenameDataTable
+
+        table = SlowRenameDataTable()
+        table._record_selection_click(12, 10.0)
+        self.assertEqual(
+            table._selection_followup_action(12, 10.20),
+            "open",
+        )
+
+        table._record_selection_click(12, 20.0)
+        self.assertEqual(
+            table._selection_followup_action(12, 20.21),
+            "restart",
+        )
+        self.assertIsNone(table._selection_click_row)
+
+    async def test_first_file_click_cannot_open_rename_from_stale_timing(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = []
+            for index in range(6):
+                path = root / f"file-{index}.txt"
+                path.write_text(str(index), encoding="utf-8")
+                files.append(path)
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                table = app.left.table
+                current_row = app.left.row_by_path[files[0]]
+                target_row = app.left.row_by_path[files[3]]
+                table.move_cursor(row=current_row, column=0)
+
+                # Simulate an old click record which would previously have
+                # mistaken this new file's first click for a slow second click.
+                table._rename_click_row = target_row
+                table._rename_click_time = time.monotonic() - 1.5
+
+                with patch.object(app, "action_rename") as rename:
+                    await pilot.click(
+                        "#left DataTable",
+                        offset=(25, int(table.header_height) + target_row),
+                    )
+                    await pilot.pause()
+
+                self.assertEqual(table.cursor_row, target_row)
+                rename.assert_not_called()
+                app.exit()
+
+    async def test_expired_selection_click_requires_a_fresh_click_pair(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first = root / "first.txt"
+            target = root / "target.txt"
+            first.touch()
+            target.touch()
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+            async with app.run_test(size=(100, 24)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                table = app.left.table
+                first_row = app.left.row_by_path[first]
+                target_row = app.left.row_by_path[target]
+                table.move_cursor(row=first_row, column=0)
+                click_offset = (
+                    25,
+                    int(table.header_height) + target_row,
+                )
+
+                with (
+                    patch.object(app, "action_rename") as rename,
+                    patch.object(app, "_open_from_pane") as open_item,
+                ):
+                    # Click 1 selects a different file and is then allowed to
+                    # expire as selection-only.
+                    await pilot.click("#left DataTable", offset=click_offset)
+                    await pilot.pause(0.25)
+
+                    # Click 2 starts a fresh action pair; it must not Rename or
+                    # Open despite the terminal's native click-chain value.
+                    await pilot.click("#left DataTable", offset=click_offset)
+                    await pilot.pause()
+                    rename.assert_not_called()
+                    open_item.assert_not_called()
+
+                    # A deliberately slow second action click now Renames.
+                    await pilot.pause(1.05)
+                    await pilot.click("#left DataTable", offset=click_offset)
+                    await pilot.pause()
+                    rename.assert_called_once()
+                    open_item.assert_not_called()
+
+                app.exit()
+
     async def test_clicking_empty_table_space_switches_both_panes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

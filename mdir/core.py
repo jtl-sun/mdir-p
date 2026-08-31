@@ -846,6 +846,13 @@ class MDirDataTable(DataTable):
 
         return None
 
+    def _prepare_left_click_row(
+        self,
+        clicked_row: int,
+        previous_cursor_row: int,
+    ) -> None:
+        """Allow subclasses to classify a row before it becomes selected."""
+
     async def on_mouse_down(self, event: events.MouseDown) -> None:
         # Select the rendered row before activating/focusing the pane.  When
         # the user has scrolled to another page, the keyboard cursor may still
@@ -861,6 +868,14 @@ class MDirDataTable(DataTable):
             except Exception:
                 clicked_row = -1
             if 0 <= clicked_row < self.row_count:
+                try:
+                    previous_cursor_row = int(self.cursor_row)
+                except Exception:
+                    previous_cursor_row = -1
+                self._prepare_left_click_row(
+                    clicked_row,
+                    previous_cursor_row,
+                )
                 self.move_cursor(
                     row=clicked_row,
                     column=0,

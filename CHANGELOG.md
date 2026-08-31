@@ -1,5 +1,23 @@
 # Changelog
 
+## 2.23.25
+
+- Expire a new file's selection click after 0.2 seconds so it cannot later be
+  mistaken for the first half of a slow Rename click pair.
+- After that selection-only interval, require a fresh pair of clicks on the
+  selected file: a fast pair opens it and a slow pair starts Rename.
+- Override the terminal's longer native double-click chain when it conflicts
+  with the stricter 0.2-second selection rule.
+
+## 2.23.24
+
+- Make the first left click on a different file selection-only and discard any
+  Rename timing retained from the previously selected row.
+- Use only the second click on the same selected file to decide the action:
+  a fast pair opens it, while an intentionally slow pair starts Rename.
+- Preserve the direct first-click selection and stable page position added in
+  2.23.23.
+
 ## 2.23.23
 
 - Anchor a left mouse click to the rendered file row before pane focus can

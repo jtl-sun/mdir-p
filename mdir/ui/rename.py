@@ -47,15 +47,68 @@ class SlowRenameDataTable(legacy.MDirDataTable):
     FAST_DOUBLE_CLICK_MAX_SECONDS = 0.75
     SLOW_CLICK_MIN_SECONDS = 1.00
     SLOW_CLICK_MAX_SECONDS = 3.00
+    SELECTION_CLICK_MAX_SECONDS = 0.20
 
     def __init__(self, *args, **kwargs) -> None:
         super().__init__(*args, **kwargs)
         self._rename_click_row: Optional[int] = None
         self._rename_click_time = 0.0
+        self._selection_only_row: Optional[int] = None
+        self._selection_click_row: Optional[int] = None
+        self._selection_click_time = 0.0
 
     def _reset_slow_click(self) -> None:
         self._rename_click_row = None
         self._rename_click_time = 0.0
+        self._selection_only_row = None
+        self._selection_click_row = None
+        self._selection_click_time = 0.0
+
+    def _prepare_left_click_row(
+        self,
+        clicked_row: int,
+        previous_cursor_row: int,
+    ) -> None:
+        """Make the first click on another file selection-only."""
+        if clicked_row != previous_cursor_row:
+            self._reset_slow_click()
+            self._selection_only_row = clicked_row
+
+    def _consume_selection_only_click(self, row: int) -> bool:
+        selection_only = self._selection_only_row == row
+        self._selection_only_row = None
+        return selection_only
+
+    def _record_selection_click(self, row: int, now: float) -> None:
+        """Remember a selection click separately from an action-click pair."""
+        self._rename_click_row = None
+        self._rename_click_time = 0.0
+        self._selection_click_row = row
+        self._selection_click_time = now
+
+    def _selection_followup_action(
+        self,
+        row: int,
+        now: float,
+    ) -> Optional[str]:
+        """Classify a click following the click which selected a new file.
+
+        Only an extremely immediate follow-up remains a true double-click.
+        After 0.2 seconds, the selection click expires and the current click
+        starts a fresh Open/Rename pair instead.
+        """
+        if row != self._selection_click_row:
+            return None
+        elapsed = now - self._selection_click_time
+        self._selection_click_row = None
+        self._selection_click_time = 0.0
+        if 0.0 <= elapsed <= self.SELECTION_CLICK_MAX_SECONDS:
+            return "open"
+        return "restart"
+
+    def _arm_action_click(self, row: int, now: float) -> None:
+        self._rename_click_row = row
+        self._rename_click_time = now
 
     def _repeated_click_action(self, row: int, now: float) -> Optional[str]:
         """Classify a second single-click on the same row."""
@@ -92,8 +145,23 @@ class SlowRenameDataTable(legacy.MDirDataTable):
             event.stop()
             return
 
-        # A normal fast double-click must retain the existing Open action.
-        if event.button != 1 or getattr(event, "chain", 1) >= 2:
+        if event.button != 1:
+            self._reset_slow_click()
+            return
+
+        # Textual may report a native double-click for up to roughly half a
+        # second. Honour the user's stricter 0.2-second rule when the first
+        # click was only selecting a different file.
+        if getattr(event, "chain", 1) >= 2:
+            meta = event.style.meta
+            row = int(meta.get("row", -1))
+            now = monotonic()
+            selection_action = self._selection_followup_action(row, now)
+            if selection_action == "restart":
+                self._arm_action_click(row, now)
+                event.stop()
+                return
+
             self._reset_slow_click()
             # Textual dispatches matching handlers throughout the class MRO.
             # MDirDataTable.on_click will run next, so calling it explicitly
@@ -123,7 +191,24 @@ class SlowRenameDataTable(legacy.MDirDataTable):
         self.move_cursor(row=row, column=0, animate=False, scroll=False)
         self._activate_pane()
 
-        repeated_action = self._repeated_click_action(row, now)
+        # A click which moved selection to another row is always the first
+        # click of a new sequence. It selects and arms that row, but can never
+        # immediately open Rename using timing left over from an older click.
+        selection_only = self._consume_selection_only_click(row)
+        if selection_only:
+            self._record_selection_click(row, now)
+            return
+
+        selection_action = self._selection_followup_action(row, now)
+        if selection_action == "restart":
+            self._arm_action_click(row, now)
+            return
+
+        repeated_action = (
+            "open"
+            if selection_action == "open"
+            else self._repeated_click_action(row, now)
+        )
         if path is not None and repeated_action == "open":
             self._reset_slow_click()
             app = self.app
@@ -140,5 +225,4 @@ class SlowRenameDataTable(legacy.MDirDataTable):
             event.stop()
             return
 
-        self._rename_click_row = row
-        self._rename_click_time = now
+        self._arm_action_click(row, now)
