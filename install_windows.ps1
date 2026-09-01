@@ -49,11 +49,7 @@ if (-not (Test-Path -LiteralPath $VenvPython)) {
 }
 
 Write-Host "Installing mDIR and preview support..."
-& $VenvPython -m pip install --upgrade pip
-if ($LASTEXITCODE -ne 0) {
-    throw "Could not update pip."
-}
-& $VenvPython -m pip install --no-cache-dir --force-reinstall "${PSScriptRoot}[preview]"
+& $VenvPython -m pip install --disable-pip-version-check --prefer-binary --upgrade "${PSScriptRoot}[preview]"
 if ($LASTEXITCODE -ne 0) {
     throw "Could not install mDIR."
 }

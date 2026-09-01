@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.23.29
+
+- Reuse the existing private Python environment and its installed preview
+  dependencies during an update.
+- Stop disabling pip's download cache and stop force-reinstalling every
+  dependency on each installation.
+- Avoid upgrading pip on every run and prefer prebuilt binary packages when a
+  dependency really must be installed.
+
 ## 2.23.28
 
 - Make right-click the range anchor and Shift+left-click the only range

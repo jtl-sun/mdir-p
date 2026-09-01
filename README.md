@@ -82,7 +82,7 @@ into the inner extracted folder first. For example:
 
 ```powershell
 cd .\mdir-p-main
-python -m pip install --no-cache-dir --force-reinstall ".[preview]"
+python -m pip install --upgrade ".[preview]"
 ```
 
 ### Install with Git
@@ -176,8 +176,9 @@ are normally not required for `CurrentUser` or `Process` scope.
   python.exe to PATH** during installation.
 - **`m` or `mdir` is not recognized after installation:** Close and reopen
   PowerShell, or run the reliable fallback `python -m mdir`.
-- **The old version still opens:** Reinstall from the new source folder using
-  `python -m pip install --upgrade --force-reinstall ".[preview]"`.
+- **The old version still opens:** Reinstall only the local mDIR package from
+  the new source folder using
+  `python -m pip install --no-deps --force-reinstall .`.
 
 ## Main Keys
 
