@@ -140,7 +140,7 @@ class SlowRenameDataTable(legacy.MDirDataTable):
             )
 
     async def on_click(self, event: events.Click) -> None:
-        if event.button == 1 and bool(getattr(event, "shift", False)):
+        if event.button == 1 and self._shift_click_active(event):
             self._reset_slow_click()
             event.stop()
             return

@@ -1589,6 +1589,101 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(pane.marked, expected)
                 app.exit()
 
+    async def test_right_click_anchor_supports_intercepted_shift_left_click(
+        self,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = [root / f"item-{index:02d}.txt" for index in range(10)]
+            for path in files:
+                path.write_text(path.name, encoding="utf-8")
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+
+            async with app.run_test(size=(120, 35)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.02)
+
+                pane = app.left
+                table = pane.table
+                start_row = pane.row_by_path[files[2]]
+                end_row = pane.row_by_path[files[7]]
+                expected = {
+                    path
+                    for path in pane.entries[start_row : end_row + 1]
+                    if path is not None
+                }
+
+                def row_offset(row: int) -> tuple[int, int]:
+                    return (10, int(table.header_height) + row)
+
+                await pilot.click(
+                    "#left DataTable",
+                    offset=row_offset(start_row),
+                    button=3,
+                )
+                # Simulate Windows Terminal omitting the Shift modifier while
+                # Win32 still reports that the physical key is held down.
+                with patch.object(
+                    table,
+                    "_read_shift_pressed",
+                    return_value=True,
+                ):
+                    await pilot.click(
+                        "#left DataTable",
+                        offset=row_offset(end_row),
+                        button=1,
+                    )
+                await pilot.pause()
+
+                self.assertEqual(pane.marked, expected)
+                self.assertEqual(table.cursor_row, end_row)
+
+                pane.marked.clear()
+                pane.reset_shift_selection_anchor()
+                pane.refresh_listing(keep_name=files[2].name)
+
+                await pilot.click(
+                    "#left DataTable",
+                    offset=row_offset(start_row),
+                    button=3,
+                )
+                terminal_grid = WindowRectangle(100, 50, 1_300, 400)
+                endpoint_cell_x = table.region.x + 10
+                endpoint_cell_y = (
+                    table.region.y
+                    + int(table.header_height)
+                    + end_row
+                )
+                endpoint_screen_x = terminal_grid.left + round(
+                    terminal_grid.width
+                    * (endpoint_cell_x + 0.5)
+                    / app.size.width
+                )
+                endpoint_screen_y = terminal_grid.top + round(
+                    terminal_grid.height
+                    * (endpoint_cell_y + 0.5)
+                    / app.size.height
+                )
+                self.assertTrue(
+                    app._apply_shift_range_screen_click(
+                        endpoint_screen_x,
+                        endpoint_screen_y,
+                        terminal_grid,
+                    )
+                )
+                await pilot.pause()
+
+                self.assertEqual(pane.marked, expected)
+                self.assertEqual(table.cursor_row, end_row)
+                self.assertFalse(table._right_dragging)
+                app.exit()
+
     async def test_right_drag_auto_scroll_continues_selection_beyond_page(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

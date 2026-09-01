@@ -651,6 +651,30 @@ class MDirDataTable(DataTable):
         self._resize_start_width = 0
         self._resize_next_start_width = 0
         self._resize_snapshot: dict[str, int] = {}
+        self._shift_mouse_click_pending = False
+
+    @staticmethod
+    def _read_shift_pressed(event: events.MouseEvent) -> bool:
+        """Read Shift from Textual or directly from Windows as a fallback."""
+        if bool(getattr(event, "shift", False)):
+            return True
+        if os.name != "nt":
+            return False
+        try:
+            import ctypes
+
+            get_key_state = ctypes.windll.user32.GetAsyncKeyState
+            get_key_state.argtypes = [ctypes.c_int]
+            get_key_state.restype = ctypes.c_short
+            return bool(get_key_state(0x10) & 0x8000)  # VK_SHIFT
+        except Exception:
+            return False
+
+    def _shift_click_active(self, event: events.MouseEvent) -> bool:
+        """Keep the MouseDown Shift result available through Click."""
+        return self._shift_mouse_click_pending or self._read_shift_pressed(
+            event
+        )
 
     def _hover_row(self) -> Optional[int]:
         try:
@@ -854,6 +878,10 @@ class MDirDataTable(DataTable):
         """Allow subclasses to classify a row before it becomes selected."""
 
     async def on_mouse_down(self, event: events.MouseDown) -> None:
+        shift_pressed = self._read_shift_pressed(event)
+        if event.button in {1, 3}:
+            self._shift_mouse_click_pending = shift_pressed
+
         # Select the rendered row before activating/focusing the pane.  When
         # the user has scrolled to another page, the keyboard cursor may still
         # be outside the viewport.  Focusing the pane first can make Textual
@@ -861,7 +889,7 @@ class MDirDataTable(DataTable):
         # pointer before the Click event is delivered.
         if (
             event.button == 1
-            and not bool(getattr(event, "shift", False))
+            and not shift_pressed
         ):
             try:
                 clicked_row = int(event.style.meta.get("row", -1))
@@ -888,16 +916,17 @@ class MDirDataTable(DataTable):
         if event.button in {1, 3}:
             self._activate_pane()
 
-        if event.button == 1:
-            if bool(getattr(event, "shift", False)):
-                row = self._event_row(event)
-                pane = self._pane()
-                if row is not None and pane is not None:
-                    self._activate_pane()
-                    pane.select_range_to(row)
-                    event.stop()
-                    return
+        # Right-click establishes the anchor; only Shift+left-click extends
+        # its range. Shift+right-click conflicts with right-button toggling.
+        if event.button == 1 and shift_pressed:
+            row = self._event_row(event)
+            pane = self._pane()
+            if row is not None and pane is not None:
+                pane.select_range_to(row)
+                event.stop()
+                return
 
+        if event.button == 1:
             key = self._header_resize_hit(event.x, event.y)
             if key is not None:
                 pane = self._pane()
@@ -959,6 +988,9 @@ class MDirDataTable(DataTable):
             row = self._event_row(event)
             if row is not None:
                 self._toggle_drag_range_to(row)
+                pane = self._pane()
+                if pane is not None:
+                    pane.set_shift_selection_anchor(row)
 
             event.stop()
 
@@ -1088,7 +1120,7 @@ class MDirDataTable(DataTable):
             event.stop()
             return
 
-        if event.button == 1 and bool(getattr(event, "shift", False)):
+        if event.button == 1 and self._shift_click_active(event):
             event.stop()
             return
 
@@ -1568,6 +1600,17 @@ class FilePane(Vertical):
         """End the current Shift+Arrow range-selection session."""
         self.shift_anchor_row = None
         self.shift_base_marked = set()
+
+    def set_shift_selection_anchor(self, row: int) -> None:
+        """Use an explicit mouse-selected row as the next Shift range start."""
+        if self.table.row_count <= 0:
+            self.reset_shift_selection_anchor()
+            return
+        self.shift_anchor_row = max(
+            0,
+            min(self.table.row_count - 1, int(row)),
+        )
+        self.shift_base_marked = set(self.marked)
 
     def shift_select(self, delta: int) -> None:
         """Extend or shrink a contiguous selection with Shift+Up/Down.

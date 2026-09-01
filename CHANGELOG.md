@@ -1,5 +1,29 @@
 # Changelog
 
+## 2.23.28
+
+- Make right-click the range anchor and Shift+left-click the only range
+  endpoint gesture, avoiding a conflict with right-button mark toggling.
+- Detect Shift+left-click directly through Windows even when Windows Terminal
+  consumes the click and sends no mouse event to mDIR.
+- Map the physical click position back to the visible pane and row without
+  moving the screen first.
+
+## 2.23.27
+
+- Detect the physical Windows Shift key when Windows Terminal omits the Shift
+  modifier from a mouse event.
+- Preserve that physical Shift state from MouseDown through Click so range
+  selection cannot fall through into normal selection, Open, or Rename.
+
+## 2.23.26
+
+- Save a normal right-clicked row as the anchor for the next Shift range
+  selection.
+- Select every file and directory between that anchor and a Shift+left-click
+  or Shift+right-click endpoint, including both endpoints.
+- Keep unmodified right-click toggling and right-button drag selection intact.
+
 ## 2.23.25
 
 - Expire a new file's selection click after 0.2 seconds so it cannot later be

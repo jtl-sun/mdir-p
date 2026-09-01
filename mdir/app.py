@@ -52,11 +52,51 @@ HOTKEY_POLL_SECONDS = 0.04
 HOTKEY_DEDUP_SECONDS = 0.22
 VK_CONTROL = 0x11
 VK_F3 = 0x72
+VK_SHIFT = 0x10
+VK_LBUTTON = 0x01
 
 install_file_colors()
 
 if TYPE_CHECKING:
-    from .preview.native import NativePreviewController, PaneLayout
+    from .preview.native import (
+        NativePreviewController,
+        PaneLayout,
+        WindowRectangle,
+    )
+
+
+def terminal_screen_point_to_cell(
+    screen_x: int,
+    screen_y: int,
+    terminal_grid: "WindowRectangle",
+    columns: int,
+    rows: int,
+) -> Optional[tuple[int, int]]:
+    """Convert a physical Windows pointer position to a Textual cell."""
+    if not (
+        terminal_grid.left <= screen_x < terminal_grid.right
+        and terminal_grid.top <= screen_y < terminal_grid.bottom
+    ):
+        return None
+    columns = max(1, int(columns))
+    rows = max(1, int(rows))
+    cell_x = min(
+        columns - 1,
+        int(
+            (screen_x - terminal_grid.left)
+            * columns
+            / terminal_grid.width
+        ),
+    )
+    cell_y = min(
+        rows - 1,
+        int(
+            (screen_y - terminal_grid.top)
+            * rows
+            / terminal_grid.height
+        ),
+    )
+    return cell_x, cell_y
 
 
 class MDirApp(FastFileManagerApp):
@@ -140,6 +180,7 @@ class MDirApp(FastFileManagerApp):
         self.preview_enabled = False
         self.preview_mode = False
         self._ctrl_f3_latched = False
+        self._shift_left_latched = False
         self._last_preview_toggle = -1.0
         self._terminal_window_handle = 0
         self._hotkey_timer: Optional[Timer] = None
@@ -487,6 +528,7 @@ class MDirApp(FastFileManagerApp):
             return False
 
     def _poll_ctrl_f3(self) -> None:
+        self._poll_windows_shift_range_click()
         pressed = self._read_ctrl_f3_pressed()
         if not pressed:
             self._ctrl_f3_latched = False
@@ -499,6 +541,88 @@ class MDirApp(FastFileManagerApp):
             and self._active_window_handle() == self._terminal_window_handle
         ):
             self.action_toggle_preview()
+
+    def _poll_windows_shift_range_click(self) -> None:
+        """Recover Shift+left-clicks consumed by Windows Terminal."""
+        if os.name != "nt" or not self._terminal_window_handle:
+            return
+        try:
+            user32 = ctypes.windll.user32
+            get_key_state = user32.GetAsyncKeyState
+            get_key_state.argtypes = [ctypes.c_int]
+            get_key_state.restype = ctypes.c_short
+            left_state = int(get_key_state(VK_LBUTTON))
+            shift_down = bool(int(get_key_state(VK_SHIFT)) & 0x8000)
+            left_down = bool(left_state & 0x8000)
+            clicked = bool(left_state & 0x0001) or (
+                left_down and not self._shift_left_latched
+            )
+            self._shift_left_latched = left_down
+
+            if not shift_down or not clicked:
+                return
+            if self._active_window_handle() != self._terminal_window_handle:
+                return
+
+            point = wintypes.POINT()
+            if not user32.GetCursorPos(ctypes.byref(point)):
+                return
+            self._apply_shift_range_screen_click(point.x, point.y)
+        except Exception:
+            self._shift_left_latched = False
+
+    def _apply_shift_range_screen_click(
+        self,
+        screen_x: int,
+        screen_y: int,
+        terminal_grid: Optional["WindowRectangle"] = None,
+    ) -> bool:
+        """Apply a native Shift click to the table row under the pointer."""
+        if terminal_grid is None:
+            from .preview.native import windows_terminal_grid_rectangle
+
+            terminal_grid = windows_terminal_grid_rectangle(
+                self._terminal_window_handle
+            )
+        if terminal_grid is None:
+            return False
+
+        cell = terminal_screen_point_to_cell(
+            screen_x,
+            screen_y,
+            terminal_grid,
+            self.size.width,
+            self.size.height,
+        )
+        if cell is None:
+            return False
+        cell_x, cell_y = cell
+
+        for pane in (self.left, self.right):
+            table = pane.table
+            region = table.region
+            if not (
+                region.x <= cell_x < region.x + region.width
+                and region.y <= cell_y < region.y + region.height
+            ):
+                continue
+            if pane.shift_anchor_row is None:
+                return False
+
+            local_y = cell_y - region.y
+            target_row = (
+                int(table.scroll_offset.y)
+                + local_y
+                - int(table.header_height)
+            )
+            if not (0 <= target_row < table.row_count):
+                return False
+
+            pane.select_range_to(target_row)
+            self.set_active("left" if pane.id == "left" else "right")
+            table._shift_mouse_click_pending = True
+            return True
+        return False
 
     def _native_preview_layout(self) -> Optional[PaneLayout]:
         from .preview.native import PaneLayout

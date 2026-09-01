@@ -140,6 +140,83 @@ def calculate_terminal_grid_rectangle(
     )
 
 
+def windows_terminal_grid_rectangle(
+    terminal_hwnd: int,
+) -> Optional[WindowRectangle]:
+    """Locate the terminal character grid in physical screen pixels."""
+    if os.name != "nt" or not terminal_hwnd:
+        return None
+
+    user32 = ctypes.windll.user32
+
+    def window_rectangle(hwnd: int) -> Optional[WindowRectangle]:
+        rectangle = _Win32Rect()
+        if not user32.GetWindowRect(
+            wintypes.HWND(hwnd),
+            ctypes.byref(rectangle),
+        ):
+            return None
+        return WindowRectangle(
+            rectangle.left,
+            rectangle.top,
+            rectangle.right,
+            rectangle.bottom,
+        )
+
+    terminal = window_rectangle(terminal_hwnd)
+    if terminal is None:
+        return None
+
+    bridge: Optional[WindowRectangle] = None
+    drag_bar: Optional[WindowRectangle] = None
+    callback_type = ctypes.WINFUNCTYPE(
+        wintypes.BOOL,
+        wintypes.HWND,
+        wintypes.LPARAM,
+    )
+
+    @callback_type
+    def collect(child, parameter):
+        nonlocal bridge, drag_bar
+        child_handle = int(child or 0)
+        class_buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(
+            wintypes.HWND(child_handle),
+            class_buffer,
+            len(class_buffer),
+        )
+        rectangle = window_rectangle(child_handle)
+        if rectangle is None:
+            return True
+        if class_buffer.value == (
+            "Windows.UI.Composition.DesktopWindowContentBridge"
+        ):
+            if (
+                bridge is None
+                or rectangle.width * rectangle.height
+                > bridge.width * bridge.height
+            ):
+                bridge = rectangle
+        elif class_buffer.value == "DRAG_BAR_WINDOW_CLASS":
+            drag_bar = rectangle
+        return True
+
+    try:
+        user32.EnumChildWindows(
+            wintypes.HWND(terminal_hwnd),
+            collect,
+            0,
+        )
+    except Exception:
+        bridge = None
+
+    return calculate_terminal_grid_rectangle(
+        terminal,
+        bridge=bridge,
+        drag_bar=drag_bar,
+    )
+
+
 def calculate_viewport_render_plan(
     image_size: tuple[int, int],
     canvas_size: tuple[int, int],
