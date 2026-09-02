@@ -221,8 +221,13 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     ".pane_path", DirectoryPathInput
                 )
                 self.assertTrue(path_input.value.endswith(os.sep))
-                click_index = path_input.value.index("parent") + 2
-                await pilot.click(path_input, offset=(click_index + 1, 0))
+                # A Windows temporary path is wider than the pane and Textual
+                # horizontally scrolls the Input. Exercise the same message
+                # emitted by a visible segment click without depending on an
+                # off-screen terminal coordinate.
+                path_input.post_message(
+                    DirectoryPathInput.SegmentClicked(str(parent))
+                )
                 await self._wait_for_ui(
                     pilot,
                     lambda: app.left.current_path == parent.resolve(),
@@ -496,12 +501,13 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertGreater(int(table.max_scroll_y), 0)
                 await pilot.pause(0.2)
-                table.scroll_to(
-                    y=55,
-                    animate=False,
-                    force=True,
-                    immediate=True,
-                )
+                target_scroll = min(55, int(table.max_scroll_y))
+                # Assign the reactive offset directly. ScrollView.scroll_to()
+                # is renderer-timed and may be reset before a Windows
+                # headless frame is painted, which makes this test flaky.
+                table.scroll_target_y = target_scroll
+                table.scroll_y = target_scroll
+                table.refresh()
                 await pilot.pause()
 
                 before_scroll = int(table.scroll_offset.y)
@@ -964,12 +970,15 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     ExtractZipRequest(right_dir),
                     "left",
                 )
-                for _ in range(100):
-                    if not app._archive_busy:
-                        break
-                    await pilot.pause(0.02)
-
                 extracted = right_dir / "extracted-design.txt"
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: (
+                        not app._archive_busy
+                        and app.right.initial_listing_complete
+                        and extracted in app.right.entries
+                    ),
+                )
                 self.assertFalse(app._archive_busy)
                 self.assertEqual(extracted.read_text(encoding="utf-8"), "ready")
                 self.assertIn(extracted, app.right.entries)
