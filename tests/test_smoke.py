@@ -74,6 +74,22 @@ from mdir.base import delete_confirmation_message, move_confirmation_message
 
 
 class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
+    async def _wait_for_ui(
+        self,
+        pilot,
+        predicate,
+        *,
+        timeout: float = 5.0,
+        interval: float = 0.02,
+    ) -> None:
+        """Wait for an asynchronous UI/filesystem result on slower runners."""
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if predicate():
+                return
+            await pilot.pause(interval)
+        self.assertTrue(predicate(), "Timed out waiting for the UI state")
+
     def test_file_list_sizes_show_complete_comma_separated_bytes(self) -> None:
         from mdir import core
         from mdir.ui.search import _display_file_size
@@ -207,7 +223,10 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(path_input.value.endswith(os.sep))
                 click_index = path_input.value.index("parent") + 2
                 await pilot.click(path_input, offset=(click_index + 1, 0))
-                await pilot.pause()
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: app.left.current_path == parent.resolve(),
+                )
 
                 self.assertEqual(app.left.current_path, parent.resolve())
                 self.assertEqual(app.active_side, "left")
@@ -471,10 +490,10 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.set_active("left")
                 table = app.right.table
                 self.assertEqual(table.cursor_row, 0)
-                for _ in range(50):
-                    if int(table.max_scroll_y) > 0:
-                        break
-                    await pilot.pause(0.02)
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: int(table.max_scroll_y) > 0,
+                )
                 self.assertGreater(int(table.max_scroll_y), 0)
                 await pilot.pause(0.2)
                 table.scroll_to(
@@ -901,10 +920,14 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     CreateZipRequest(destination),
                     "left",
                 )
-                for _ in range(100):
-                    if not app._archive_busy:
-                        break
-                    await pilot.pause(0.02)
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: (
+                        not app._archive_busy
+                        and app.left.initial_listing_complete
+                        and destination in app.left.entries
+                    ),
+                )
 
                 self.assertFalse(app._archive_busy)
                 self.assertTrue(destination.is_file())
@@ -1306,12 +1329,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     "Move confirmation must default to Yes",
                 )
                 await pilot.press("enter")
-                for _ in range(200):
-                    if not app._file_operation_busy:
-                        break
-                    await pilot.pause(0.01)
-
                 moved = right_root / source.name
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: moved.exists() and not source.exists(),
+                )
                 self.assertFalse(source.exists())
                 self.assertTrue(moved.exists())
 
@@ -1326,10 +1348,10 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     "Delete confirmation must default to Yes",
                 )
                 await pilot.press("enter")
-                for _ in range(200):
-                    if not app._file_operation_busy:
-                        break
-                    await pilot.pause(0.01)
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: not moved.exists(),
+                )
 
                 self.assertFalse(moved.exists())
                 app.exit()
