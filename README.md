@@ -1,11 +1,27 @@
-# MDIR-P
+# mDIR-P
 
-**MDIR for PowerShell. MDIR Plus.**
+**A fast, free dual-pane file manager for Windows.** Classic MDIR speed,
+modern previews, safe file operations, and optional AI —
+inside PowerShell and Windows Terminal.
 
-MDIR-P is a fast, keyboard-friendly dual-pane file manager for Windows
-PowerShell and Windows Terminal. It brings the direct workflow of classic
-DOS file managers to a modern interface with optional AI and document
-preview features.
+[![Latest release](https://img.shields.io/github/v/release/jtl-sun/mdir-p?label=Windows)](https://github.com/jtl-sun/mdir-p/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f.svg)](LICENSE)
+[![Tests](https://github.com/jtl-sun/mdir-p/actions/workflows/ci.yml/badge.svg)](https://github.com/jtl-sun/mdir-p/actions)
+
+> **Free and open source.** Built so Windows users can manage files quickly
+> without subscriptions, ads, or account registration.
+
+### Download for Windows
+
+[**Download mDIR-P 2.23.29**](https://github.com/jtl-sun/mdir-p/releases/download/v2.23.29/mDIR-P-2.23.29.zip)
+· [Release notes](https://github.com/jtl-sun/mdir-p/releases/tag/v2.23.29)
+· [Ubuntu version](https://github.com/jtl-sun/mdir-u)
+
+Extract the ZIP, close any running mDIR window, and double-click
+**`INSTALL_MDIR.bat`**. Then start mDIR from the desktop shortcut or type
+`m` in a terminal.
+
+![mDIR dual-pane workflow](docs/assets/mdir-demo.gif)
 
 ## Dedication
 

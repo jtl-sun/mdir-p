@@ -1,0 +1,17 @@
+PackageIdentifier: Jtlsun.mDIR-P
+PackageVersion: 2.23.29
+PackageLocale: en-US
+Publisher: Jtlsun Chois
+PackageName: mDIR-P
+License: MIT
+LicenseUrl: https://github.com/jtl-sun/mdir-p/blob/main/LICENSE
+ShortDescription: Fast dual-pane file manager for Windows Terminal and PowerShell.
+PackageUrl: https://github.com/jtl-sun/mdir-p
+Tags:
+  - file-manager
+  - terminal
+  - dual-pane
+  - powershell
+ManifestType: defaultLocale
+ManifestVersion: 1.10.0
+
