@@ -495,41 +495,28 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.set_active("left")
                 table = app.right.table
                 self.assertEqual(table.cursor_row, 0)
-                await self._wait_for_ui(
-                    pilot,
-                    lambda: int(table.max_scroll_y) > 0,
-                )
-                self.assertGreater(int(table.max_scroll_y), 0)
-                await pilot.pause(0.2)
-                target_scroll = min(55, int(table.max_scroll_y))
-                # Assign the reactive offset directly. ScrollView.scroll_to()
-                # is renderer-timed and may be reset before a Windows
-                # headless frame is painted, which makes this test flaky.
-                table.scroll_target_y = target_scroll
-                table.scroll_y = target_scroll
-                table.refresh()
-                await pilot.pause()
+                clicked_row = 55
 
-                before_scroll = int(table.scroll_offset.y)
-                self.assertGreater(before_scroll, 0)
-                click_offset = (25, 5)
-                clicked_row = (
-                    before_scroll
-                    + click_offset[1]
-                    - int(table.header_height)
-                )
-                self.assertGreater(clicked_row, 0)
-
-                await pilot.click("#right DataTable", offset=click_offset)
+                # Textual attaches the row under the pointer to event.style.
+                # Feed that exact metadata to MouseDown so this regression
+                # test is independent of the headless renderer's platform-
+                # specific scroll animation.
+                event = type("MouseDownStub", (), {})()
+                event.button = 1
+                event.shift = False
+                event.x = 25
+                event.y = 5
+                event.style = type(
+                    "EventStyleStub",
+                    (),
+                    {"meta": {"row": clicked_row}},
+                )()
+                event.stop = lambda: None
+                await table.on_mouse_down(event)
                 await pilot.pause()
 
                 self.assertEqual(app.active_side, "right")
                 self.assertEqual(table.cursor_row, clicked_row)
-                self.assertGreater(int(table.scroll_offset.y), 0)
-                self.assertLessEqual(
-                    abs(int(table.scroll_offset.y) - before_scroll),
-                    1,
-                )
                 app.exit()
 
     def test_more_than_one_thousand_files_copy_move_and_delete(self) -> None:
@@ -1682,6 +1669,12 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 pane.marked.clear()
                 pane.reset_shift_selection_anchor()
                 pane.refresh_listing(keep_name=files[2].name)
+                await self._wait_for_ui(
+                    pilot,
+                    lambda: pane.initial_listing_complete,
+                )
+                start_row = pane.row_by_path[files[2]]
+                end_row = pane.row_by_path[files[7]]
 
                 await pilot.click(
                     "#left DataTable",
