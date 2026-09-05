@@ -5,6 +5,7 @@ import json
 import os
 import shutil
 import time
+from contextlib import closing
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from threading import Event
@@ -429,7 +430,10 @@ class FileIndex:
                 count += 1
                 if progress and count % 500 == 0:
                     progress(count, str(directory))
-        with self._connect() as connection:
+        # sqlite3.Connection's context manager commits/rolls back but does not
+        # close the handle.  Keep the transaction semantics and close it
+        # explicitly so Windows can immediately replace or remove the index.
+        with closing(self._connect()) as connection, connection:
             connection.execute("DELETE FROM files WHERE root = ?", (str(root),))
             connection.executemany(
                 "INSERT OR REPLACE INTO files VALUES (?, ?, ?, ?, ?, ?)", rows
@@ -441,7 +445,7 @@ class FileIndex:
         return count
 
     def has_root(self, root: Path) -> bool:
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             row = connection.execute(
                 "SELECT 1 FROM indexed_roots WHERE root = ?", (str(root.resolve()),)
             ).fetchone()
@@ -453,7 +457,7 @@ class FileIndex:
             return []
         clauses = " AND ".join("lower(name) LIKE ?" for _ in terms)
         parameters: list[object] = [str(root.resolve()), *[f"%{term}%" for term in terms], limit]
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 f"SELECT path, size, modified, is_directory FROM files "
                 f"WHERE root = ? AND {clauses} ORDER BY lower(name) LIMIT ?",

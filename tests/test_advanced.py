@@ -119,6 +119,12 @@ class AdvancedFeatureTests(unittest.TestCase):
             index = FileIndex(root / "index.sqlite3")
             self.assertEqual(index.rebuild(left), 3)
             self.assertEqual(len(index.search(left, "quarter report")), 1)
+            # Every operation must release its SQLite handle. Windows refuses
+            # to rename/delete an open database, unlike many Unix systems.
+            database = root / "index.sqlite3"
+            moved_database = root / "index-closed.sqlite3"
+            database.replace(moved_database)
+            moved_database.replace(database)
             self.assertEqual(len(find_exact_duplicates(left)), 1)
             compared = compare_directories(left, right)
             pairs, errors = safe_sync_directories(left, right, compared)
