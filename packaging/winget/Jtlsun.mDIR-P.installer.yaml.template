@@ -1,5 +1,5 @@
 PackageIdentifier: Jtlsun.mDIR-P
-PackageVersion: 2.23.29
+PackageVersion: 2.25.0
 InstallerType: zip
 NestedInstallerType: portable
 NestedInstallerFiles:
@@ -7,8 +7,7 @@ NestedInstallerFiles:
     PortableCommandAlias: mdir
 Installers:
   - Architecture: x64
-    InstallerUrl: https://github.com/jtl-sun/mdir-p/releases/download/v2.23.29/mDIR-P-2.23.29-win64.zip
+    InstallerUrl: https://github.com/jtl-sun/mdir-p/releases/download/v2.25.0/mDIR-P-2.25.0-win64.zip
     InstallerSha256: INSTALLER_SHA256
 ManifestType: installer
 ManifestVersion: 1.10.0
-

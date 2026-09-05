@@ -1,7 +1,7 @@
 # mDIR-P
 
 **A fast, free dual-pane file manager for Windows.** Classic MDIR speed,
-modern previews, safe file operations, and optional AI —
+modern previews, safe file operations, and integrated AI —
 inside PowerShell and Windows Terminal.
 
 [![Latest release](https://img.shields.io/github/v/release/jtl-sun/mdir-p?label=Windows)](https://github.com/jtl-sun/mdir-p/releases/latest)
@@ -13,8 +13,8 @@ inside PowerShell and Windows Terminal.
 
 ### Download for Windows
 
-[**Download mDIR-P 2.23.29**](https://github.com/jtl-sun/mdir-p/releases/download/v2.23.29/mDIR-P-2.23.29.zip)
-· [Release notes](https://github.com/jtl-sun/mdir-p/releases/tag/v2.23.29)
+[**Download the latest stable mDIR-P**](https://github.com/jtl-sun/mdir-p/releases/latest)
+· [Release notes](https://github.com/jtl-sun/mdir-p/releases)
 · [Ubuntu version](https://github.com/jtl-sun/mdir-u)
 
 Extract the ZIP, close any running mDIR window, and double-click
@@ -33,9 +33,9 @@ manage files quickly and efficiently from the keyboard.
 
 - Fast dual-pane file management inspired by MDIR and Total Commander
 - Responsive handling of folders containing 20,000 or more image files
-- High-resolution preview for images, PDF documents, and Excel workbooks
+- Preview for images, PDF, Excel, Word, PowerPoint, CSV, text, and Markdown
 - Mouse-wheel zoom and drag-to-pan in Preview
-- Optional AI terminal with Codex, PowerShell, and Ollama providers
+- Integrated AI terminal with Codex, PowerShell, and Ollama providers
 - Copy, move, rename, delete, search, drive selection, and editable paths
 - Responsive background Copy, Move, and Delete for batches exceeding 1,000
   items, with live progress and cancellation
@@ -221,6 +221,14 @@ are normally not required for `CurrentUser` or `Process` scope.
 | `F10`                  | Quit                                        |
 | `F12`                  | Toggle the AI terminal                      |
 | `Ctrl+F`               | Advanced search                             |
+| `Ctrl+Shift+F`         | mIndex indexed filename search              |
+| `Ctrl+Shift+D`         | Exact and visually similar duplicates       |
+| `Ctrl+Shift+C`         | Compare the two current folders             |
+| `Ctrl+Shift+Y`         | Safe sync active pane to opposite pane      |
+| `Ctrl+Z`               | Undo Center                                 |
+| `Ctrl+Shift+S/L`       | Save/load a named Workspace                 |
+| `Ctrl+Shift+M`         | Start/stop Copy/Move Macro recording        |
+| `Ctrl+Alt+M`           | Review and play a saved Macro               |
 | `Ctrl+F3`              | Toggle Preview                              |
 | `Ctrl+G`               | Calculate selected folder size              |
 | `Ctrl+H`               | Show or hide hidden/system items            |
@@ -362,9 +370,12 @@ prevented until the first one finishes.
 
 ## Preview and Text Tools
 
-- `Ctrl+F3` opens the Preview panel for BMP, GIF, HEIC/HEIF, JPEG, PNG, TIFF,
-  WebP, PDF, XLS, XLSM, and XLSX-family files when the optional preview
-  dependencies are installed.
+- `Ctrl+F3` opens Preview for common images, PDF, Excel, CSV, TXT, Markdown,
+  JSON, XML, YAML, HTML, Word, and PowerPoint files.
+- DOCX and PPTX have a lightweight built-in text fallback. If the free
+  LibreOffice application is installed, mDIR uses it only when needed to
+  preserve Office page and slide layout. Legacy DOC and PPT preview require
+  LibreOffice.
 - Image and document preparation is bounded and runs in the background.
   Oversized images are downsampled before terminal rendering.
 - `F3` views supported text files up to 3 MiB. `F4` edits supported text files
@@ -445,15 +456,39 @@ and `action`.
 ```
 
 Folder shortcuts accept `active`, `left`, or `right` for `pane`. Available
-placeholders are `{home}`, `{project}`, `{current}`, `{left}`, and `{right}`.
+placeholders are `{home}`, `{project}`, `{current}`, `{left}`, `{right}`,
+`{selected}`, `{left_selected}`, and `{right_selected}`. This lets a program
+link send the selected file—or files from both panes—to free external tools
+such as LibreOffice, Meld, GIMP, or VLC without bundling those applications.
 Supported actions are `toggle_ai_terminal`, `toggle_preview`, `search`,
 `powershell_here`, `refresh_all`, and `hidden_system`.
 
 ## AI and Local Commands
 
-Codex uses workspace restrictions by default. PowerShell and local AI modes
+The AI panel is a core mDIR feature and loads only when `F12` is pressed, so it
+does not slow normal file browsing. Provider CLIs remain separately installed
+tools. Codex uses workspace restrictions by default. PowerShell and local AI modes
 can run commands directly on the computer, so use them only when full local
 access is intended.
+
+Type an explicit safe file request in the AI panel with `/file` or `/파일`,
+for example `/파일 선택한 파일을 오른쪽으로 복사`. mDIR converts the request
+into a local plan and shows the operation, files, and destination in a separate
+approval dialog. The AI provider never receives permission to bypass this
+dialog. Copy/Move/Rename/MkDir are recorded by Undo Center; Delete remains in
+the operating-system Recycle Bin and is not automatically restored by mDIR.
+
+## Advanced Lightweight Tools
+
+These tools are loaded only when invoked. `mIndex` uses Python's built-in
+SQLite and searches filenames inside the active folder tree; prefix a search
+with `!` to rebuild that root. Duplicate Finder hashes only equal-size
+candidates and uses Pillow's small perceptual image hash when image support is
+installed. Folder comparison is read-only. Safe Sync copies new or changed
+items from the active pane to the opposite pane and never deletes destination
+items. Named Workspaces remember both folders, the active pane, and hidden-file
+visibility. Macros record reviewed Copy/Move batches only—never Delete—and skip
+missing sources or existing targets during playback.
 
 ## Project Layout
 
@@ -466,7 +501,7 @@ mdir/
 |-- file_pane.py    Cached metadata and editable paths
 |-- fast_app.py     Large-directory and startup optimizations
 |-- ai/             AI providers and conversation panel
-|-- preview/        Image, PDF, and Excel preview
+|-- preview/        Image, PDF, Office, spreadsheet, and text preview
 `-- ui/             Dialogs, search, rename, and text viewer
 ```
 
