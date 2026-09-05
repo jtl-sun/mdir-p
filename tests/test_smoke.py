@@ -10,6 +10,7 @@ import threading
 import time
 import zipfile
 import struct
+from types import SimpleNamespace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,8 +18,10 @@ from mdir.app import MDirApp
 from mdir.preview.native import (
     PaneLayout,
     WindowRectangle,
+    _NativePreviewWindow,
     calculate_pane_rectangle,
 )
+from mdir.preview.document import can_preview, prepare_document_source
 from mdir.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
 from mdir.shortcuts import (
     DEFAULT_SHORTCUTS,
@@ -41,6 +44,7 @@ from mdir.ui.batch_rename import (
 from mdir.ui.search import (
     AdvancedSearchScreen,
     SearchRequest,
+    SearchResult,
     search_files,
 )
 from mdir.ui.archive import (
@@ -1082,8 +1086,62 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                         root,
                     )
                 )
+                result = SearchResult(
+                    path=root / "find-me.txt",
+                    is_directory=False,
+                    size=6,
+                    modified=0.0,
+                )
+                app.screen.results = [result]
+                table = app.screen.query_one("#search_results")
+                table.add_row("find-me.txt", "File", "6 B", "", str(root))
+                table.move_cursor(row=0, column=0)
+                with patch.object(app, "open_external_path") as opener:
+                    app.screen._launch_result()
+                opener.assert_called_once_with(result.path)
                 await pilot.press("escape")
                 app.exit()
+
+    def test_extended_document_preview_formats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            markdown = root / "notes.md"
+            markdown.write_text("# Notes\n\nPreview text", encoding="utf-8")
+            csv_path = root / "report.csv"
+            csv_path.write_text("name,total\nAlpha,42\n", encoding="utf-8")
+            docx = root / "brief.docx"
+            with zipfile.ZipFile(docx, "w") as archive:
+                archive.writestr(
+                    "word/document.xml",
+                    '<w:document xmlns:w="urn:word"><w:body><w:p>'
+                    "<w:r><w:t>Project brief</w:t></w:r>"
+                    "</w:p></w:body></w:document>",
+                )
+            pptx = root / "slides.pptx"
+            with zipfile.ZipFile(pptx, "w") as archive:
+                archive.writestr(
+                    "ppt/slides/slide1.xml",
+                    '<p:sld xmlns:p="urn:presentation" xmlns:a="urn:drawing">'
+                    "<p:cSld><a:t>Quarterly review</a:t></p:cSld></p:sld>",
+                )
+
+            self.assertTrue(all(can_preview(path) for path in (
+                markdown, csv_path, docx, pptx,
+            )))
+            with patch(
+                "mdir.preview.document._libreoffice_executable",
+                return_value=None,
+            ):
+                expected = ((markdown, "Markdown"), (csv_path, "CSV"),
+                            (docx, "Word"), (pptx, "PowerPoint"))
+                for path, kind in expected:
+                    source = prepare_document_source(path)
+                    try:
+                        self.assertEqual(source.kind, kind)
+                        self.assertGreater(source.size[0], 0)
+                        self.assertGreater(source.size[1], 0)
+                    finally:
+                        source.close()
 
     async def test_batch_rename_screen_opens_for_marked_items(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2392,6 +2450,13 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(app.left.table.has_focus)
                     self.assertTrue(app.right.disabled)
 
+                    with patch("mdir.core.open_with_default_app") as opener:
+                        app.action_open_item()
+                    opener.assert_called_once_with(image)
+                    self.assertTrue(app.preview_enabled)
+                    self.assertFalse(app.preview_mode)
+                    self.assertFalse(app.right.disabled)
+
                     await pilot.pause(0.25)
                     app.action_toggle_preview()
                     await pilot.pause(0.05)
@@ -2441,6 +2506,23 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(rectangle.width, 800)
         self.assertGreater(rectangle.height, 700)
 
+    def test_native_preview_hides_before_external_open(self) -> None:
+        opened: list[Path] = []
+        withdrawn: list[bool] = []
+        window = object.__new__(_NativePreviewWindow)
+        window.path = Path("C:/Documents/report.xlsx")
+        window.visible = True
+        window.root = SimpleNamespace(
+            withdraw=lambda: withdrawn.append(True),
+        )
+        window.open_callback = opened.append
+
+        window.open_original()
+
+        self.assertFalse(window.visible)
+        self.assertEqual(withdrawn, [True])
+        self.assertEqual(opened, [window.path])
+
     def test_shortcut_configuration(self) -> None:
         values = [
             {"label": "Docs", "type": "folder", "target": "{home}\\Documents"},
@@ -2464,14 +2546,21 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(load_shortcuts(config_path), parsed)
 
         expanded = expand_shortcut_text(
-            "{project}|{current}|{left}|{right}",
+            "{project}|{current}|{left}|{right}|{selected}|"
+            "{left_selected}|{right_selected}",
             current=Path("C:/Current"),
             left=Path("C:/Left"),
             right=Path("D:/Right"),
             project=Path("S:/MDIR"),
+            selected=Path("C:/Current/report.pdf"),
+            left_selected=Path("C:/Left/source.txt"),
+            right_selected=Path("D:/Right/target.txt"),
         )
         self.assertIn(str(Path("S:/MDIR")), expanded)
         self.assertIn(str(Path("C:/Current")), expanded)
+        self.assertIn(str(Path("C:/Current/report.pdf")), expanded)
+        self.assertIn(str(Path("C:/Left/source.txt")), expanded)
+        self.assertIn(str(Path("D:/Right/target.txt")), expanded)
 
 
 if __name__ == "__main__":

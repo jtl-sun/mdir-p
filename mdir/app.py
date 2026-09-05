@@ -38,6 +38,7 @@ from .shortcuts import (
     save_shortcuts,
     shortcut_config_path,
 )
+from .platform_support import open_with_default_app
 from .theme import (
     THEME_NAME,
     TOTAL_COMMANDER_CSS,
@@ -200,6 +201,7 @@ class MDirApp(FastFileManagerApp):
 
             self._native_preview = NativePreviewController(
                 self,
+                open_callback=self._native_open_document,
                 full_view_callback=self._native_full_view,
                 files_callback=self._native_restore_files,
             )
@@ -340,6 +342,9 @@ class MDirApp(FastFileManagerApp):
             left=self.left.current_path,
             right=self.right.current_path,
             project=self.shortcut_project,
+            selected=self.active.selected_path(),
+            left_selected=self.left.selected_path(),
+            right_selected=self.right.selected_path(),
         )
 
     def _shortcut_pane(self, shortcut: ShortcutDefinition):
@@ -696,8 +701,9 @@ class MDirApp(FastFileManagerApp):
         self,
         *,
         restore_right_focus: bool = False,
+        wait_for_native: bool = False,
     ) -> None:
-        self.native_preview.hide()
+        self.native_preview.hide(wait=wait_for_native)
         if not self.preview_mode:
             return
         self.preview_mode = False
@@ -742,8 +748,8 @@ class MDirApp(FastFileManagerApp):
             self._preview_current_left_selection()
             if not self.preview_mode:
                 self.set_status(
-                    "Preview enabled. Select an image, PDF, or Excel "
-                    "file in the left pane."
+                    "Preview enabled. Select an image, PDF, Office, CSV, "
+                    "text, or Markdown file."
                 )
             self._restore_preview_file_focus()
             self.call_after_refresh(self._restore_preview_file_focus)
@@ -807,17 +813,33 @@ class MDirApp(FastFileManagerApp):
         if path is None:
             return
         try:
-            if os.name != "nt":
-                raise OSError("Open is currently available on Windows.")
-            os.startfile(path)
+            self.open_external_path(path)
             self.set_status(
-                f"Opened with the Windows default application: {path}"
+                f"Opened with the default application: {path}"
             )
         except Exception as exc:
             self.set_status(f"Could not open {path.name}: {exc}")
 
     def _native_full_view(self) -> None:
         self.action_view()
+
+    def _native_open_document(self, path: Path) -> None:
+        try:
+            if self.preview_mode:
+                self._hide_document_preview(restore_right_focus=False)
+            super().open_external_path(path)
+            self.set_status(f"Opened with the default application: {path}")
+        except Exception as exc:
+            self.set_status(f"Could not open {path.name}: {exc}")
+
+    def open_external_path(self, path: Path) -> None:
+        """Remove Preview before giving the file to another application."""
+        if self.preview_mode:
+            self._hide_document_preview(
+                restore_right_focus=False,
+                wait_for_native=True,
+            )
+        super().open_external_path(path)
 
     def _native_restore_files(self) -> None:
         self._hide_document_preview(restore_right_focus=True)

@@ -18,6 +18,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Footer, Header, Label, Static
 
 from .ui.inputs import ThinCursorInput as Input
+from .platform_support import open_with_default_app
 
 
 from . import __version__
@@ -1891,6 +1892,15 @@ class MDir(App):
         Binding("f9", "drive", "Drive"),
         Binding("f10", "quit", "Quit"),
         Binding("ctrl+f", "search", "Find", show=False),
+        Binding("ctrl+shift+f", "mindex", "mIndex", show=False),
+        Binding("ctrl+shift+d", "find_duplicates", "Duplicates", show=False),
+        Binding("ctrl+shift+c", "compare_folders", "Compare", show=False),
+        Binding("ctrl+shift+y", "safe_sync", "Safe sync", show=False),
+        Binding("ctrl+shift+m", "toggle_macro_recording", "Record macro", show=False),
+        Binding("ctrl+alt+m", "play_macro", "Play macro", show=False),
+        Binding("ctrl+z", "undo_last", "Undo", show=False),
+        Binding("ctrl+shift+s", "save_workspace", "Save workspace", show=False),
+        Binding("ctrl+shift+l", "load_workspace", "Load workspace", show=False),
         Binding("ctrl+n", "sort_name", "Name sort", show=False),
         Binding("ctrl+e", "sort_ext", "Ext sort", show=False),
         Binding("ctrl+s", "sort_size", "Size sort", show=False),
@@ -2437,15 +2447,14 @@ class MDir(App):
             return
 
         try:
-            if os.name == "nt":
-                os.startfile(str(path))
-            elif sys.platform == "darwin":
-                subprocess.Popen(["open", str(path)])
-            else:
-                subprocess.Popen(["xdg-open", str(path)])
+            self.open_external_path(path)
             self.set_status(f"Opened: {path.name}")
         except Exception as exc:
             self.set_status(f"Open failed: {exc}")
+
+    def open_external_path(self, path: Path) -> None:
+        """Open a file through the operating system's default application."""
+        open_with_default_app(path)
 
     def action_open_item(self) -> None:
         self._open_from_pane(self.active)
@@ -2496,6 +2505,9 @@ class MDir(App):
                 self.active.refresh_listing(keep_name=target.name)
                 self.passive.refresh_listing()
                 self.set_status(f"Renamed: {path.name} -> {target.name}")
+                recorder = getattr(self, "record_operation", None)
+                if callable(recorder):
+                    recorder("rename", ((path, target),))
             except Exception as exc:
                 self.set_status(f"Rename failed: {exc}")
 
@@ -2618,6 +2630,9 @@ class MDir(App):
                 new_dir.mkdir(parents=False, exist_ok=False)
                 self.active.refresh_listing(keep_name=name)
                 self.set_status(f"Created directory: {name}")
+                recorder = getattr(self, "record_operation", None)
+                if callable(recorder):
+                    recorder("mkdir", ((new_dir, new_dir),))
             except Exception as exc:
                 self.set_status(f"MkDir failed: {exc}")
 

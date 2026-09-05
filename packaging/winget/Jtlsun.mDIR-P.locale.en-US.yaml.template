@@ -1,5 +1,5 @@
 PackageIdentifier: Jtlsun.mDIR-P
-PackageVersion: 2.23.29
+PackageVersion: 2.25.0
 PackageLocale: en-US
 Publisher: Jtlsun Chois
 PackageName: mDIR-P
@@ -14,4 +14,3 @@ Tags:
   - powershell
 ManifestType: defaultLocale
 ManifestVersion: 1.10.0
-

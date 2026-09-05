@@ -1,5 +1,38 @@
 # Changelog
 
+## 2.25.0
+
+- Added the lazy SQLite `mIndex` filename index and exact/visual duplicate
+  discovery without changing files.
+- Added a persistent Undo Center for safe Copy, Move, Rename, MkDir, Batch
+  Rename, and safe-sync operations. Undo refuses to remove files edited later;
+  Trash/Recycle Bin deletes and overwrites remain deliberately non-undoable.
+- Added named two-pane Workspaces, a Copy/Move Macro recorder, and a reviewed
+  macro queue that never overwrites an existing target automatically.
+- Added Pause/Resume to background file operations and automatic queuing when
+  another file operation is already running.
+- Added recursive folder comparison and deletion-free one-way safe sync.
+- Added explicit `/file` and `/파일` AI requests that produce a visible plan
+  and require approval before any filesystem change.
+
+## 2.24.1
+
+- Close the native Preview overlay before opening a file externally so the
+  associated application receives an unobstructed, editable window.
+
+## 2.24.0
+
+- Expanded Preview to images, PDF, Excel, CSV/TSV, text, Markdown, JSON, XML,
+  YAML, HTML, Word, and PowerPoint while keeping rendering lazy and bounded.
+- Added lightweight DOCX/PPTX text fallback and optional on-demand
+  LibreOffice rendering for page-accurate layouts and legacy DOC/PPT files.
+- Open files from search results with one click or Enter in the operating
+  system's default application; use **Location** to reveal one inside mDIR.
+- Added selected-file placeholders to program links so free specialist apps
+  can be connected without increasing mDIR's installed weight.
+- Kept the AI panel as a core, lazily loaded feature with external provider
+  tools remaining optional.
+
 ## 2.23.29
 
 - Reuse the existing private Python environment and its installed preview
