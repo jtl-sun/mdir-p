@@ -218,7 +218,7 @@ are normally not required for `CurrentUser` or `Process` scope.
 | `F7`                   | Create a directory                          |
 | `F8`                   | Delete                                      |
 | `F9`                   | Select a drive                              |
-| `F10`                  | Quit                                        |
+| `F10`                  | Open mDIR Options                           |
 | `F12`                  | Toggle the AI terminal                      |
 | `Ctrl+F`               | Advanced search                             |
 | `Ctrl+Shift+F`         | mIndex indexed filename search              |
@@ -239,8 +239,16 @@ are normally not required for `CurrentUser` or `Process` scope.
 | `Ctrl+Shift+W`         | Reset column widths                         |
 | `Shift+F10`            | Open PowerShell in the current folder       |
 | `Alt+F1`, `Alt+F2`     | Select the left or right drive              |
-| `Ctrl+P`               | Open the command palette and theme selector |
 | `Alt+Enter`            | Show properties for the selected item       |
+
+The generic command palette is disabled. Select **F10 Option** in the footer
+to open mDIR's own settings for **Keys**, **Links**, **Theme**, and **Help**.
+Use the arrow keys to move between Option buttons. **Help** opens this
+`README.md` in mDIR's read-only Viewer. In **Keys**,
+navigation, opening, selection, and the Options key are fixed; the remaining
+file-operation, search, advanced-tool, sorting, AI, and Preview shortcuts can
+be changed. mDIR rejects duplicate shortcuts and keys reserved by essential
+actions. Changes are saved in `~/.mdir-p-keys.json` and take effect immediately.
 
 When several items are marked, `F2` opens Batch Rename automatically. The
 same tool is always available with `Ctrl+F2`. Its live preview supports `[N]`
@@ -372,10 +380,11 @@ prevented until the first one finishes.
 
 - `Ctrl+F3` opens Preview for common images, PDF, Excel, CSV, TXT, Markdown,
   JSON, XML, YAML, HTML, Word, and PowerPoint files.
-- DOCX and PPTX have a lightweight built-in text fallback. If the free
-  LibreOffice application is installed, mDIR uses it only when needed to
-  preserve Office page and slide layout. Legacy DOC and PPT preview require
-  LibreOffice.
+- DOCX and PPTX have a lightweight built-in text fallback. On Windows, mDIR
+  uses an installed Microsoft Word or PowerPoint application on demand to
+  preserve Office page and slide layout; macros are disabled and the original
+  file is opened read-only. LibreOffice remains the free fallback, including
+  for legacy DOC and PPT preview when Microsoft Office is unavailable.
 - Image and document preparation is bounded and runs in the background.
   Oversized images are downsampled before terminal rendering.
 - `F3` views supported text files up to 3 MiB. `F4` edits supported text files

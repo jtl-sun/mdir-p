@@ -886,6 +886,126 @@ def _libreoffice_executable() -> Optional[str]:
     return None
 
 
+def _windows_office_preview_available() -> bool:
+    """Return whether Microsoft Office automation can be attempted."""
+    return os.name == "nt"
+
+
+def _powershell_executable() -> Optional[str]:
+    """Find Windows PowerShell for Microsoft Office COM automation."""
+    if not _windows_office_preview_available():
+        return None
+    for name in ("powershell.exe", "powershell"):
+        executable = shutil.which(name)
+        if executable:
+            return executable
+    system_root = os.environ.get("SystemRoot")
+    if system_root:
+        candidate = (
+            Path(system_root)
+            / "System32"
+            / "WindowsPowerShell"
+            / "v1.0"
+            / "powershell.exe"
+        )
+        if candidate.is_file():
+            return str(candidate)
+    return None
+
+
+_MICROSOFT_OFFICE_PDF_SCRIPT = r"""
+param(
+    [Parameter(Mandatory=$true)][string]$InputPath,
+    [Parameter(Mandatory=$true)][string]$OutputPath,
+    [Parameter(Mandatory=$true)][ValidateSet('Word','PowerPoint')][string]$Kind
+)
+$ErrorActionPreference = 'Stop'
+$application = $null
+$document = $null
+try {
+    if ($Kind -eq 'Word') {
+        $application = New-Object -ComObject Word.Application
+        $application.Visible = $false
+        $application.DisplayAlerts = 0
+        $application.AutomationSecurity = 3
+        $document = $application.Documents.Open($InputPath, $false, $true)
+        $document.ExportAsFixedFormat($OutputPath, 17)
+    } else {
+        $application = New-Object -ComObject PowerPoint.Application
+        $application.DisplayAlerts = 1
+        $application.AutomationSecurity = 3
+        $document = $application.Presentations.Open(
+            $InputPath, $true, $true, $false
+        )
+        $document.SaveAs($OutputPath, 32)
+    }
+} finally {
+    if ($null -ne $document) {
+        try { $document.Close() } catch {}
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($document)
+    }
+    if ($null -ne $application) {
+        try { $application.Quit() } catch {}
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($application)
+    }
+    [GC]::Collect()
+    [GC]::WaitForPendingFinalizers()
+}
+""".strip()
+
+
+def _render_office_with_microsoft_office(path: Path):
+    """Render Office documents through an installed Word or PowerPoint."""
+    executable = _powershell_executable()
+    if not executable:
+        return None
+    suffix = path.suffix.lower()
+    kind = "Word" if suffix in WORD_EXTENSIONS else "PowerPoint"
+    with tempfile.TemporaryDirectory(prefix="mdir_ms_office_preview_") as folder:
+        output_dir = Path(folder)
+        script_path = output_dir / "render_office.ps1"
+        pdf_path = output_dir / "preview.pdf"
+        script_path.write_text(
+            _MICROSOFT_OFFICE_PDF_SCRIPT,
+            encoding="utf-8-sig",
+        )
+        try:
+            result = subprocess.run(
+                [
+                    executable,
+                    "-NoLogo",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-WindowStyle",
+                    "Hidden",
+                    "-File",
+                    str(script_path),
+                    "-InputPath",
+                    str(path.resolve()),
+                    "-OutputPath",
+                    str(pdf_path),
+                    "-Kind",
+                    kind,
+                ],
+                capture_output=True,
+                text=True,
+                errors="replace",
+                timeout=60,
+                startupinfo=_hidden_startup_info(),
+                creationflags=(
+                    subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+                ),
+            )
+        except (OSError, subprocess.SubprocessError):
+            return None
+        if result.returncode != 0 or not pdf_path.is_file():
+            return None
+        image, _, detail = _render_pdf(pdf_path)
+        return image, kind, f"Microsoft {kind} layout | {detail}"
+
+
 def _render_office_with_libreoffice(path: Path):
     executable = _libreoffice_executable()
     if not executable:
@@ -988,6 +1108,9 @@ def _render_office(path: Path):
         raise RuntimeError(
             "Office preview is limited to 256 MiB; use Open for this file."
         )
+    converted = _render_office_with_microsoft_office(path)
+    if converted is not None:
+        return converted
     converted = _render_office_with_libreoffice(path)
     if converted is not None:
         return converted
@@ -1012,8 +1135,8 @@ def _render_office(path: Path):
             "install LibreOffice for slide layout",
         )
     raise RuntimeError(
-        "Legacy DOC/PPT preview needs the free LibreOffice application. "
-        "Install LibreOffice and select the file again."
+        "Legacy DOC/PPT preview needs Microsoft Word/PowerPoint or the free "
+        "LibreOffice application. Install one of them and select the file again."
     )
 
 

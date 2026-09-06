@@ -46,5 +46,8 @@ include = ["mdir*"]
 [tool.setuptools.package-data]
 mdir = ["assets/*.ico"]
 
+[tool.setuptools.data-files]
+"share/mdir-p" = ["README.md"]
+
 [tool.setuptools.dynamic]
 version = {attr = "mdir.__version__"}
