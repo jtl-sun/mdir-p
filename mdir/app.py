@@ -4,6 +4,7 @@ import ctypes
 import inspect
 import os
 import subprocess
+import sys
 import time
 import webbrowser
 from ctypes import wintypes
@@ -39,6 +40,7 @@ from .shortcuts import (
     shortcut_config_path,
 )
 from .platform_support import open_with_default_app
+from .keymap import load_keymap, save_keymap
 from .theme import (
     THEME_NAME,
     TOTAL_COMMANDER_CSS,
@@ -174,6 +176,7 @@ class MDirApp(FastFileManagerApp):
             "Preview",
             show=True,
             priority=True,
+            id="mdir.preview",
         ),
     ]
 
@@ -187,9 +190,12 @@ class MDirApp(FastFileManagerApp):
         self._hotkey_timer: Optional[Timer] = None
         self._preview_layout_timer: Optional[Timer] = None
         self._native_preview: Optional["NativePreviewController"] = None
+        self._preview_suppressed_path: Optional[Path] = None
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
         super().__init__()
+        self.user_keymap = load_keymap()
+        self.set_keymap(self.user_keymap)
         self.register_theme(TOTAL_COMMANDER_THEME)
         self.theme = THEME_NAME
 
@@ -453,39 +459,91 @@ class MDirApp(FastFileManagerApp):
         except Exception as exc:
             self.set_status(f"Shortcut failed: {shortcut.label} ({exc})")
 
+    def _open_link_manager(self) -> None:
+        from .ui.shortcuts import ShortcutManagerScreen
+
+        def links_edited(
+            shortcuts: Optional[list[ShortcutDefinition]],
+        ) -> None:
+            if shortcuts is None:
+                self.set_status("Link editing cancelled.")
+                self.set_active(self.active_side)
+                return
+            try:
+                config_path = save_shortcuts(shortcuts)
+                self.shortcuts = shortcuts
+                self._sync_shortcut_buttons()
+                self.set_status(
+                    f"Saved {len(shortcuts)} link(s): {config_path}"
+                )
+            except Exception as exc:
+                self.set_status(f"Could not save links: {exc}")
+            self.set_active(self.active_side)
+
+        self.push_screen(
+            ShortcutManagerScreen(
+                self.shortcuts,
+                self.active.current_path,
+            ),
+            links_edited,
+        )
+
+    def _open_key_manager(self) -> None:
+        from .ui.options import KeyManagerScreen
+
+        def keys_edited(keymap: Optional[dict[str, str]]) -> None:
+            if keymap is None:
+                self.set_status("Key editing cancelled.")
+                self.set_active(self.active_side)
+                return
+            try:
+                config_path = save_keymap(keymap)
+                self.user_keymap = keymap
+                self.set_keymap(keymap)
+                self.set_status(f"Saved custom keys: {config_path}")
+            except Exception as exc:
+                self.set_status(f"Could not save keys: {exc}")
+            self.set_active(self.active_side)
+
+        self.push_screen(KeyManagerScreen(self.user_keymap), keys_edited)
+
+    def action_options(self) -> None:
+        from .ui.options import OptionsScreen
+
+        def option_selected(option: Optional[str]) -> None:
+            if option == "keys":
+                self._open_key_manager()
+            elif option == "links":
+                self._open_link_manager()
+            elif option == "theme":
+                self.action_change_theme()
+            elif option == "help":
+                readme_path = self._readme_path()
+                if readme_path.is_file():
+                    self.push_screen(self.VIEWER_SCREEN(readme_path))
+                else:
+                    self.set_status(f"README.md not found: {readme_path}")
+            else:
+                self.set_active(self.active_side)
+
+        self.push_screen(OptionsScreen(), option_selected)
+
+    def _readme_path(self) -> Path:
+        """Locate the guide in source, wheel, or portable installations."""
+        candidates = (
+            self.shortcut_project / "README.md",
+            Path(sys.prefix) / "share" / "mdir-p" / "README.md",
+            Path(sys.executable).resolve().parent / "README.md",
+        )
+        return next((path for path in candidates if path.is_file()), candidates[0])
+
     @on(Button.Pressed, "#shortcut_bar Button")
     async def shortcut_button_pressed(self, event: Button.Pressed) -> None:
         button_id = event.button.id or ""
         event.stop()
 
         if button_id == "shortcut_edit":
-            from .ui.shortcuts import ShortcutManagerScreen
-
-            def links_edited(
-                shortcuts: Optional[list[ShortcutDefinition]],
-            ) -> None:
-                if shortcuts is None:
-                    self.set_status("Link editing cancelled.")
-                    self.set_active(self.active_side)
-                    return
-                try:
-                    config_path = save_shortcuts(shortcuts)
-                    self.shortcuts = shortcuts
-                    self._sync_shortcut_buttons()
-                    self.set_status(
-                        f"Saved {len(shortcuts)} link(s): {config_path}"
-                    )
-                except Exception as exc:
-                    self.set_status(f"Could not save links: {exc}")
-                self.set_active(self.active_side)
-
-            self.push_screen(
-                ShortcutManagerScreen(
-                    self.shortcuts,
-                    self.active.current_path,
-                ),
-                links_edited,
-            )
+            self._open_link_manager()
             return
 
         if button_id == "shortcut_reload":
@@ -721,6 +779,9 @@ class MDirApp(FastFileManagerApp):
         if self.ai_mode or not self.preview_enabled:
             return
         path = self.left.selected_path()
+        if path == self._preview_suppressed_path:
+            return
+        self._preview_suppressed_path = None
         if can_preview(path):
             self._show_document_preview(path)
         else:
@@ -745,6 +806,7 @@ class MDirApp(FastFileManagerApp):
 
         self.preview_enabled = not self.preview_enabled
         if self.preview_enabled:
+            self._preview_suppressed_path = None
             self._preview_current_left_selection()
             if not self.preview_mode:
                 self.set_status(
@@ -825,6 +887,7 @@ class MDirApp(FastFileManagerApp):
 
     def _native_open_document(self, path: Path) -> None:
         try:
+            self._preview_suppressed_path = path
             if self.preview_mode:
                 self._hide_document_preview(restore_right_focus=False)
             super().open_external_path(path)
@@ -834,6 +897,7 @@ class MDirApp(FastFileManagerApp):
 
     def open_external_path(self, path: Path) -> None:
         """Remove Preview before giving the file to another application."""
+        self._preview_suppressed_path = path
         if self.preview_mode:
             self._hide_document_preview(
                 restore_right_focus=False,

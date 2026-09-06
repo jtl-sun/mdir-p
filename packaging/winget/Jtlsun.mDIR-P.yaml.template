@@ -1,6 +1,6 @@
 # Replace INSTALLER_SHA256 after building and attaching the win64 ZIP.
 PackageIdentifier: Jtlsun.mDIR-P
-PackageVersion: 2.25.0
+PackageVersion: 2.26.2
 DefaultLocale: en-US
 ManifestType: version
 ManifestVersion: 1.10.0

@@ -12,7 +12,7 @@ import zipfile
 import struct
 from types import SimpleNamespace
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from mdir.app import MDirApp
 from mdir.preview.native import (
@@ -22,6 +22,7 @@ from mdir.preview.native import (
     calculate_pane_rectangle,
 )
 from mdir.preview.document import can_preview, prepare_document_source
+from mdir.preview import document as document_preview
 from mdir.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
 from mdir.shortcuts import (
     DEFAULT_SHORTCUTS,
@@ -32,6 +33,14 @@ from mdir.shortcuts import (
     parse_shortcuts,
     save_shortcuts,
 )
+from mdir.keymap import (
+    EDITABLE_DEFINITIONS,
+    FIXED_KEYS,
+    load_keymap,
+    save_keymap,
+    validate_keymap,
+)
+from mdir.ui.options import KeyManagerScreen, OptionsScreen
 from mdir.ui.shortcuts import ShortcutManagerScreen
 from mdir import core as legacy
 from mdir.ui.batch_rename import (
@@ -650,10 +659,126 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             with zipfile.ZipFile(archive) as opened:
                 self.assertEqual(opened.read("sample.txt"), b"new")
 
-    def test_application_shortcuts_do_not_shadow_command_palette(self) -> None:
+    def test_option_replaces_framework_palette_and_quit_bindings(self) -> None:
         actions = {binding.key: binding.action for binding in MDirApp.BINDINGS}
         self.assertNotIn("ctrl+p", actions)
+        self.assertFalse(MDirApp.ENABLE_COMMAND_PALETTE)
+        self.assertEqual(actions["ctrl+q"], "ignore")
+        self.assertEqual(actions["f10"], "options")
+        self.assertNotIn("quit", actions.values())
         self.assertEqual(actions["alt+enter"], "properties")
+
+    def test_editable_key_bindings_have_stable_ids(self) -> None:
+        bindings_by_id = {
+            binding.id: binding
+            for binding in MDirApp.BINDINGS
+            if binding.id is not None
+        }
+        for definition in EDITABLE_DEFINITIONS:
+            self.assertIn(definition.binding_id, bindings_by_id)
+            binding = bindings_by_id[definition.binding_id]
+            self.assertEqual(binding.action, definition.action)
+            self.assertEqual(binding.key, definition.default_key)
+
+    def test_custom_keys_reject_fixed_and_duplicate_shortcuts(self) -> None:
+        self.assertIn("tab", FIXED_KEYS)
+        with self.assertRaises(ValueError):
+            validate_keymap({"mdir.copy": "tab"})
+        with self.assertRaises(ValueError):
+            validate_keymap({
+                "mdir.copy": "ctrl+alt+x",
+                "mdir.move": "ctrl+alt+x",
+            })
+        self.assertEqual(
+            validate_keymap({"mdir.copy": "ctrl+alt+x"}),
+            {"mdir.copy": "ctrl+alt+x"},
+        )
+
+    def test_custom_keymap_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "keys.json"
+            save_keymap({"mdir.copy": "ctrl+alt+x"}, path)
+            self.assertEqual(
+                load_keymap(path),
+                {"mdir.copy": "ctrl+alt+x"},
+            )
+
+    async def test_options_opens_key_manager(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    app.action_options()
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, OptionsScreen)
+                    await pilot.click("#option_keys")
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, KeyManagerScreen)
+                    self.assertGreater(
+                        app.screen.query_one("#key_table").row_count,
+                        40,
+                    )
+                    await pilot.press("escape")
+                    app.exit()
+            finally:
+                os.chdir(previous)
+
+    async def test_options_arrow_navigation_opens_readme_help(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    app.action_options()
+                    await pilot.pause()
+                    self.assertEqual(app.focused.id, "option_keys")
+                    self.assertEqual(
+                        {
+                            app.screen.query_one(f"#{button_id}").variant
+                            for button_id in app.screen.OPTION_IDS[:4]
+                        },
+                        {"default"},
+                    )
+                    await pilot.press("right")
+                    self.assertEqual(app.focused.id, "option_links")
+                    await pilot.press("down")
+                    self.assertEqual(app.focused.id, "option_help")
+                    await pilot.press("enter")
+                    await pilot.pause()
+                    self.assertIsInstance(app.screen, app.VIEWER_SCREEN)
+                    self.assertEqual(
+                        app.screen.path,
+                        app._readme_path(),
+                    )
+                    await pilot.press("escape")
+                    app.exit()
+            finally:
+                os.chdir(previous)
+
+    async def test_custom_key_replaces_default_binding_immediately(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(120, 36)) as pilot:
+                    app.set_keymap({"mdir.copy": "ctrl+alt+x"})
+                    with patch.object(app, "action_copy") as copy_action:
+                        await pilot.press("ctrl+alt+x")
+                        await pilot.pause()
+                        copy_action.assert_called_once_with()
+                        await pilot.press("f5")
+                        await pilot.pause()
+                        copy_action.assert_called_once_with()
+                    app.exit()
+            finally:
+                os.chdir(previous)
 
     def test_zip_rejects_destination_inside_selected_directory(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1142,6 +1267,67 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                         self.assertGreater(source.size[1], 0)
                     finally:
                         source.close()
+
+    def test_legacy_doc_uses_installed_microsoft_word_preview(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.doc"
+            path.write_bytes(b"legacy word placeholder")
+            expected = (object(), "Word", "Microsoft Word layout")
+            with (
+                patch.object(
+                    document_preview,
+                    "_render_office_with_microsoft_office",
+                    return_value=expected,
+                ) as microsoft_renderer,
+                patch.object(
+                    document_preview,
+                    "_render_office_with_libreoffice",
+                ) as libreoffice_renderer,
+            ):
+                self.assertIs(document_preview._render_office(path), expected)
+            microsoft_renderer.assert_called_once_with(path)
+            libreoffice_renderer.assert_not_called()
+
+    def test_microsoft_word_preview_runs_hidden_powershell_conversion(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "buyer letter.doc"
+            path.write_bytes(b"legacy word placeholder")
+
+            def complete_conversion(command, **kwargs):
+                output_path = Path(command[command.index("-OutputPath") + 1])
+                output_path.write_bytes(b"%PDF-1.4 test")
+                self.assertIn("-WindowStyle", command)
+                self.assertEqual(kwargs["timeout"], 60)
+                script_path = Path(command[command.index("-File") + 1])
+                script = script_path.read_text(encoding="utf-8-sig")
+                self.assertIn("Word.Application", script)
+                self.assertIn("AutomationSecurity = 3", script)
+                return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+            with (
+                patch.object(
+                    document_preview,
+                    "_powershell_executable",
+                    return_value="powershell.exe",
+                ),
+                patch.object(
+                    document_preview.subprocess,
+                    "run",
+                    side_effect=complete_conversion,
+                ),
+                patch.object(
+                    document_preview,
+                    "_render_pdf",
+                    return_value=("image", "PDF", "1 page"),
+                ),
+            ):
+                result = document_preview._render_office_with_microsoft_office(
+                    path
+                )
+            self.assertEqual(
+                result,
+                ("image", "Word", "Microsoft Word layout | 1 page"),
+            )
 
     async def test_batch_rename_screen_opens_for_marked_items(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -2522,6 +2708,30 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(window.visible)
         self.assertEqual(withdrawn, [True])
         self.assertEqual(opened, [window.path])
+
+    def test_opened_file_is_not_immediately_previewed_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            opened = root / "opened.doc"
+            next_file = root / "next.docx"
+            opened.write_bytes(b"legacy word placeholder")
+            next_file.write_bytes(b"modern word placeholder")
+            show_preview = Mock()
+            app = SimpleNamespace(
+                ai_mode=False,
+                preview_enabled=True,
+                left=SimpleNamespace(selected_path=lambda: opened),
+                _preview_suppressed_path=opened,
+                _show_document_preview=show_preview,
+                _hide_document_preview=Mock(),
+            )
+            MDirApp._preview_current_left_selection(app)
+            show_preview.assert_not_called()
+
+            app.left.selected_path = lambda: next_file
+            MDirApp._preview_current_left_selection(app)
+            show_preview.assert_called_once_with(next_file)
+            self.assertIsNone(app._preview_suppressed_path)
 
     def test_shortcut_configuration(self) -> None:
         values = [

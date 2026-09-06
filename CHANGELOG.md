@@ -1,5 +1,39 @@
 # Changelog
 
+## 2.26.2
+
+- Matched the Keys button styling to Links, Theme, and Help in the Options
+  screen while retaining keyboard focus indication for arrow-key navigation.
+
+## 2.26.1
+
+- Added direct arrow-key navigation between every button in the Options grid.
+- Added a Help button that opens the installed `README.md` inside mDIR's
+  read-only Viewer.
+- Included `README.md` in wheel installations so Help works outside the source
+  folder as well as from the ZIP installer.
+
+## 2.26.0
+
+- Replaced the generic `Ctrl+P` command palette and its Maximize, Quit, and
+  Screenshot commands with an mDIR-specific `F10 Option` screen.
+- Added Options for Keys, Links, and Theme without exposing framework-only
+  commands.
+- Added persistent key customization for file operations, search, advanced
+  tools, sorting, AI, and Preview, with immediate runtime application.
+- Kept navigation, opening, selection, and the Options key fixed so an invalid
+  customization cannot make the file manager unusable.
+- Added duplicate-key and fixed-key collision checks plus selected/all reset.
+
+## 2.25.1
+
+- Use installed Microsoft Word or PowerPoint on Windows to render legacy DOC
+  and PPT files before falling back to LibreOffice.
+- Open Office documents read-only with macros disabled while preparing Preview,
+  without modifying the original file.
+- Suppress a late selection event from reopening Preview over the external
+  application immediately after a file is opened.
+
 ## 2.25.0
 
 - Added the lazy SQLite `mIndex` filename index and exact/visual duplicate
