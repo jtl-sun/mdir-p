@@ -530,3 +530,8 @@ left-to-right/right-to-left ZIP destination defaults. It also verifies that
 operation, `Esc` requests cancellation after the current top-level item.
 
 MDIR-P is released under the [MIT License](LICENSE).
+
+## Windows Terminal menu
+
+To hide Azure Cloud Shell while preserving Ubuntu and other profiles, use the
+[optional Windows Terminal cleanup tool](tools/windows-terminal/README.md).
