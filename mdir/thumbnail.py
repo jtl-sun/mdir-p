@@ -9,8 +9,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Iterable, Optional
 
-from .preview.native import PaneLayout, WindowRectangle, calculate_pane_rectangle, windows_terminal_grid_rectangle
 from . import core as legacy
+from .preview.native import (
+    PaneLayout,
+    WindowRectangle,
+    calculate_pane_rectangle,
+    windows_terminal_grid_rectangle,
+)
 
 
 THUMBNAIL_MIN_SIZE = 96
@@ -19,33 +24,6 @@ THUMBNAIL_STEP = 24
 DEFAULT_THUMBNAIL_SIZE = 144
 CACHE_LIMIT_BYTES = 1024 * 1024 * 1024
 CACHE_CLEANUP_BATCH = 500
-
-_THUMBNAIL_HWND_LOCK = threading.Lock()
-_THUMBNAIL_HWND_REGISTRY: set[int] = set()
-
-
-def _register_thumbnail_hwnd(hwnd: int) -> None:
-    value = int(hwnd or 0)
-    if not value:
-        return
-    with _THUMBNAIL_HWND_LOCK:
-        _THUMBNAIL_HWND_REGISTRY.add(value)
-
-
-def _unregister_thumbnail_hwnd(hwnd: int) -> None:
-    value = int(hwnd or 0)
-    if not value:
-        return
-    with _THUMBNAIL_HWND_LOCK:
-        _THUMBNAIL_HWND_REGISTRY.discard(value)
-
-
-def _is_thumbnail_hwnd(hwnd: int) -> bool:
-    value = int(hwnd or 0)
-    if not value:
-        return False
-    with _THUMBNAIL_HWND_LOCK:
-        return value in _THUMBNAIL_HWND_REGISTRY
 
 
 @dataclass(frozen=True)
@@ -57,16 +35,23 @@ class ThumbnailItem:
 
     @property
     def is_image(self) -> bool:
-        return (not self.is_directory) and self.path.suffix.lower() in legacy.IMAGE_EXTENSIONS
+        return (
+            not self.is_directory
+            and self.path.suffix.lower() in legacy.IMAGE_EXTENSIONS
+        )
 
 
-class NativeThumbnailController:
-    """Native Windows thumbnail grid layered over one Textual file table.
+class NativeThumbnailManager:
+    """One Tk event loop that owns both native thumbnail pane overlays.
 
-    The window never takes keyboard focus, so F5/F6 and the rest of mDIR's
-    keyboard workflow keep working in Windows Terminal while the user selects
-    images with the mouse.
+    Running one Tk root per pane in separate threads looked convenient, but it
+    made dual-thumbnail mode vulnerable to focus races, click loss and brief
+    Tcl/Tk stalls. 2.26.7 uses one dedicated Tk UI thread and two Toplevel
+    windows instead. Image decoding remains in background worker threads.
     """
+
+    POLL_MS = 30
+    FOLLOW_MS = 140
 
     def __init__(
         self,
@@ -75,7 +60,7 @@ class NativeThumbnailController:
         select_callback: Callable[[str, Path], None],
         toggle_callback: Callable[[str, Path], None],
         open_callback: Callable[[str, Path], None],
-        close_callback: Callable[[], None],
+        close_callback: Callable[[str], None],
         terminal_hwnd: int = 0,
     ) -> None:
         self.app = app
@@ -89,7 +74,6 @@ class NativeThumbnailController:
         self._shutdown_complete = threading.Event()
         self._started_ok = False
         self._terminal_hwnd = int(terminal_hwnd or 0)
-        self._window_hwnd = 0
         self.available = os.name == "nt"
         self.last_error = ""
 
@@ -101,124 +85,14 @@ class NativeThumbnailController:
             import ctypes
             from ctypes import wintypes
 
-            get_foreground = ctypes.windll.user32.GetForegroundWindow
-            get_foreground.restype = wintypes.HWND
-            return int(get_foreground() or 0)
+            getter = ctypes.windll.user32.GetForegroundWindow
+            getter.restype = wintypes.HWND
+            return int(getter() or 0)
         except Exception:
             return 0
 
-    def start(self) -> bool:
-        if not self.available:
-            return False
-        if self._thread is not None and self._thread.is_alive():
-            return True
-        if not self._terminal_hwnd:
-            self._terminal_hwnd = self._foreground_window()
-        self._ready.clear()
-        self._shutdown_complete.clear()
-        self._started_ok = False
-        self._thread = threading.Thread(
-            target=self._thread_main,
-            name="mDIR-Native-Thumbnails",
-            daemon=False,
-        )
-        self._thread.start()
-        self._ready.wait(timeout=1.0)
-        if self._ready.is_set() and not self._started_ok:
-            self.available = False
-            return False
-        return bool(self._thread and self._thread.is_alive())
-
-    def show(
-        self,
-        *,
-        side: str,
-        directory: Path,
-        items: Iterable[ThumbnailItem],
-        marked: Iterable[Path],
-        current: Optional[Path],
-        pane_layout: PaneLayout,
-        thumbnail_size: int = DEFAULT_THUMBNAIL_SIZE,
-    ) -> bool:
-        if not self.start():
-            return False
-        # The terminal handle is captured when Thumbnail View starts.
-        # Never replace it with the current foreground window: a background
-        # refresh may happen while PotPlayer/Photos/etc. is in front.
-        payload = {
-            "side": side,
-            "directory": str(directory),
-            "items": [
-                (str(item.path), item.is_directory, int(item.size), float(item.modified))
-                for item in items
-            ],
-            "marked": [str(path) for path in marked],
-            "current": str(current) if current else "",
-            "pane_layout": pane_layout,
-            "terminal_hwnd": self._terminal_hwnd,
-            "thumbnail_size": int(thumbnail_size),
-        }
-        self._commands.put(("show", payload))
-        return True
-
-    def update_layout(self, pane_layout: PaneLayout) -> None:
-        if self._thread is not None:
-            self._commands.put(("layout", pane_layout))
-
-    def navigate(self, direction: str) -> None:
-        """Move the thumbnail cursor without giving focus to the overlay."""
-        if self._thread is not None:
-            self._commands.put(("navigate", str(direction).lower()))
-
-    def update_selection(
-        self,
-        *,
-        marked: Iterable[Path],
-        current: Optional[Path],
-    ) -> None:
-        if self._thread is not None:
-            self._commands.put(
-                (
-                    "selection",
-                    {
-                        "marked": [str(path) for path in marked],
-                        "current": str(current) if current else "",
-                    },
-                )
-            )
-
-    def update_theme(self) -> None:
-        if self._thread is not None:
-            self._commands.put(("theme", self._theme_palette()))
-
-    def suspend_for_external_app(self) -> None:
-        """Temporarily hide thumbnails before launching another application."""
-        if self._thread is not None:
-            self._commands.put(("suspend_external", None))
-
-    def hide(self) -> None:
-        if self._thread is not None:
-            self._commands.put(("hide", None))
-
-    def shutdown(self, timeout: float = 4.0) -> bool:
-        thread = self._thread
-        if thread is None:
-            return True
-        self._commands.put(("shutdown", None))
-        self._shutdown_complete.wait(timeout=max(0.2, timeout))
-        thread.join(timeout=0.5)
-        stopped = not thread.is_alive()
-        if stopped:
-            self._thread = None
-        return stopped
-
     @staticmethod
     def _tk_color(value: object, fallback: str) -> str:
-        """Convert Textual colors to a Tk-compatible #RRGGBB value.
-
-        Textual may emit #RRGGBBAA (for example #D8D8D899). Tk on Windows
-        rejects 8-digit hex colors, so discard the alpha channel here.
-        """
         text = str(value or "").strip()
         if text.startswith("#"):
             if len(text) >= 7:
@@ -249,112 +123,302 @@ class NativeThumbnailController:
         try:
             colors = self.app.current_theme.to_color_system().generate()
             return {
-                "background": self._tk_color(
-                    colors.get("background"), defaults["background"]
-                ),
-                "surface": self._tk_color(
-                    colors.get("surface"), defaults["surface"]
-                ),
-                "foreground": self._tk_color(
-                    colors.get("foreground"), defaults["foreground"]
-                ),
-                "primary": self._tk_color(
-                    colors.get("primary"), defaults["primary"]
-                ),
-                "accent": self._tk_color(
-                    colors.get("accent"), defaults["accent"]
-                ),
-                "warning": self._tk_color(
-                    colors.get("warning"), defaults["warning"]
-                ),
-                "muted": self._tk_color(
-                    colors.get("foreground-muted"), defaults["muted"]
-                ),
+                key: self._tk_color(colors.get(source), defaults[key])
+                for key, source in (
+                    ("background", "background"),
+                    ("surface", "surface"),
+                    ("foreground", "foreground"),
+                    ("primary", "primary"),
+                    ("accent", "accent"),
+                    ("warning", "warning"),
+                    ("muted", "foreground-muted"),
+                )
             }
         except Exception:
             return defaults
 
-    def _thread_main(self) -> None:
-        window: Optional[_ThumbnailWindow] = None
-        try:
-            window = _ThumbnailWindow(
-                self._commands,
-                terminal_hwnd=self._terminal_hwnd,
-                palette=self._theme_palette(),
-                select_callback=lambda side, path: self._call_path(
-                    self.select_callback, side, path
-                ),
-                toggle_callback=lambda side, path: self._call_path(
-                    self.toggle_callback, side, path
-                ),
-                open_callback=lambda side, path: self._call_path(
-                    self.open_callback, side, path
-                ),
-                close_callback=lambda: self._call(self.close_callback),
+    def start(self) -> bool:
+        if not self.available:
+            return False
+        if self._thread is not None and self._thread.is_alive():
+            return True
+        if not self._terminal_hwnd:
+            self._terminal_hwnd = self._foreground_window()
+        self._ready.clear()
+        self._shutdown_complete.clear()
+        self._started_ok = False
+        self.last_error = ""
+        self._thread = threading.Thread(
+            target=self._thread_main,
+            name="mDIR-Native-Thumbnails",
+            daemon=False,
+        )
+        self._thread.start()
+        self._ready.wait(timeout=1.5)
+        if self._ready.is_set() and not self._started_ok:
+            self.available = False
+            return False
+        return bool(self._thread and self._thread.is_alive())
+
+    def show(
+        self,
+        *,
+        side: str,
+        directory: Path,
+        items: Iterable[ThumbnailItem],
+        marked: Iterable[Path],
+        current: Optional[Path],
+        pane_layout: PaneLayout,
+        thumbnail_size: int = DEFAULT_THUMBNAIL_SIZE,
+    ) -> bool:
+        if side not in {"left", "right"}:
+            return False
+        if not self.start():
+            return False
+        self._commands.put(
+            (
+                "show",
+                {
+                    "side": side,
+                    "directory": str(directory),
+                    "items": [
+                        (
+                            str(item.path),
+                            item.is_directory,
+                            int(item.size),
+                            float(item.modified),
+                        )
+                        for item in items
+                    ],
+                    "marked": [str(path) for path in marked],
+                    "current": str(current) if current else "",
+                    "pane_layout": pane_layout,
+                    "thumbnail_size": int(thumbnail_size),
+                },
             )
-            self._window_hwnd = window.window_hwnd()
-            _register_thumbnail_hwnd(self._window_hwnd)
+        )
+        return True
+
+    def hide(self, side: str) -> None:
+        if self._thread is not None:
+            self._commands.put(("hide", side))
+
+    def update_layout(self, side: str, pane_layout: PaneLayout) -> None:
+        if self._thread is not None:
+            self._commands.put(("layout", (side, pane_layout)))
+
+    def navigate(self, side: str, direction: str) -> None:
+        if self._thread is not None:
+            self._commands.put(("navigate", (side, str(direction).lower())))
+
+    def update_selection(
+        self,
+        side: str,
+        *,
+        marked: Iterable[Path],
+        current: Optional[Path],
+    ) -> None:
+        if self._thread is not None:
+            self._commands.put(
+                (
+                    "selection",
+                    (
+                        side,
+                        {
+                            "marked": [str(path) for path in marked],
+                            "current": str(current) if current else "",
+                        },
+                    ),
+                )
+            )
+
+    def update_theme(self) -> None:
+        if self._thread is not None:
+            self._commands.put(("theme", self._theme_palette()))
+
+    def suspend_for_external_app(self) -> None:
+        if self._thread is not None:
+            self._commands.put(("suspend_external", None))
+
+    def shutdown(self, timeout: float = 4.0) -> bool:
+        thread = self._thread
+        if thread is None:
+            return True
+        self._commands.put(("shutdown", None))
+        self._shutdown_complete.wait(timeout=max(0.2, timeout))
+        thread.join(timeout=0.75)
+        stopped = not thread.is_alive()
+        if stopped:
+            self._thread = None
+        return stopped
+
+    def _call(self, callback: Callable, *args) -> None:
+        try:
+            self.app.call_from_thread(callback, *args)
+        except Exception:
+            pass
+
+    def _thread_main(self) -> None:
+        root = None
+        panes: dict[str, _ThumbnailPaneWindow] = {}
+        external_suspend_until = 0.0
+        try:
+            import tkinter as tk
+
+            root = tk.Tk()
+            root.withdraw()
+            palette = self._theme_palette()
+
+            def pane_for(side: str) -> _ThumbnailPaneWindow:
+                pane = panes.get(side)
+                if pane is None:
+                    pane = _ThumbnailPaneWindow(
+                        root,
+                        side=side,
+                        terminal_hwnd=self._terminal_hwnd,
+                        palette=palette,
+                        select_callback=lambda s, p: self._call(
+                            self.select_callback, s, p
+                        ),
+                        toggle_callback=lambda s, p: self._call(
+                            self.toggle_callback, s, p
+                        ),
+                        open_callback=lambda s, p: self._call(
+                            self.open_callback, s, p
+                        ),
+                        close_callback=lambda s: self._call(
+                            self.close_callback, s
+                        ),
+                    )
+                    panes[side] = pane
+                return pane
+
+            def terminal_context_foreground() -> bool:
+                foreground = self._foreground_window()
+                if not foreground:
+                    return False
+                if foreground == self._terminal_hwnd:
+                    return True
+                return any(
+                    foreground == pane.window_hwnd()
+                    for pane in panes.values()
+                )
+
+            def present_cycle() -> None:
+                if root is None:
+                    return
+                allowed = (
+                    terminal_context_foreground()
+                    and time.monotonic() >= external_suspend_until
+                )
+                for pane in panes.values():
+                    pane.set_presented(allowed)
+                    pane.poll_results()
+                root.after(self.FOLLOW_MS, present_cycle)
+
+            def poll_commands() -> None:
+                nonlocal external_suspend_until, palette
+                if root is None:
+                    return
+                try:
+                    while True:
+                        command, payload = self._commands.get_nowait()
+                        if command == "show":
+                            data = payload
+                            side = str(data["side"])
+                            pane_for(side).apply_show(data)
+                        elif command == "hide":
+                            pane = panes.get(str(payload))
+                            if pane is not None:
+                                pane.hide()
+                        elif command == "layout":
+                            side, layout = payload
+                            pane = panes.get(str(side))
+                            if pane is not None:
+                                pane.update_layout(layout)
+                        elif command == "navigate":
+                            side, direction = payload
+                            pane = panes.get(str(side))
+                            if pane is not None:
+                                pane.navigate(str(direction))
+                        elif command == "selection":
+                            side, data = payload
+                            pane = panes.get(str(side))
+                            if pane is not None:
+                                pane.apply_selection(data)
+                        elif command == "theme":
+                            palette = dict(payload)
+                            for pane in panes.values():
+                                pane.apply_palette(palette)
+                        elif command == "suspend_external":
+                            external_suspend_until = time.monotonic() + 1.5
+                            for pane in panes.values():
+                                pane.force_withdraw()
+                        elif command == "shutdown":
+                            for pane in tuple(panes.values()):
+                                pane.destroy()
+                            panes.clear()
+                            root.destroy()
+                            return
+                except queue.Empty:
+                    pass
+                root.after(self.POLL_MS, poll_commands)
+
+            threading.Thread(
+                target=_trim_cache,
+                name="mDIR-Thumbnail-Cache-Cleanup",
+                daemon=True,
+            ).start()
+            root.after(self.POLL_MS, poll_commands)
+            root.after(self.FOLLOW_MS, present_cycle)
             self._started_ok = True
             self._ready.set()
-            window.run()
+            root.mainloop()
         except Exception as exc:
             self.last_error = str(exc)
             self.available = False
             self._ready.set()
         finally:
-            _unregister_thumbnail_hwnd(self._window_hwnd)
-            self._window_hwnd = 0
+            try:
+                for pane in tuple(panes.values()):
+                    pane.destroy()
+            except Exception:
+                pass
             self._shutdown_complete.set()
 
-    def _call(self, callback: Callable[[], None]) -> None:
-        try:
-            self.app.call_from_thread(callback)
-        except Exception:
-            pass
 
-    def _call_path(
-        self,
-        callback: Callable[[str, Path], None],
-        side: str,
-        path: Path,
-    ) -> None:
-        try:
-            self.app.call_from_thread(callback, side, path)
-        except Exception:
-            pass
-
-
-class _ThumbnailWindow:
-    POLL_MS = 35
+class _ThumbnailPaneWindow:
+    """One pane overlay. Must only be used from the manager's Tk thread."""
 
     def __init__(
         self,
-        commands: queue.Queue[tuple[str, object]],
+        master,
         *,
+        side: str,
         terminal_hwnd: int,
         palette: dict[str, str],
         select_callback: Callable[[str, Path], None],
         toggle_callback: Callable[[str, Path], None],
         open_callback: Callable[[str, Path], None],
-        close_callback: Callable[[], None],
+        close_callback: Callable[[str], None],
     ) -> None:
         import tkinter as tk
 
         self.tk = tk
-        self.commands = commands
-        self.terminal_hwnd = int(terminal_hwnd)
+        self.master = master
+        self.side = side
+        self.terminal_hwnd = int(terminal_hwnd or 0)
         self.palette = palette
         self.select_callback = select_callback
         self.toggle_callback = toggle_callback
         self.open_callback = open_callback
         self.close_callback = close_callback
 
-        self.root = tk.Tk()
+        self.root = tk.Toplevel(master)
         self.root.withdraw()
         self.root.overrideredirect(True)
         self.root.configure(bg=self.palette["background"])
 
-        self.side = "left"
         self.directory = Path(".")
         self.items: list[ThumbnailItem] = []
         self.marked: set[Path] = set()
@@ -363,119 +427,135 @@ class _ThumbnailWindow:
         self.thumbnail_size = DEFAULT_THUMBNAIL_SIZE
         self.visible = False
         self.presented = False
-        self._external_suspend_until = 0.0
         self._generation = 0
         self._photo_by_index: dict[int, object] = {}
         self._pending_indices: set[int] = set()
-        self._load_requests: queue.Queue[Optional[tuple[int, int, Path, int]]] = queue.Queue()
-        self._load_results: queue.Queue[tuple[int, int, Path, object | None]] = queue.Queue()
+        self._load_requests: queue.Queue[
+            Optional[tuple[int, int, Path, int]]
+        ] = queue.Queue()
+        self._load_results: queue.Queue[
+            tuple[int, int, Path, object | None]
+        ] = queue.Queue()
         self._loader_stop = threading.Event()
         self._loader = threading.Thread(
             target=self._loader_main,
-            name="mDIR-Thumbnail-Loader",
+            name=f"mDIR-Thumbnail-Loader-{side}",
             daemon=True,
         )
         self._loader.start()
-        self._last_geometry: Optional[WindowRectangle] = None
 
         self._build_ui()
         self._apply_windows_styles()
-        self.root.after(self.POLL_MS, self._poll_commands)
-        self.root.after(self.POLL_MS, self._poll_results)
-        self.root.after(180, self._follow_terminal)
-        threading.Thread(
-            target=self._trim_cache,
-            name="mDIR-Thumbnail-Cache-Cleanup",
-            daemon=True,
-        ).start()
 
-    @staticmethod
-    def cache_root() -> Path:
-        base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
-        root = base / "mDIR" / "thumbnail-cache"
-        root.mkdir(parents=True, exist_ok=True)
-        return root
-
-    @classmethod
-    def _cache_path(cls, path: Path, thumbnail_size: int) -> Path:
+    def window_hwnd(self) -> int:
+        if os.name != "nt":
+            return 0
         try:
-            stat = path.stat()
-            signature = (
-                f"{path.resolve(strict=False)}|{stat.st_mtime_ns}|"
-                f"{stat.st_size}|{thumbnail_size}"
-            )
-        except OSError:
-            signature = f"{path}|0|0|{thumbnail_size}"
-        digest = hashlib.sha1(signature.encode("utf-8", "surrogatepass")).hexdigest()
-        return cls.cache_root() / f"{digest}.jpg"
+            import ctypes
+            from ctypes import wintypes
 
-    @classmethod
-    def _load_thumbnail(cls, path: Path, thumbnail_size: int):
-        from PIL import Image, ImageOps
-
-        cache_path = cls._cache_path(path, thumbnail_size)
-        if cache_path.is_file():
-            try:
-                with Image.open(cache_path) as cached:
-                    return cached.convert("RGB").copy()
-            except Exception:
-                try:
-                    cache_path.unlink()
-                except OSError:
-                    pass
-
-        try:
-            with Image.open(path) as source:
-                image = ImageOps.exif_transpose(source).convert("RGB")
-                image.thumbnail(
-                    (thumbnail_size, thumbnail_size),
-                    Image.Resampling.LANCZOS,
-                )
-                cache_path.parent.mkdir(parents=True, exist_ok=True)
-                try:
-                    image.save(cache_path, "JPEG", quality=82, optimize=True)
-                except OSError:
-                    pass
-                return image.copy()
+            hwnd = int(self.root.winfo_id())
+            getter = ctypes.windll.user32.GetAncestor
+            getter.argtypes = [wintypes.HWND, wintypes.UINT]
+            getter.restype = wintypes.HWND
+            return int(getter(hwnd, 2) or hwnd)
         except Exception:
-            return None
+            return 0
 
-    @classmethod
-    def _trim_cache(cls) -> None:
+    def _apply_windows_styles(self) -> None:
+        if os.name != "nt":
+            return
         try:
-            root = cls.cache_root()
-            files = [p for p in root.iterdir() if p.is_file()]
-            total = 0
-            stats: list[tuple[float, int, Path]] = []
-            for path in files:
-                try:
-                    stat = path.stat()
-                except OSError:
-                    continue
-                total += stat.st_size
-                stats.append((stat.st_mtime, stat.st_size, path))
-            if total <= CACHE_LIMIT_BYTES:
-                return
-            stats.sort()
-            for _, size, path in stats[:CACHE_CLEANUP_BATCH]:
-                try:
-                    path.unlink()
-                    total -= size
-                except OSError:
-                    pass
-                if total <= int(CACHE_LIMIT_BYTES * 0.85):
-                    break
+            import ctypes
+            from ctypes import wintypes
+
+            hwnd = self.window_hwnd()
+            user32 = ctypes.windll.user32
+            GWL_EXSTYLE = -20
+            GWLP_HWNDPARENT = -8
+            WS_EX_TOOLWINDOW = 0x00000080
+            WS_EX_NOACTIVATE = 0x08000000
+            style = int(user32.GetWindowLongW(hwnd, GWL_EXSTYLE))
+            user32.SetWindowLongW(
+                hwnd,
+                GWL_EXSTYLE,
+                style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
+            )
+            if self.terminal_hwnd:
+                if ctypes.sizeof(ctypes.c_void_p) == 8:
+                    setter = user32.SetWindowLongPtrW
+                    setter.argtypes = [
+                        wintypes.HWND,
+                        ctypes.c_int,
+                        ctypes.c_void_p,
+                    ]
+                    setter(
+                        wintypes.HWND(hwnd),
+                        GWLP_HWNDPARENT,
+                        ctypes.c_void_p(self.terminal_hwnd),
+                    )
+                else:
+                    user32.SetWindowLongW(
+                        hwnd,
+                        GWLP_HWNDPARENT,
+                        self.terminal_hwnd,
+                    )
         except Exception:
             pass
 
-    def _loader_main(self) -> None:
-        while not self._loader_stop.is_set():
-            request = self._load_requests.get()
-            if request is None:
-                return
-            generation, index, path, thumbnail_size = request
-            image = self._load_thumbnail(path, thumbnail_size)
-            self._load_results.put((generation, index, path, image))
+    def _show_no_activate(self) -> None:
+        if os.name != "nt":
+            self.root.deiconify()
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            hwnd = self.window_hwnd()
+            user32 = ctypes.windll.user32
+            user32.SetWindowPos.argtypes = [
+                wintypes.HWND,
+                wintypes.HWND,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.UINT,
+            ]
+            HWND_TOP = wintypes.HWND(0)
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            user32.SetWindowPos(
+                wintypes.HWND(hwnd),
+                HWND_TOP,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+        except Exception:
+            self.root.deiconify()
+
+    def _restore_terminal_focus(self) -> None:
+        if os.name != "nt" or not self.terminal_hwnd:
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+            user32.SetForegroundWindow.restype = wintypes.BOOL
+            user32.SetForegroundWindow(wintypes.HWND(self.terminal_hwnd))
+        except Exception:
+            pass
+
+    def _restore_terminal_focus_soon(self) -> None:
+        self.master.after(1, self._restore_terminal_focus)
+        self.master.after(40, self._restore_terminal_focus)
 
     def _build_ui(self) -> None:
         tk = self.tk
@@ -548,177 +628,8 @@ class _ThumbnailWindow:
         self.canvas.bind("<Button-3>", self._on_right_click)
         self.canvas.bind("<Double-Button-1>", self._on_double_click)
 
-    def window_hwnd(self) -> int:
-        if os.name != "nt":
-            return 0
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            hwnd = int(self.root.winfo_id())
-            get_ancestor = ctypes.windll.user32.GetAncestor
-            get_ancestor.argtypes = [wintypes.HWND, wintypes.UINT]
-            get_ancestor.restype = wintypes.HWND
-            return int(get_ancestor(hwnd, 2) or hwnd)
-        except Exception:
-            return 0
-
-    def _apply_windows_styles(self) -> None:
-        if os.name != "nt":
-            return
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            hwnd = self.window_hwnd()
-            user32 = ctypes.windll.user32
-            GWL_EXSTYLE = -20
-            GWLP_HWNDPARENT = -8
-            WS_EX_TOOLWINDOW = 0x00000080
-            WS_EX_NOACTIVATE = 0x08000000
-            style = int(user32.GetWindowLongW(hwnd, GWL_EXSTYLE))
-            user32.SetWindowLongW(
-                hwnd,
-                GWL_EXSTYLE,
-                style | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE,
-            )
-            if self.terminal_hwnd:
-                if ctypes.sizeof(ctypes.c_void_p) == 8:
-                    setter = user32.SetWindowLongPtrW
-                    setter.argtypes = [
-                        wintypes.HWND,
-                        ctypes.c_int,
-                        ctypes.c_void_p,
-                    ]
-                    setter(
-                        wintypes.HWND(hwnd),
-                        GWLP_HWNDPARENT,
-                        ctypes.c_void_p(self.terminal_hwnd),
-                    )
-                else:
-                    user32.SetWindowLongW(
-                        hwnd,
-                        GWLP_HWNDPARENT,
-                        self.terminal_hwnd,
-                    )
-        except Exception:
-            pass
-
-    def _foreground_window(self) -> int:
-        if os.name != "nt":
-            return 0
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            get_foreground = ctypes.windll.user32.GetForegroundWindow
-            get_foreground.restype = wintypes.HWND
-            return int(get_foreground() or 0)
-        except Exception:
-            return 0
-
-    def _terminal_is_foreground(self) -> bool:
-        foreground = self._foreground_window()
-        if not foreground:
-            return False
-        overlay = self.window_hwnd()
-        return (
-            foreground in {self.terminal_hwnd, overlay}
-            or _is_thumbnail_hwnd(foreground)
-        )
-
-    def _present_if_terminal_foreground(self) -> None:
-        if not self.visible:
-            return
-        if time.monotonic() < self._external_suspend_until:
-            if self.presented:
-                self.root.withdraw()
-                self.presented = False
-            return
-        if not self._terminal_is_foreground():
-            if self.presented:
-                self.root.withdraw()
-                self.presented = False
-            return
-        if not self.presented:
-            self.root.deiconify()
-            self.presented = True
-        self._apply_geometry()
-        self._raise_overlay_no_activate()
-
-    def _suspend_for_external_app(self) -> None:
-        # Give Windows enough time to create/foreground the launched app.
-        self._external_suspend_until = time.monotonic() + 1.5
-        if self.presented:
-            self.root.withdraw()
-            self.presented = False
-
-    def _raise_overlay_no_activate(self) -> None:
-        """Keep the thumbnail overlay above Terminal without stealing focus."""
-        if os.name != "nt" or not self.visible:
-            return
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            hwnd = self.window_hwnd()
-            if not hwnd:
-                return
-            user32 = ctypes.windll.user32
-            user32.SetWindowPos.argtypes = [
-                wintypes.HWND,
-                wintypes.HWND,
-                ctypes.c_int,
-                ctypes.c_int,
-                ctypes.c_int,
-                ctypes.c_int,
-                wintypes.UINT,
-            ]
-            user32.SetWindowPos.restype = wintypes.BOOL
-            HWND_TOP = wintypes.HWND(0)
-            SWP_NOSIZE = 0x0001
-            SWP_NOMOVE = 0x0002
-            SWP_NOACTIVATE = 0x0010
-            SWP_SHOWWINDOW = 0x0040
-            user32.SetWindowPos(
-                wintypes.HWND(hwnd),
-                HWND_TOP,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
-            )
-        except Exception:
-            pass
-
-    def _restore_terminal_focus(self) -> None:
-        """Return keyboard input to Terminal, then keep thumbnails above it."""
-        if os.name != "nt" or not self.terminal_hwnd:
-            return
-        try:
-            import ctypes
-            from ctypes import wintypes
-
-            user32 = ctypes.windll.user32
-            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
-            user32.SetForegroundWindow.restype = wintypes.BOOL
-            user32.SetForegroundWindow(wintypes.HWND(self.terminal_hwnd))
-        except Exception:
-            pass
-        self._raise_overlay_no_activate()
-
-    def _restore_terminal_focus_soon(self) -> None:
-        try:
-            self.root.after(1, self._restore_terminal_focus)
-            self.root.after(20, self._raise_overlay_no_activate)
-            self.root.after(50, self._restore_terminal_focus)
-            self.root.after(80, self._raise_overlay_no_activate)
-        except Exception:
-            self._restore_terminal_focus()
-
     def _request_close(self) -> None:
-        self.close_callback()
+        self.close_callback(self.side)
         self._restore_terminal_focus_soon()
 
     def _resize_thumbnails(self, delta: int) -> None:
@@ -732,15 +643,15 @@ class _ThumbnailWindow:
         self._render()
         self._restore_terminal_focus_soon()
 
-    def _columns(self) -> int:
-        width = max(1, int(self.canvas.winfo_width()))
-        return max(1, width // self._cell_width())
-
     def _cell_width(self) -> int:
         return self.thumbnail_size + 26
 
     def _cell_height(self) -> int:
         return self.thumbnail_size + 50
+
+    def _columns(self) -> int:
+        width = max(1, int(self.canvas.winfo_width()))
+        return max(1, width // self._cell_width())
 
     def _scroll_height(self) -> int:
         columns = self._columns()
@@ -766,9 +677,7 @@ class _ThumbnailWindow:
         col = x // self._cell_width()
         row = y // self._cell_height()
         index = row * columns + col
-        if 0 <= index < len(self.items):
-            return index
-        return None
+        return index if 0 <= index < len(self.items) else None
 
     def _select_index(self, index: int, *, toggle: bool = False) -> None:
         item = self.items[index]
@@ -781,38 +690,6 @@ class _ThumbnailWindow:
                 self.marked.add(item.path)
             self.toggle_callback(self.side, item.path)
         self._render()
-
-    def _navigate(self, direction: str) -> None:
-        if not self.items:
-            return
-        try:
-            current_index = next(
-                i for i, item in enumerate(self.items)
-                if item.path == self.current
-            )
-        except StopIteration:
-            current_index = 0
-
-        columns = max(1, self._columns())
-        if direction == "left":
-            target = current_index - 1
-        elif direction == "right":
-            target = current_index + 1
-        elif direction == "up":
-            target = current_index - columns
-        elif direction == "down":
-            target = current_index + columns
-        else:
-            return
-
-        target = max(0, min(len(self.items) - 1, target))
-        if target == current_index:
-            return
-        self.current = self.items[target].path
-        self.select_callback(self.side, self.current)
-        self._scroll_current_into_view()
-        self._render()
-        self._present_if_terminal_foreground()
 
     def _on_left_click(self, event) -> None:
         index = self._event_index(event)
@@ -834,24 +711,52 @@ class _ThumbnailWindow:
 
     def _on_double_click(self, event) -> None:
         index = self._event_index(event)
-        if index is not None:
-            item = self.items[index]
-            self.current = item.path
-            self.select_callback(self.side, item.path)
-            if item.is_directory:
-                self.open_callback(self.side, item.path)
-                self._restore_terminal_focus_soon()
-            else:
-                # Let the external viewer/player become foreground. Do not
-                # steal focus back to Windows Terminal after launching it.
-                self._suspend_for_external_app()
-                self.open_callback(self.side, item.path)
+        if index is None:
+            return
+        item = self.items[index]
+        self.current = item.path
+        self.select_callback(self.side, item.path)
+        self.open_callback(self.side, item.path)
+        if item.is_directory:
+            self._restore_terminal_focus_soon()
+
+    def navigate(self, direction: str) -> None:
+        if not self.items:
+            return
+        try:
+            current_index = next(
+                i for i, item in enumerate(self.items)
+                if item.path == self.current
+            )
+        except StopIteration:
+            current_index = 0
+
+        columns = max(1, self._columns())
+        if direction == "left":
+            target = current_index - 1
+        elif direction == "right":
+            target = current_index + 1
+        elif direction == "up":
+            target = current_index - columns
+        elif direction == "down":
+            target = current_index + columns
+        else:
+            return
+        target = max(0, min(len(self.items) - 1, target))
+        if target == current_index:
+            return
+        self.current = self.items[target].path
+        self.select_callback(self.side, self.current)
+        self._scroll_current_into_view()
+        self._render()
 
     def _visible_indices(self) -> range:
         columns = self._columns()
         cell_h = self._cell_height()
         top = int(self.canvas.canvasy(0))
-        bottom = int(self.canvas.canvasy(max(1, self.canvas.winfo_height())))
+        bottom = int(
+            self.canvas.canvasy(max(1, self.canvas.winfo_height()))
+        )
         first_row = max(0, top // cell_h - 2)
         last_row = max(first_row, bottom // cell_h + 2)
         start = first_row * columns
@@ -860,7 +765,10 @@ class _ThumbnailWindow:
 
     def _request_visible_thumbnails(self) -> None:
         for index in self._visible_indices():
-            if index in self._photo_by_index or index in self._pending_indices:
+            if (
+                index in self._photo_by_index
+                or index in self._pending_indices
+            ):
                 continue
             item = self.items[index]
             if not item.is_image:
@@ -873,7 +781,9 @@ class _ThumbnailWindow:
     def _render(self) -> None:
         if not self.visible:
             return
-        self.canvas.configure(scrollregion=(0, 0, 1, self._scroll_height()))
+        self.canvas.configure(
+            scrollregion=(0, 0, 1, self._scroll_height())
+        )
         self.canvas.delete("item")
         columns = self._columns()
         cell_w = self._cell_width()
@@ -920,7 +830,11 @@ class _ThumbnailWindow:
                     tags="item",
                 )
             else:
-                placeholder = "DIR" if item.is_directory else item.path.suffix.upper().lstrip(".") or "FILE"
+                placeholder = (
+                    "DIR"
+                    if item.is_directory
+                    else item.path.suffix.upper().lstrip(".") or "FILE"
+                )
                 self.canvas.create_text(
                     image_x,
                     image_y,
@@ -948,24 +862,42 @@ class _ThumbnailWindow:
                     if marked
                     else self.palette["foreground"]
                 ),
-                font=("Cascadia Mono", 9, "bold" if marked else "normal"),
+                font=(
+                    "Cascadia Mono",
+                    9,
+                    "bold" if marked else "normal",
+                ),
                 width=self.thumbnail_size,
                 anchor="w",
                 tags="item",
             )
         self._request_visible_thumbnails()
 
-    def _poll_results(self) -> None:
+    def _loader_main(self) -> None:
+        while not self._loader_stop.is_set():
+            request = self._load_requests.get()
+            if request is None:
+                return
+            generation, index, path, thumbnail_size = request
+            image = _load_thumbnail(path, thumbnail_size)
+            self._load_results.put((generation, index, path, image))
+
+    def poll_results(self) -> None:
         changed = False
         try:
             from PIL import ImageTk
 
             while True:
-                generation, index, _path, image = self._load_results.get_nowait()
+                generation, index, _path, image = (
+                    self._load_results.get_nowait()
+                )
                 self._pending_indices.discard(index)
                 if generation != self._generation or image is None:
                     continue
-                self._photo_by_index[index] = ImageTk.PhotoImage(image)
+                self._photo_by_index[index] = ImageTk.PhotoImage(
+                    image,
+                    master=self.root,
+                )
                 changed = True
         except queue.Empty:
             pass
@@ -973,44 +905,14 @@ class _ThumbnailWindow:
             pass
         if changed:
             self._render()
-        self.root.after(self.POLL_MS, self._poll_results)
-
-    def _apply_show(self, payload: dict[str, object]) -> None:
-        self.side = str(payload.get("side", "left"))
-        self.directory = Path(str(payload.get("directory", ".")))
-        self.items = [
-            ThumbnailItem(Path(path), bool(is_directory), int(size), float(modified))
-            for path, is_directory, size, modified in payload.get("items", [])
-        ]
-        self.marked = {Path(path) for path in payload.get("marked", [])}
-        current = str(payload.get("current", ""))
-        self.current = Path(current) if current else None
-        self.pane_layout = payload.get("pane_layout")  # type: ignore[assignment]
-        self.terminal_hwnd = int(payload.get("terminal_hwnd", self.terminal_hwnd))
-        self.thumbnail_size = max(
-            THUMBNAIL_MIN_SIZE,
-            min(
-                THUMBNAIL_MAX_SIZE,
-                int(payload.get("thumbnail_size", self.thumbnail_size)),
-            ),
-        )
-        self._generation += 1
-        self._photo_by_index.clear()
-        self._pending_indices.clear()
-        self.title.configure(
-            text=f" THUMBNAILS  {self.directory} "
-        )
-        self.visible = True
-        self._apply_geometry()
-        self._render()
-        self._present_if_terminal_foreground()
 
     def _scroll_current_into_view(self) -> None:
         if self.current is None or not self.items:
             return
         try:
             index = next(
-                i for i, item in enumerate(self.items)
+                i
+                for i, item in enumerate(self.items)
                 if item.path == self.current
             )
         except StopIteration:
@@ -1019,79 +921,224 @@ class _ThumbnailWindow:
         row = index // columns
         cell_h = self._cell_height()
         top = int(self.canvas.canvasy(0))
-        bottom = int(self.canvas.canvasy(max(1, self.canvas.winfo_height())))
+        bottom = int(
+            self.canvas.canvasy(max(1, self.canvas.winfo_height()))
+        )
         item_top = row * cell_h
         item_bottom = item_top + cell_h
         total = max(1, self._scroll_height())
         if item_top < top:
             self.canvas.yview_moveto(max(0.0, item_top / total))
         elif item_bottom > bottom:
-            target = max(0, item_bottom - max(1, self.canvas.winfo_height()))
+            target = max(
+                0,
+                item_bottom - max(1, self.canvas.winfo_height()),
+            )
             self.canvas.yview_moveto(min(1.0, target / total))
 
-    def _apply_selection(self, payload: dict[str, object]) -> None:
-        self.marked = {Path(path) for path in payload.get("marked", [])}
+    def apply_show(self, payload: dict[str, object]) -> None:
+        self.directory = Path(str(payload.get("directory", ".")))
+        self.items = [
+            ThumbnailItem(
+                Path(path),
+                bool(is_directory),
+                int(size),
+                float(modified),
+            )
+            for path, is_directory, size, modified
+            in payload.get("items", [])
+        ]
+        self.marked = {
+            Path(path) for path in payload.get("marked", [])
+        }
+        current = str(payload.get("current", ""))
+        self.current = Path(current) if current else None
+        self.pane_layout = payload.get("pane_layout")  # type: ignore[assignment]
+        self.thumbnail_size = max(
+            THUMBNAIL_MIN_SIZE,
+            min(
+                THUMBNAIL_MAX_SIZE,
+                int(
+                    payload.get(
+                        "thumbnail_size",
+                        self.thumbnail_size,
+                    )
+                ),
+            ),
+        )
+        self._generation += 1
+        self._photo_by_index.clear()
+        self._pending_indices.clear()
+        self.title.configure(text=f" THUMBNAILS  {self.directory} ")
+        self.visible = True
+        self._apply_geometry()
+        self._render()
+
+    def apply_selection(self, payload: dict[str, object]) -> None:
+        self.marked = {
+            Path(path) for path in payload.get("marked", [])
+        }
         current = str(payload.get("current", ""))
         self.current = Path(current) if current else None
         self._scroll_current_into_view()
         self._render()
-        self._raise_overlay_no_activate()
 
-    def _apply_palette(self, palette: dict[str, str]) -> None:
+    def update_layout(self, layout: PaneLayout) -> None:
+        self.pane_layout = layout
+        self._apply_geometry()
+
+    def apply_palette(self, palette: dict[str, str]) -> None:
         self.palette = palette
         self.root.configure(bg=palette["background"])
         self.toolbar.configure(bg=palette["surface"])
-        self.title.configure(bg=palette["surface"], fg=palette["foreground"])
-        self.hint.configure(bg=palette["surface"], fg=palette["muted"])
+        self.title.configure(
+            bg=palette["surface"],
+            fg=palette["foreground"],
+        )
+        self.hint.configure(
+            bg=palette["surface"],
+            fg=palette["muted"],
+        )
         self.canvas.configure(bg=palette["background"])
         self._render()
 
-    def _poll_commands(self) -> None:
-        try:
-            while True:
-                command, payload = self.commands.get_nowait()
-                if command == "show":
-                    self._apply_show(payload)  # type: ignore[arg-type]
-                elif command == "selection":
-                    self._apply_selection(payload)  # type: ignore[arg-type]
-                elif command == "navigate":
-                    self._navigate(str(payload))
-                elif command == "layout":
-                    self.pane_layout = payload  # type: ignore[assignment]
-                    self._apply_geometry()
-                elif command == "theme":
-                    self._apply_palette(payload)  # type: ignore[arg-type]
-                elif command == "suspend_external":
-                    self._suspend_for_external_app()
-                elif command == "hide":
-                    self.visible = False
-                    self.presented = False
-                    self.root.withdraw()
-                elif command == "shutdown":
-                    self._loader_stop.set()
-                    self._load_requests.put(None)
-                    self.root.destroy()
-                    return
-        except queue.Empty:
-            pass
-        self.root.after(self.POLL_MS, self._poll_commands)
-
     def _apply_geometry(self) -> None:
-        if not self.visible or self.pane_layout is None or not self.terminal_hwnd:
+        if (
+            not self.visible
+            or self.pane_layout is None
+            or not self.terminal_hwnd
+        ):
             return
         terminal = windows_terminal_grid_rectangle(self.terminal_hwnd)
         if terminal is None:
             return
-        rectangle = calculate_pane_rectangle(terminal, self.pane_layout)
-        self._last_geometry = rectangle
+        rectangle = calculate_pane_rectangle(
+            terminal,
+            self.pane_layout,
+        )
         self.root.geometry(
-            f"{rectangle.width}x{rectangle.height}+{rectangle.left}+{rectangle.top}"
+            f"{rectangle.width}x{rectangle.height}+"
+            f"{rectangle.left}+{rectangle.top}"
         )
 
-    def _follow_terminal(self) -> None:
-        if self.visible:
-            self._present_if_terminal_foreground()
-        self.root.after(180, self._follow_terminal)
+    def set_presented(self, allowed: bool) -> None:
+        should_present = self.visible and allowed
+        if should_present:
+            self._apply_geometry()
+            if not self.presented:
+                self.root.deiconify()
+                self.presented = True
+            self._show_no_activate()
+        elif self.presented:
+            self.root.withdraw()
+            self.presented = False
 
-    def run(self) -> None:
-        self.root.mainloop()
+    def force_withdraw(self) -> None:
+        if self.presented:
+            self.root.withdraw()
+            self.presented = False
+
+    def hide(self) -> None:
+        self.visible = False
+        self.force_withdraw()
+
+    def destroy(self) -> None:
+        self.visible = False
+        self._loader_stop.set()
+        self._load_requests.put(None)
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+
+def _cache_root() -> Path:
+    base = Path(os.environ.get("LOCALAPPDATA", Path.home()))
+    root = base / "mDIR" / "thumbnail-cache"
+    root.mkdir(parents=True, exist_ok=True)
+    return root
+
+
+def _cache_path(path: Path, thumbnail_size: int) -> Path:
+    try:
+        stat = path.stat()
+        signature = (
+            f"{path.resolve(strict=False)}|{stat.st_mtime_ns}|"
+            f"{stat.st_size}|{thumbnail_size}"
+        )
+    except OSError:
+        signature = f"{path}|0|0|{thumbnail_size}"
+    digest = hashlib.sha1(
+        signature.encode("utf-8", "surrogatepass")
+    ).hexdigest()
+    return _cache_root() / f"{digest}.jpg"
+
+
+def _load_thumbnail(path: Path, thumbnail_size: int):
+    from PIL import Image, ImageOps
+
+    cache_path = _cache_path(path, thumbnail_size)
+    if cache_path.is_file():
+        try:
+            with Image.open(cache_path) as cached:
+                return cached.convert("RGB").copy()
+        except Exception:
+            try:
+                cache_path.unlink()
+            except OSError:
+                pass
+
+    try:
+        with Image.open(path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            image.thumbnail(
+                (thumbnail_size, thumbnail_size),
+                Image.Resampling.LANCZOS,
+            )
+            try:
+                image.save(
+                    cache_path,
+                    "JPEG",
+                    quality=82,
+                    optimize=True,
+                )
+            except OSError:
+                pass
+            return image.copy()
+    except Exception:
+        return None
+
+
+def _trim_cache() -> None:
+    try:
+        root = _cache_root()
+        total = 0
+        stats: list[tuple[float, int, Path]] = []
+        for path in root.iterdir():
+            if not path.is_file():
+                continue
+            try:
+                stat = path.stat()
+            except OSError:
+                continue
+            total += stat.st_size
+            stats.append((stat.st_mtime, stat.st_size, path))
+        if total <= CACHE_LIMIT_BYTES:
+            return
+        stats.sort()
+        for _, size, path in stats[:CACHE_CLEANUP_BATCH]:
+            try:
+                path.unlink()
+                total -= size
+            except OSError:
+                pass
+            if total <= int(CACHE_LIMIT_BYTES * 0.85):
+                break
+    except Exception:
+        pass
+
+
+# Compatibility name for older tests/imports. There is now exactly one
+# manager/controller instance per mDIR process, not one Tk root per pane.
+NativeThumbnailController = NativeThumbnailManager
+_ThumbnailWindow = _ThumbnailPaneWindow
