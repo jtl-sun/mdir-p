@@ -187,6 +187,10 @@ class MDirApp(FastFileManagerApp):
             priority=True,
             id="mdir.thumbnail",
         ),
+        Binding("left", "nav_left", "", show=False, priority=True),
+        Binding("right", "nav_right", "", show=False, priority=True),
+        Binding("up", "nav_up", "", show=False, priority=True),
+        Binding("down", "nav_down", "", show=False, priority=True),
     ]
 
     def __init__(self) -> None:
@@ -388,25 +392,52 @@ class MDirApp(FastFileManagerApp):
             right_selected=self.right.selected_path(),
         )
 
-    def on_key(self, event: events.Key) -> None:
-        """Reserve arrow keys for item navigation; Tab alone switches panes."""
-        key = event.key.lower()
-        if key in {"left", "right"}:
-            event.prevent_default()
-            event.stop()
-            if (
-                self.thumbnail_mode_side is not None
-                and self._native_thumbnail is not None
-            ):
-                self._native_thumbnail.navigate(key)
+    def _move_list_cursor(self, delta: int) -> None:
+        """Move within the active list without ever changing panes."""
+        pane = self.active
+        table = pane.table
+        if table.row_count <= 0:
+            return
+        row = int(getattr(table, "cursor_row", 0) or 0)
+        target = max(0, min(table.row_count - 1, row + delta))
+        if target != row:
+            table.move_cursor(
+                row=target,
+                column=0,
+                animate=False,
+                scroll=True,
+            )
+        pane.update_info()
+
+    def _navigate_arrow(self, direction: str) -> None:
+        """Arrow keys navigate items only. Tab is the sole pane switch."""
+        if self.thumbnail_mode_side is not None:
+            # Keep the thumbnail pane active and route all four arrows to
+            # the two-dimensional thumbnail grid.
+            if self.active_side != self.thumbnail_mode_side:
+                self.set_active(self.thumbnail_mode_side)
+            if self._native_thumbnail is not None:
+                self._native_thumbnail.navigate(direction)
             return
 
-        if key in {"up", "down"} and self.thumbnail_mode_side is not None:
-            event.prevent_default()
-            event.stop()
-            if self._native_thumbnail is not None:
-                self._native_thumbnail.navigate(key)
-            return
+        # Normal list view is one-dimensional. Up/down move rows.
+        # Left/right are intentionally consumed so they can never switch panes.
+        if direction == "up":
+            self._move_list_cursor(-1)
+        elif direction == "down":
+            self._move_list_cursor(1)
+
+    def action_nav_left(self) -> None:
+        self._navigate_arrow("left")
+
+    def action_nav_right(self) -> None:
+        self._navigate_arrow("right")
+
+    def action_nav_up(self) -> None:
+        self._navigate_arrow("up")
+
+    def action_nav_down(self) -> None:
+        self._navigate_arrow("down")
 
     def _thumbnail_pane(self, side: str):
         return self.left if side == "left" else self.right
