@@ -339,6 +339,12 @@ class MDirApp(FastFileManagerApp):
             classes="hidden-toggle",
             tooltip="Show or hide Hidden/System files",
         )
+        yield Button(
+            "Thumb",
+            id=f"{side}_thumbnail_toggle",
+            classes="thumbnail-toggle",
+            tooltip=f"Toggle thumbnail view for {label} pane (Alt+T)",
+        )
 
     @property
     def document_preview(self) -> DocumentPreviewPanel:
