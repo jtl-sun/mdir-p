@@ -668,6 +668,42 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("quit", actions.values())
         self.assertEqual(actions["alt+enter"], "properties")
 
+    def test_arrow_keys_are_reserved_for_navigation(self) -> None:
+        bindings = {binding.key: binding for binding in MDirApp.BINDINGS}
+        self.assertEqual(bindings["tab"].action, "switch_pane")
+        for key, action in (
+            ("left", "nav_left"),
+            ("right", "nav_right"),
+            ("up", "nav_up"),
+            ("down", "nav_down"),
+        ):
+            self.assertIn(key, bindings)
+            self.assertEqual(bindings[key].action, action)
+            self.assertTrue(bindings[key].priority)
+
+    async def test_left_right_never_switch_panes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.txt").write_text("a", encoding="utf-8")
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    app.set_active("left")
+                    await pilot.pause()
+                    await pilot.press("right")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "left")
+                    await pilot.press("left")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "left")
+                    await pilot.press("tab")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "right")
+            finally:
+                os.chdir(previous)
+
     def test_editable_key_bindings_have_stable_ids(self) -> None:
         bindings_by_id = {
             binding.id: binding
