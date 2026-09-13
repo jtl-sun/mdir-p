@@ -172,28 +172,67 @@ class NativeThumbnailController:
             self._thread = None
         return stopped
 
+    @staticmethod
+    def _tk_color(value: object, fallback: str) -> str:
+        """Convert Textual colors to a Tk-compatible #RRGGBB value.
+
+        Textual may emit #RRGGBBAA (for example #D8D8D899). Tk on Windows
+        rejects 8-digit hex colors, so discard the alpha channel here.
+        """
+        text = str(value or "").strip()
+        if text.startswith("#"):
+            if len(text) >= 7:
+                candidate = text[:7]
+                try:
+                    int(candidate[1:], 16)
+                    return candidate
+                except ValueError:
+                    pass
+            if len(text) == 4:
+                try:
+                    int(text[1:], 16)
+                    return "#" + "".join(ch * 2 for ch in text[1:])
+                except ValueError:
+                    pass
+        return fallback
+
     def _theme_palette(self) -> dict[str, str]:
+        defaults = {
+            "background": "#1e1e1e",
+            "surface": "#292929",
+            "foreground": "#f0f0f0",
+            "primary": "#00aaff",
+            "accent": "#00d7af",
+            "warning": "#ffd75f",
+            "muted": "#9a9a9a",
+        }
         try:
             colors = self.app.current_theme.to_color_system().generate()
             return {
-                "background": colors["background"],
-                "surface": colors["surface"],
-                "foreground": colors["foreground"],
-                "primary": colors["primary"],
-                "accent": colors["accent"],
-                "warning": colors["warning"],
-                "muted": colors["foreground-muted"],
+                "background": self._tk_color(
+                    colors.get("background"), defaults["background"]
+                ),
+                "surface": self._tk_color(
+                    colors.get("surface"), defaults["surface"]
+                ),
+                "foreground": self._tk_color(
+                    colors.get("foreground"), defaults["foreground"]
+                ),
+                "primary": self._tk_color(
+                    colors.get("primary"), defaults["primary"]
+                ),
+                "accent": self._tk_color(
+                    colors.get("accent"), defaults["accent"]
+                ),
+                "warning": self._tk_color(
+                    colors.get("warning"), defaults["warning"]
+                ),
+                "muted": self._tk_color(
+                    colors.get("foreground-muted"), defaults["muted"]
+                ),
             }
         except Exception:
-            return {
-                "background": "#1e1e1e",
-                "surface": "#292929",
-                "foreground": "#f0f0f0",
-                "primary": "#00aaff",
-                "accent": "#00d7af",
-                "warning": "#ffd75f",
-                "muted": "#9a9a9a",
-            }
+            return defaults
 
     def _thread_main(self) -> None:
         window: Optional[_ThumbnailWindow] = None
