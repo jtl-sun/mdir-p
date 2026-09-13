@@ -1,0 +1,50 @@
+name: Publish mDIR-P 2.26.5
+
+on:
+  push:
+    branches:
+      - release/2.26.5-publish
+    paths:
+      - .github/workflows/publish-2.26.5.yml
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Build source package
+        run: |
+          git archive --format=zip --prefix=mDIR-P-2.26.5/ 778a1c8bd70941ba4c283f9f33d33383654ed0a6 -o mDIR-P-2.26.5.zip
+          sha256sum mDIR-P-2.26.5.zip > mDIR-P-2.26.5.zip.sha256
+          cat > RELEASE_NOTES.md <<'EOF'
+          ## mDIR-P 2.26.5
+
+          Stability-focused Windows release for long-running mDIR sessions.
+
+          - Reduced native Ctrl+F3 / Shift-click polling frequency.
+          - Suspends background polling while mDIR is unfocused, Windows is idle, or large file/archive work is active.
+          - Reduced directory and drive polling frequency to lower long-session overhead.
+          - Keeps an immediate catch-up refresh when mDIR regains focus.
+          - Improved UI hang diagnostics with repeated thread dumps.
+          - Preserves safe file-operation protections and updated mDir theme/options behavior.
+
+          Validation: Windows CI passed installation, self-check, all tests, and wheel build on the merged main commit.
+
+          Installation:
+          1. Download `mDIR-P-2.26.5.zip`.
+          2. Extract it.
+          3. Close any running mDIR window.
+          4. Double-click `INSTALL_MDIR.bat`.
+          EOF
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create v2.26.5             mDIR-P-2.26.5.zip             mDIR-P-2.26.5.zip.sha256             --repo "${{ github.repository }}"             --target 778a1c8bd70941ba4c283f9f33d33383654ed0a6             --title "mDIR-P 2.26.5"             --notes-file RELEASE_NOTES.md
