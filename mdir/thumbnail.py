@@ -560,8 +560,34 @@ class _ThumbnailWindow:
         except Exception:
             pass
 
+    def _restore_terminal_focus(self) -> None:
+        """Return keyboard input to Windows Terminal after a thumbnail click."""
+        if os.name != "nt" or not self.terminal_hwnd:
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            user32.SetForegroundWindow.argtypes = [wintypes.HWND]
+            user32.SetForegroundWindow.restype = wintypes.BOOL
+            user32.BringWindowToTop.argtypes = [wintypes.HWND]
+            user32.BringWindowToTop.restype = wintypes.BOOL
+            user32.BringWindowToTop(wintypes.HWND(self.terminal_hwnd))
+            user32.SetForegroundWindow(wintypes.HWND(self.terminal_hwnd))
+        except Exception:
+            pass
+
+    def _restore_terminal_focus_soon(self) -> None:
+        try:
+            self.root.after(1, self._restore_terminal_focus)
+            self.root.after(35, self._restore_terminal_focus)
+        except Exception:
+            self._restore_terminal_focus()
+
     def _request_close(self) -> None:
         self.close_callback()
+        self._restore_terminal_focus_soon()
 
     def _resize_thumbnails(self, delta: int) -> None:
         self.thumbnail_size = max(
@@ -572,6 +598,7 @@ class _ThumbnailWindow:
         self._photo_by_index.clear()
         self._pending_indices.clear()
         self._render()
+        self._restore_terminal_focus_soon()
 
     def _columns(self) -> int:
         width = max(1, int(self.canvas.winfo_width()))
@@ -596,6 +623,7 @@ class _ThumbnailWindow:
         delta = -1 if event.delta > 0 else 1
         self.canvas.yview_scroll(delta * 3, "units")
         self._render()
+        self._restore_terminal_focus_soon()
 
     def _event_index(self, event) -> Optional[int]:
         columns = self._columns()
@@ -626,16 +654,19 @@ class _ThumbnailWindow:
         index = self._event_index(event)
         if index is not None:
             self._select_index(index)
+        self._restore_terminal_focus_soon()
 
     def _on_ctrl_click(self, event) -> None:
         index = self._event_index(event)
         if index is not None:
             self._select_index(index, toggle=True)
+        self._restore_terminal_focus_soon()
 
     def _on_right_click(self, event) -> None:
         index = self._event_index(event)
         if index is not None:
             self._select_index(index, toggle=True)
+        self._restore_terminal_focus_soon()
 
     def _on_double_click(self, event) -> None:
         index = self._event_index(event)
@@ -644,6 +675,7 @@ class _ThumbnailWindow:
             self.current = item.path
             self.select_callback(self.side, item.path)
             self.open_callback(self.side, item.path)
+        self._restore_terminal_focus_soon()
 
     def _visible_indices(self) -> range:
         columns = self._columns()
