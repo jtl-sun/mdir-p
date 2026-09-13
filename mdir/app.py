@@ -385,6 +385,18 @@ class MDirApp(FastFileManagerApp):
     def _thumbnail_pane(self, side: str):
         return self.left if side == "left" else self.right
 
+    def _update_thumbnail_buttons(self) -> None:
+        active = self.thumbnail_mode_side
+        for side in ("left", "right"):
+            try:
+                button = self.query_one(
+                    f"#{side}_thumbnail_toggle",
+                    Button,
+                )
+                button.set_class(active == side, "thumbnail-active")
+            except Exception:
+                pass
+
     def _thumbnail_layout(self, side: str) -> Optional["PaneLayout"]:
         from .preview.native import PaneLayout
 
@@ -440,6 +452,7 @@ class MDirApp(FastFileManagerApp):
             return False
         self.thumbnail_mode_side = side
         self.set_active(side)
+        self._update_thumbnail_buttons()
         self.set_status(
             "Thumbnail view: left-click current | right-click/Ctrl+click mark | "
             "F5 Copy | F6 Move | Alt+T List"
@@ -510,6 +523,7 @@ class MDirApp(FastFileManagerApp):
         self.thumbnail_mode_side = None
         if self._native_thumbnail is not None:
             self._native_thumbnail.hide()
+        self._update_thumbnail_buttons()
         self.set_status("List view restored.")
 
     def action_toggle_thumbnail(self) -> None:
@@ -520,6 +534,7 @@ class MDirApp(FastFileManagerApp):
                 return
             self.native_thumbnail.hide()
             self.thumbnail_mode_side = None
+            self._update_thumbnail_buttons()
         if self.preview_mode:
             self._hide_document_preview(restore_right_focus=False)
         self._show_thumbnail_side(side)
