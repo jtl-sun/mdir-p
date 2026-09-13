@@ -410,22 +410,29 @@ class MDirApp(FastFileManagerApp):
         pane.update_info()
 
     def _navigate_arrow(self, direction: str) -> None:
-        """Arrow keys navigate items only. Tab is the sole pane switch."""
-        if self.thumbnail_mode_side is not None:
-            # Keep the thumbnail pane active and route all four arrows to
-            # the two-dimensional thumbnail grid.
-            if self.active_side != self.thumbnail_mode_side:
-                self.set_active(self.thumbnail_mode_side)
+        """Navigate only inside the currently active pane.
+
+        Tab decides which pane is active. Arrow keys must never change that
+        choice. If the active pane is the thumbnail pane, all four arrows move
+        in the thumbnail grid. If the active pane is a normal list, Up/Down
+        move rows and Left/Right are consumed.
+        """
+        if (
+            self.thumbnail_mode_side is not None
+            and self.active_side == self.thumbnail_mode_side
+        ):
             if self._native_thumbnail is not None:
                 self._native_thumbnail.navigate(direction)
             return
 
-        # Normal list view is one-dimensional. Up/down move rows.
-        # Left/right are intentionally consumed so they can never switch panes.
+        # The other pane may remain a normal list while Thumbnail View is open
+        # on its partner pane. Always operate on self.active here so pressing
+        # Tab followed by an arrow stays in the pane chosen by Tab.
         if direction == "up":
             self._move_list_cursor(-1)
         elif direction == "down":
             self._move_list_cursor(1)
+        # Left/right intentionally do nothing in List View.
 
     def action_nav_left(self) -> None:
         self._navigate_arrow("left")
