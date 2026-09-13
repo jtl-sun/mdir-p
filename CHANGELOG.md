@@ -1,3 +1,15 @@
+## 2.26.6
+
+- Added native Thumbnail View for either file pane with `Alt+T`.
+- Added lazy thumbnail loading so only visible and nearby image cells are decoded.
+- Added a persistent thumbnail cache under `%LOCALAPPDATA%\\mDIR\\thumbnail-cache` with a 1 GB cleanup limit.
+- Added right-click and Ctrl+click mark toggling directly on thumbnail cells.
+- Left-click synchronizes the thumbnail cursor with the normal mDIR file pane, so existing `F5 Copy` and `F6 Move` operations work unchanged.
+- Double-click opens files and enters folders from the thumbnail grid.
+- Thumbnail size can be changed with the `-` and `+` buttons, and the `List` button restores the normal list.
+- Thumbnail rendering runs in a background loader thread and keeps keyboard focus in Windows Terminal.
+- Pillow is now a core dependency because Thumbnail View is a standard mDIR feature.
+
 # Changelog
 
 ## 2.26.5
