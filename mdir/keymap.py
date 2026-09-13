@@ -23,8 +23,6 @@ class KeyDefinition:
 
 KEY_DEFINITIONS = (
     KeyDefinition("Switch pane", "switch_pane", "tab", False),
-    KeyDefinition("Left pane", "focus_left", "left", False),
-    KeyDefinition("Right pane", "focus_right", "right", False),
     KeyDefinition("Open", "open_item", "enter", False),
     KeyDefinition("Parent", "parent", "backspace", False),
     KeyDefinition("Mark", "mark", "space", False),
