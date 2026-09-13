@@ -381,6 +381,9 @@ prevented until the first one finishes.
 
 ## Thumbnail View
 
+**Pane switching:** `Tab` is the only pane-switch key. The arrow keys are reserved for moving the file/thumbnail cursor.
+
+
 Press **Alt+T** to turn the active pane into a native image-thumbnail grid. The opposite pane remains a normal file list, which is useful for visually selecting images and then copying or moving them to the other directory.
 
 - **Left-click**: make that file the current item.
