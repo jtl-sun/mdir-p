@@ -395,6 +395,7 @@ Press **Alt+T** to turn the active pane into a native image-thumbnail grid. The 
 - **Arrow keys**: continue moving the underlying file cursor while the thumbnail grid reflects the current file.
 - **- / +**: make thumbnails smaller or larger.
 - **List** or **Alt+T**: return to the normal file list.
+- **Both panes**: Thumbnail View is independent per pane, so left and right can both show thumbnails for side-by-side comparison.
 
 Thumbnail images are loaded lazily: mDIR decodes only the visible rows plus a small prefetch area. Generated thumbnails are cached in `%LOCALAPPDATA%\\mDIR\\thumbnail-cache`; cache cleanup keeps the folder around 1 GB or less. The thumbnail window is a no-activate native overlay, so Windows Terminal keeps keyboard focus and normal mDIR shortcuts continue to work.
 
