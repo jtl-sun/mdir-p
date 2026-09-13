@@ -1,3 +1,11 @@
+## 2.26.7
+
+- Rebuilt dual-pane Thumbnail View around one Tk event loop instead of one Tk root/thread per pane, removing the focus races and intermittent freezes seen in 2.26.6 dual-thumbnail testing.
+- Left and right Thumbnail View now use independent Toplevel overlays managed by one native thumbnail manager, so both panes can stay in Thumbnail mode without hiding or stealing focus from the other.
+- Stabilized mouse click, right-click mark, wheel scrolling, arrow navigation, Space marking, Tab pane switching, and external-player handoff while Thumbnail View is active.
+- Kept lazy visible-row decoding and the persistent 1 GB thumbnail cache, while image decoding remains off the UI thread.
+- Version 2.26.7 is intentionally separated from 2.26.6 so field reports can distinguish the rebuilt thumbnail architecture from the earlier experimental implementation.
+
 ## 2.26.6
 
 - Both panes can now keep Thumbnail View enabled at the same time for side-by-side image comparison.
