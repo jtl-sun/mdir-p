@@ -1893,8 +1893,6 @@ class MDir(App):
     BINDINGS = [
         Binding("ctrl+q", "ignore", "", show=False, priority=True, system=True),
         Binding("tab", "switch_pane", "Pane", show=False),
-        Binding("left", "focus_left", "Left", show=False),
-        Binding("right", "focus_right", "Right", show=False),
         Binding("enter", "open_item", "Open", show=False),
         Binding("backspace", "parent", "Parent"),
         Binding("space", "mark", "Mark"),
