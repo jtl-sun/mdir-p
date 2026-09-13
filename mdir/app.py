@@ -15,6 +15,7 @@ from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical
+from textual.screen import ModalScreen
 from textual.timer import Timer
 from textual.widgets import Button, DataTable, Footer, Header, Static
 
@@ -392,6 +393,37 @@ class MDirApp(FastFileManagerApp):
             right_selected=self.right.selected_path(),
         )
 
+    def _delegate_modal_arrow(self, direction: str) -> bool:
+        """Preserve arrow-key behavior inside dialogs and editors.
+
+        The main app owns priority arrow bindings so file panes never use
+        Left/Right to switch panes. Modal screens still need their own arrows,
+        so explicitly delegate while a modal is on top.
+        """
+        screen = self.screen
+        if not isinstance(screen, ModalScreen):
+            return False
+
+        screen_action = getattr(screen, f"action_focus_{direction}", None)
+        if callable(screen_action):
+            screen_action()
+            return True
+
+        focused = getattr(screen, "focused", None)
+        if focused is None:
+            return True
+        for action_name in (
+            f"action_cursor_{direction}",
+            f"action_{direction}",
+        ):
+            action = getattr(focused, action_name, None)
+            if callable(action):
+                result = action()
+                if inspect.isawaitable(result):
+                    self.run_worker(result, exclusive=False)
+                return True
+        return True
+
     def _move_list_cursor(self, delta: int) -> None:
         """Move within the active list without ever changing panes."""
         pane = self.active
@@ -417,6 +449,9 @@ class MDirApp(FastFileManagerApp):
         in the thumbnail grid. If the active pane is a normal list, Up/Down
         move rows and Left/Right are consumed.
         """
+        if self._delegate_modal_arrow(direction):
+            return
+
         if (
             self.thumbnail_mode_side is not None
             and self.active_side == self.thumbnail_mode_side
