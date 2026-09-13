@@ -135,6 +135,11 @@ class NativeThumbnailController:
         if self._thread is not None:
             self._commands.put(("layout", pane_layout))
 
+    def navigate(self, direction: str) -> None:
+        """Move the thumbnail cursor without giving focus to the overlay."""
+        if self._thread is not None:
+            self._commands.put(("navigate", str(direction).lower()))
+
     def update_selection(
         self,
         *,
@@ -689,6 +694,38 @@ class _ThumbnailWindow:
             self.toggle_callback(self.side, item.path)
         self._render()
 
+    def _navigate(self, direction: str) -> None:
+        if not self.items:
+            return
+        try:
+            current_index = next(
+                i for i, item in enumerate(self.items)
+                if item.path == self.current
+            )
+        except StopIteration:
+            current_index = 0
+
+        columns = max(1, self._columns())
+        if direction == "left":
+            target = current_index - 1
+        elif direction == "right":
+            target = current_index + 1
+        elif direction == "up":
+            target = current_index - columns
+        elif direction == "down":
+            target = current_index + columns
+        else:
+            return
+
+        target = max(0, min(len(self.items) - 1, target))
+        if target == current_index:
+            return
+        self.current = self.items[target].path
+        self.select_callback(self.side, self.current)
+        self._scroll_current_into_view()
+        self._render()
+        self._raise_overlay_no_activate()
+
     def _on_left_click(self, event) -> None:
         index = self._event_index(event)
         if index is not None:
@@ -925,6 +962,8 @@ class _ThumbnailWindow:
                     self._apply_show(payload)  # type: ignore[arg-type]
                 elif command == "selection":
                     self._apply_selection(payload)  # type: ignore[arg-type]
+                elif command == "navigate":
+                    self._navigate(str(payload))
                 elif command == "layout":
                     self.pane_layout = payload  # type: ignore[assignment]
                     self._apply_geometry()
