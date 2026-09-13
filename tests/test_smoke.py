@@ -726,9 +726,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app = MDirApp()
                 async with app.run_test(size=(130, 42)) as pilot:
                     fake = FakeThumbnail()
-                    app._native_thumbnail = fake
+                    app._native_thumbnails["left"] = fake
                     app.set_active("left")
-                    app.thumbnail_mode_side = "left"
+                    app.thumbnail_mode_sides.add("left")
                     await pilot.pause()
 
                     # Tab chooses RIGHT. Every following arrow/Space must stay
@@ -769,6 +769,79 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.pause()
                     self.assertEqual(app.active_side, "left")
                     self.assertEqual(fake.moves, ["right"])
+            finally:
+                os.chdir(previous)
+
+    async def test_both_panes_can_keep_thumbnail_mode_enabled(self) -> None:
+        class FakeThumbnail:
+            def __init__(self, side: str) -> None:
+                self.side = side
+                self.shows: list[str] = []
+                self.hidden = False
+
+            def show(self, **kwargs) -> bool:
+                self.shows.append(kwargs["side"])
+                return True
+
+            def hide(self) -> None:
+                self.hidden = True
+
+            def update_selection(self, **kwargs) -> None:
+                pass
+
+            def update_layout(self, layout) -> None:
+                pass
+
+            def suspend_for_external_app(self) -> None:
+                pass
+
+            def shutdown(self, timeout: float = 4.0) -> bool:
+                return True
+
+            @property
+            def last_error(self) -> str:
+                return ""
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "left.jpg").write_bytes(b"x")
+            (root / "right.jpg").write_bytes(b"x")
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    left = FakeThumbnail("left")
+                    right = FakeThumbnail("right")
+                    app._native_thumbnails["left"] = left
+                    app._native_thumbnails["right"] = right
+
+                    app._thumbnail_layout = lambda side: PaneLayout(
+                        x=0 if side == "left" else 65,
+                        y=5,
+                        width=65,
+                        height=30,
+                        columns=130,
+                        rows=42,
+                    )
+
+                    app.set_active("left")
+                    self.assertTrue(app._show_thumbnail_side("left"))
+                    self.assertEqual(app.thumbnail_mode_sides, {"left"})
+
+                    app.set_active("right")
+                    self.assertTrue(app._show_thumbnail_side("right"))
+                    self.assertEqual(
+                        app.thumbnail_mode_sides,
+                        {"left", "right"},
+                    )
+                    self.assertFalse(left.hidden)
+                    self.assertFalse(right.hidden)
+
+                    app._thumbnail_close_requested("right")
+                    self.assertEqual(app.thumbnail_mode_sides, {"left"})
+                    self.assertFalse(left.hidden)
+                    self.assertTrue(right.hidden)
             finally:
                 os.chdir(previous)
 
