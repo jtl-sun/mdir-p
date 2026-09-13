@@ -232,6 +232,7 @@ are normally not required for `CurrentUser` or `Process` scope.
 | `Ctrl+Shift+M`         | Start/stop Copy/Move Macro recording        |
 | `Ctrl+Alt+M`           | Review and play a saved Macro               |
 | `Ctrl+F3`              | Toggle Preview                              |
+| `Alt+T`                | Toggle Thumbnail View on the active pane    |
 | `Ctrl+G`               | Calculate selected folder size              |
 | `Ctrl+H`               | Show or hide hidden/system items            |
 | `Ctrl+R`               | Refresh both panes                          |
@@ -378,6 +379,22 @@ ZIP creation and extraction run in a background worker. The panes remain
 responsive while a large archive is processed, and a second ZIP operation is
 prevented until the first one finishes.
 
+## Thumbnail View
+
+Press **Alt+T** to turn the active pane into a native image-thumbnail grid. The opposite pane remains a normal file list, which is useful for visually selecting images and then copying or moving them to the other directory.
+
+- **Left-click**: make that file the current item.
+- **Right-click**: add/remove that file from the marked selection.
+- **Ctrl+click**: same mark toggle as right-click.
+- **Double-click**: open a file or enter a directory.
+- **F5 / F6**: copy or move the current/marked items to the opposite pane using the normal mDIR confirmation and conflict handling.
+- **Space**: mark/unmark the current item from the keyboard.
+- **Arrow keys**: continue moving the underlying file cursor while the thumbnail grid reflects the current file.
+- **- / +**: make thumbnails smaller or larger.
+- **List** or **Alt+T**: return to the normal file list.
+
+Thumbnail images are loaded lazily: mDIR decodes only the visible rows plus a small prefetch area. Generated thumbnails are cached in `%LOCALAPPDATA%\\mDIR\\thumbnail-cache`; cache cleanup keeps the folder around 1 GB or less. The thumbnail window is a no-activate native overlay, so Windows Terminal keeps keyboard focus and normal mDIR shortcuts continue to work.
+
 ## Preview and Text Tools
 
 - `Ctrl+F3` opens Preview for common images, PDF, Excel, CSV, TXT, Markdown,
@@ -466,12 +483,12 @@ and `action`.
 ]
 ```
 
-Folder shortcuts accept `active`, `left`, or `right` for `pane`. Available
+The supported shortcut action `toggle_thumbnail` can also be placed on the top shortcut bar to switch the active pane between List and Thumbnail View.\n\nFolder shortcuts accept `active`, `left`, or `right` for `pane`. Available
 placeholders are `{home}`, `{project}`, `{current}`, `{left}`, `{right}`,
 `{selected}`, `{left_selected}`, and `{right_selected}`. This lets a program
 link send the selected file—or files from both panes—to free external tools
 such as LibreOffice, Meld, GIMP, or VLC without bundling those applications.
-Supported actions are `toggle_ai_terminal`, `toggle_preview`, `search`,
+Supported actions are `toggle_ai_terminal`, `toggle_preview`, `toggle_thumbnail`, `search`,
 `powershell_here`, `refresh_all`, and `hidden_system`.
 
 ## AI and Local Commands
