@@ -1,5 +1,6 @@
 ## 2.26.6
 
+- Both panes can now keep Thumbnail View enabled at the same time for side-by-side image comparison.
 - Added native Thumbnail View for either file pane with `Alt+T`.
 - Added lazy thumbnail loading so only visible and nearby image cells are decoded.
 - Added a persistent thumbnail cache under `%LOCALAPPDATA%\\mDIR\\thumbnail-cache` with a 1 GB cleanup limit.
