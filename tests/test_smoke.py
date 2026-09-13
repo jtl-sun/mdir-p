@@ -713,6 +713,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             def navigate(self, direction: str) -> None:
                 self.moves.append(direction)
 
+            def shutdown(self, timeout: float = 4.0) -> bool:
+                return True
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             for name in ("a.txt", "b.txt", "c.txt"):
