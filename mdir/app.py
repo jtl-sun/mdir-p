@@ -66,6 +66,7 @@ if TYPE_CHECKING:
         PaneLayout,
         WindowRectangle,
     )
+    from .thumbnail import NativeThumbnailController
 
 
 def terminal_screen_point_to_cell(
@@ -178,6 +179,14 @@ class MDirApp(FastFileManagerApp):
             priority=True,
             id="mdir.preview",
         ),
+        Binding(
+            "alt+t",
+            "toggle_thumbnail",
+            "Thumb",
+            show=True,
+            priority=True,
+            id="mdir.thumbnail",
+        ),
     ]
 
     def __init__(self) -> None:
@@ -190,6 +199,8 @@ class MDirApp(FastFileManagerApp):
         self._hotkey_timer: Optional[Timer] = None
         self._preview_layout_timer: Optional[Timer] = None
         self._native_preview: Optional["NativePreviewController"] = None
+        self._native_thumbnail: Optional["NativeThumbnailController"] = None
+        self.thumbnail_mode_side: Optional[str] = None
         self._preview_suppressed_path: Optional[Path] = None
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
@@ -198,6 +209,21 @@ class MDirApp(FastFileManagerApp):
         self.set_keymap(self.user_keymap)
         self.register_theme(MDIR_THEME)
         self.theme = THEME_NAME
+
+    @property
+    def native_thumbnail(self) -> "NativeThumbnailController":
+        """Create the thumbnail overlay only when the user requests it."""
+        if self._native_thumbnail is None:
+            from .thumbnail import NativeThumbnailController
+
+            self._native_thumbnail = NativeThumbnailController(
+                self,
+                select_callback=self._thumbnail_select_path,
+                toggle_callback=self._thumbnail_toggle_path,
+                open_callback=self._thumbnail_open_path,
+                close_callback=self._thumbnail_close_requested,
+            )
+        return self._native_thumbnail
 
     @property
     def native_preview(self) -> "NativePreviewController":
@@ -221,6 +247,9 @@ class MDirApp(FastFileManagerApp):
             native_preview = self._native_preview
             if native_preview is not None:
                 native_preview.update_theme()
+            native_thumbnail = self._native_thumbnail
+            if native_thumbnail is not None:
+                native_thumbnail.update_theme()
             self.call_after_refresh(self._refresh_themed_file_rows)
 
     def _refresh_themed_file_rows(self) -> None:
@@ -353,6 +382,152 @@ class MDirApp(FastFileManagerApp):
             right_selected=self.right.selected_path(),
         )
 
+    def _thumbnail_pane(self, side: str):
+        return self.left if side == "left" else self.right
+
+    def _thumbnail_layout(self, side: str) -> Optional["PaneLayout"]:
+        from .preview.native import PaneLayout
+
+        try:
+            pane = self._thumbnail_pane(side)
+            region = pane.table.region
+            if region.width <= 0 or region.height <= 0:
+                return None
+            return PaneLayout(
+                x=region.x,
+                y=region.y,
+                width=region.width,
+                height=region.height,
+                columns=max(1, self.size.width),
+                rows=max(1, self.size.height),
+            )
+        except Exception:
+            return None
+
+    def _thumbnail_items(self, side: str):
+        from .thumbnail import ThumbnailItem
+
+        pane = self._thumbnail_pane(side)
+        return [
+            ThumbnailItem(
+                entry.path,
+                entry.is_directory,
+                entry.size,
+                entry.modified,
+            )
+            for entry in getattr(pane, "cached_entries", ())
+        ]
+
+    def _show_thumbnail_side(self, side: str) -> bool:
+        pane = self._thumbnail_pane(side)
+        layout = self._thumbnail_layout(side)
+        if layout is None:
+            self.set_status("Thumbnail view is not ready yet.")
+            return False
+        shown = self.native_thumbnail.show(
+            side=side,
+            directory=pane.current_path,
+            items=self._thumbnail_items(side),
+            marked=pane.marked,
+            current=pane.selected_path(),
+            pane_layout=layout,
+        )
+        if not shown:
+            detail = self.native_thumbnail.last_error or (
+                "Thumbnail view requires Windows and Pillow."
+            )
+            self.set_status(f"Thumbnail view unavailable: {detail}")
+            return False
+        self.thumbnail_mode_side = side
+        self.set_active(side)
+        self.set_status(
+            "Thumbnail view: left-click current | right-click/Ctrl+click mark | "
+            "F5 Copy | F6 Move | Alt+T List"
+        )
+        return True
+
+    def _refresh_thumbnail_overlay(self) -> None:
+        side = self.thumbnail_mode_side
+        if side is None or self._native_thumbnail is None:
+            return
+        pane = self._thumbnail_pane(side)
+        layout = self._thumbnail_layout(side)
+        if layout is None:
+            return
+        self._native_thumbnail.show(
+            side=side,
+            directory=pane.current_path,
+            items=self._thumbnail_items(side),
+            marked=pane.marked,
+            current=pane.selected_path(),
+            pane_layout=layout,
+        )
+
+    def _sync_thumbnail_selection(self, side: Optional[str] = None) -> None:
+        current_side = self.thumbnail_mode_side
+        if current_side is None or self._native_thumbnail is None:
+            return
+        if side is not None and side != current_side:
+            return
+        pane = self._thumbnail_pane(current_side)
+        self._native_thumbnail.update_selection(
+            marked=pane.marked,
+            current=pane.selected_path(),
+        )
+
+    def _thumbnail_select_path(self, side: str, path: Path) -> None:
+        pane = self._thumbnail_pane(side)
+        self.set_active(side)
+        row = getattr(pane, "row_by_path", {}).get(path)
+        if row is not None and row < pane.table.row_count:
+            pane.table.move_cursor(row=row, column=0, animate=False, scroll=False)
+        pane.update_info()
+        self._sync_thumbnail_selection(side)
+
+    def _thumbnail_toggle_path(self, side: str, path: Path) -> None:
+        pane = self._thumbnail_pane(side)
+        if path not in getattr(pane, "metadata_by_path", {}):
+            return
+        self.set_active(side)
+        pane.toggle_mark_path(path)
+        self._sync_thumbnail_selection(side)
+
+    def _thumbnail_open_path(self, side: str, path: Path) -> None:
+        pane = self._thumbnail_pane(side)
+        self.set_active(side)
+        if path.is_dir():
+            if pane.navigate_to_path(str(path)):
+                self.set_timer(0.10, self._refresh_thumbnail_overlay)
+                self.set_timer(0.45, self._refresh_thumbnail_overlay)
+            return
+        try:
+            open_with_default_app(path)
+            self.set_status(f"Opened: {path.name}")
+        except Exception as exc:
+            self.set_status(f"Open failed: {exc}")
+
+    def _thumbnail_close_requested(self) -> None:
+        self.thumbnail_mode_side = None
+        if self._native_thumbnail is not None:
+            self._native_thumbnail.hide()
+        self.set_status("List view restored.")
+
+    def action_toggle_thumbnail(self) -> None:
+        side = self.active_side
+        if self.thumbnail_mode_side is not None:
+            if self.thumbnail_mode_side == side:
+                self._thumbnail_close_requested()
+                return
+            self.native_thumbnail.hide()
+            self.thumbnail_mode_side = None
+        if self.preview_mode:
+            self._hide_document_preview(restore_right_focus=False)
+        self._show_thumbnail_side(side)
+
+    def action_mark(self) -> None:
+        super().action_mark()
+        self._sync_thumbnail_selection(self.active_side)
+
     def _shortcut_pane(self, shortcut: ShortcutDefinition):
         if shortcut.pane == "left":
             return self.left
@@ -424,6 +599,7 @@ class MDirApp(FastFileManagerApp):
             "powershell_here",
             "refresh_all",
             "hidden_system",
+            "toggle_thumbnail",
         }
         if shortcut.target not in allowed_actions:
             raise ValueError(f"unsupported action: {shortcut.target}")
@@ -808,6 +984,10 @@ class MDirApp(FastFileManagerApp):
         try:
             if event.data_table is self.left.table:
                 self._preview_current_left_selection()
+            if self.thumbnail_mode_side is not None:
+                pane = self._thumbnail_pane(self.thumbnail_mode_side)
+                if event.data_table is pane.table:
+                    self._sync_thumbnail_selection(self.thumbnail_mode_side)
         except Exception:
             pass
 
@@ -975,6 +1155,25 @@ class MDirApp(FastFileManagerApp):
             return f"{action_name} works on supported text files only."
         return f"{prefix} could not be read."
 
+    def _finish_file_operation(
+        self,
+        source_side: str,
+        destination: Path | None,
+        result,
+        fatal_error: str | None,
+        overwrite: bool = False,
+    ) -> None:
+        super()._finish_file_operation(
+            source_side,
+            destination,
+            result,
+            fatal_error,
+            overwrite,
+        )
+        if self.thumbnail_mode_side is not None:
+            self.set_timer(0.12, self._refresh_thumbnail_overlay)
+            self.set_timer(0.50, self._refresh_thumbnail_overlay)
+
     def action_view(self) -> None:
         path = self._selected_action_file("F3 View")
         if path is None:
@@ -1003,6 +1202,10 @@ class MDirApp(FastFileManagerApp):
     def on_resize(self, event: events.Resize) -> None:
         if self.preview_mode:
             self._schedule_preview_layout(0.12)
+        if self.thumbnail_mode_side is not None and self._native_thumbnail is not None:
+            layout = self._thumbnail_layout(self.thumbnail_mode_side)
+            if layout is not None:
+                self._native_thumbnail.update_layout(layout)
 
     def on_unmount(self) -> None:
         if self._preview_layout_timer is not None:
@@ -1011,6 +1214,8 @@ class MDirApp(FastFileManagerApp):
         if self._hotkey_timer is not None:
             self._hotkey_timer.stop()
             self._hotkey_timer = None
+        if self._native_thumbnail is not None:
+            self._native_thumbnail.shutdown()
         if self._native_preview is not None:
             self._native_preview.shutdown()
         super().on_unmount()
