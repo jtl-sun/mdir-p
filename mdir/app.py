@@ -613,6 +613,8 @@ class MDirApp(FastFileManagerApp):
                 self.set_timer(0.45, self._refresh_thumbnail_overlay)
             return
         try:
+            if self._native_thumbnail is not None:
+                self._native_thumbnail.suspend_for_external_app()
             open_with_default_app(path)
             self.set_status(f"Opened: {path.name}")
         except Exception as exc:
@@ -1203,13 +1205,15 @@ class MDirApp(FastFileManagerApp):
             self.set_status(f"Could not open {path.name}: {exc}")
 
     def open_external_path(self, path: Path) -> None:
-        """Remove Preview before giving the file to another application."""
+        """Hide native overlays before giving the file to another application."""
         self._preview_suppressed_path = path
         if self.preview_mode:
             self._hide_document_preview(
                 restore_right_focus=False,
                 wait_for_native=True,
             )
+        if self._native_thumbnail is not None:
+            self._native_thumbnail.suspend_for_external_app()
         super().open_external_path(path)
 
     def _native_restore_files(self) -> None:
