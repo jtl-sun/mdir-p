@@ -21,6 +21,7 @@ from mdir.preview.native import (
     _NativePreviewWindow,
     calculate_pane_rectangle,
 )
+from mdir.thumbnail import NativeThumbnailController, _ThumbnailWindow
 from mdir.preview.document import can_preview, prepare_document_source
 from mdir.preview import document as document_preview
 from mdir.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
@@ -2806,6 +2807,69 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         rectangle = calculate_pane_rectangle(terminal, pane)
         self.assertGreater(rectangle.width, 800)
         self.assertGreater(rectangle.height, 700)
+
+    def test_thumbnail_controller_keeps_original_terminal_handle(self) -> None:
+        controller = object.__new__(NativeThumbnailController)
+        controller._terminal_hwnd = 101
+        controller._window_hwnd = 202
+        controller._commands = Mock()
+        controller.start = Mock(return_value=True)
+
+        layout = PaneLayout(
+            x=0,
+            y=0,
+            width=20,
+            height=10,
+            columns=80,
+            rows=30,
+        )
+        controller.show(
+            side="left",
+            directory=Path("C:/images"),
+            items=[],
+            marked=[],
+            current=None,
+            pane_layout=layout,
+        )
+
+        self.assertEqual(controller._terminal_hwnd, 101)
+        command, payload = controller._commands.put.call_args.args[0]
+        self.assertEqual(command, "show")
+        self.assertEqual(payload["terminal_hwnd"], 101)
+
+    def test_thumbnail_overlay_withdraws_when_external_app_is_foreground(self) -> None:
+        withdrawn: list[bool] = []
+        window = object.__new__(_ThumbnailWindow)
+        window.visible = True
+        window.presented = True
+        window._external_suspend_until = 0.0
+        window.root = SimpleNamespace(
+            withdraw=lambda: withdrawn.append(True),
+            deiconify=Mock(),
+        )
+        window._terminal_is_foreground = Mock(return_value=False)
+
+        window._present_if_terminal_foreground()
+
+        self.assertEqual(withdrawn, [True])
+        self.assertFalse(window.presented)
+        window.root.deiconify.assert_not_called()
+
+    def test_thumbnail_external_launch_suspends_overlay(self) -> None:
+        withdrawn: list[bool] = []
+        window = object.__new__(_ThumbnailWindow)
+        window.presented = True
+        window.root = SimpleNamespace(
+            withdraw=lambda: withdrawn.append(True),
+        )
+        window._external_suspend_until = 0.0
+
+        before = time.monotonic()
+        window._suspend_for_external_app()
+
+        self.assertEqual(withdrawn, [True])
+        self.assertFalse(window.presented)
+        self.assertGreater(window._external_suspend_until, before)
 
     def test_native_preview_hides_before_external_open(self) -> None:
         opened: list[Path] = []
