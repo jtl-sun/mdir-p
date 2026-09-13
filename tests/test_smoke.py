@@ -22,10 +22,8 @@ from mdir.preview.native import (
     calculate_pane_rectangle,
 )
 from mdir.thumbnail import (
-    NativeThumbnailController,
+    NativeThumbnailManager,
     _ThumbnailWindow,
-    _register_thumbnail_hwnd,
-    _unregister_thumbnail_hwnd,
 )
 from mdir.preview.document import can_preview, prepare_document_source
 from mdir.preview import document as document_preview
@@ -713,10 +711,10 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
     async def test_tab_then_arrows_stay_in_new_active_pane(self) -> None:
         class FakeThumbnail:
             def __init__(self) -> None:
-                self.moves: list[str] = []
+                self.moves: list[tuple[str, str]] = []
 
-            def navigate(self, direction: str) -> None:
-                self.moves.append(direction)
+            def navigate(self, side: str, direction: str) -> None:
+                self.moves.append((side, direction))
 
             def shutdown(self, timeout: float = 4.0) -> bool:
                 return True
@@ -731,7 +729,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app = MDirApp()
                 async with app.run_test(size=(130, 42)) as pilot:
                     fake = FakeThumbnail()
-                    app._native_thumbnails["left"] = fake
+                    app._native_thumbnail = fake
                     app.set_active("left")
                     app.thumbnail_mode_sides.add("left")
                     await pilot.pause()
@@ -773,31 +771,37 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.press("right")
                     await pilot.pause()
                     self.assertEqual(app.active_side, "left")
-                    self.assertEqual(fake.moves, ["right"])
+                    self.assertEqual(fake.moves, [("left", "right")])
             finally:
                 os.chdir(previous)
 
     async def test_both_panes_can_keep_thumbnail_mode_enabled(self) -> None:
-        class FakeThumbnail:
-            def __init__(self, side: str) -> None:
-                self.side = side
+        class FakeThumbnailManager:
+            def __init__(self) -> None:
                 self.shows: list[str] = []
-                self.hidden = False
+                self.hidden: list[str] = []
+                self.selections: list[str] = []
 
             def show(self, **kwargs) -> bool:
                 self.shows.append(kwargs["side"])
                 return True
 
-            def hide(self) -> None:
-                self.hidden = True
+            def hide(self, side: str) -> None:
+                self.hidden.append(side)
 
-            def update_selection(self, **kwargs) -> None:
+            def navigate(self, side: str, direction: str) -> None:
                 pass
 
-            def update_layout(self, layout) -> None:
+            def update_selection(self, side: str, **kwargs) -> None:
+                self.selections.append(side)
+
+            def update_layout(self, side: str, layout) -> None:
                 pass
 
             def suspend_for_external_app(self) -> None:
+                pass
+
+            def update_theme(self) -> None:
                 pass
 
             def shutdown(self, timeout: float = 4.0) -> bool:
@@ -816,10 +820,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             try:
                 app = MDirApp()
                 async with app.run_test(size=(130, 42)) as pilot:
-                    left = FakeThumbnail("left")
-                    right = FakeThumbnail("right")
-                    app._native_thumbnails["left"] = left
-                    app._native_thumbnails["right"] = right
+                    manager = FakeThumbnailManager()
+                    app._native_thumbnail = manager
 
                     app._thumbnail_layout = lambda side: PaneLayout(
                         x=0 if side == "left" else 65,
@@ -840,13 +842,12 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                         app.thumbnail_mode_sides,
                         {"left", "right"},
                     )
-                    self.assertFalse(left.hidden)
-                    self.assertFalse(right.hidden)
+                    self.assertEqual(manager.shows, ["left", "right"])
+                    self.assertEqual(manager.hidden, [])
 
                     app._thumbnail_close_requested("right")
                     self.assertEqual(app.thumbnail_mode_sides, {"left"})
-                    self.assertFalse(left.hidden)
-                    self.assertTrue(right.hidden)
+                    self.assertEqual(manager.hidden, ["right"])
             finally:
                 os.chdir(previous)
 
@@ -2889,39 +2890,21 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(rectangle.width, 800)
         self.assertGreater(rectangle.height, 700)
 
-    def test_two_thumbnail_controllers_share_stable_terminal_handle(self) -> None:
+    def test_thumbnail_manager_is_single_instance_for_both_panes(self) -> None:
         app = MDirApp()
         app._terminal_window_handle = 777
-        left = app._thumbnail_controller("left")
-        right = app._thumbnail_controller("right")
+        manager1 = app._thumbnail_manager()
+        manager2 = app._thumbnail_manager()
 
-        self.assertIsNotNone(left)
-        self.assertIsNotNone(right)
-        self.assertIsNot(left, right)
-        self.assertEqual(left._terminal_hwnd, 777)
-        self.assertEqual(right._terminal_hwnd, 777)
+        self.assertIsNotNone(manager1)
+        self.assertIs(manager1, manager2)
+        self.assertEqual(manager1._terminal_hwnd, 777)
 
-    def test_sibling_thumbnail_foreground_is_treated_as_mdir_foreground(self) -> None:
-        sibling_hwnd = 303
-        window = object.__new__(_ThumbnailWindow)
-        window.terminal_hwnd = 101
-        window._foreground_window = Mock(return_value=sibling_hwnd)
-        window.window_hwnd = Mock(return_value=202)
-
-        _register_thumbnail_hwnd(sibling_hwnd)
-        try:
-            self.assertTrue(window._terminal_is_foreground())
-        finally:
-            _unregister_thumbnail_hwnd(sibling_hwnd)
-
-        self.assertFalse(window._terminal_is_foreground())
-
-    def test_thumbnail_controller_keeps_original_terminal_handle(self) -> None:
-        controller = object.__new__(NativeThumbnailController)
-        controller._terminal_hwnd = 101
-        controller._window_hwnd = 202
-        controller._commands = Mock()
-        controller.start = Mock(return_value=True)
+    def test_thumbnail_manager_show_keeps_side_in_one_command_queue(self) -> None:
+        manager = object.__new__(NativeThumbnailManager)
+        manager._terminal_hwnd = 101
+        manager._commands = Mock()
+        manager.start = Mock(return_value=True)
 
         layout = PaneLayout(
             x=0,
@@ -2931,53 +2914,43 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             columns=80,
             rows=30,
         )
-        controller.show(
-            side="left",
-            directory=Path("C:/images"),
-            items=[],
-            marked=[],
-            current=None,
-            pane_layout=layout,
+        self.assertTrue(
+            manager.show(
+                side="left",
+                directory=Path("C:/images"),
+                items=[],
+                marked=[],
+                current=None,
+                pane_layout=layout,
+            )
+        )
+        self.assertTrue(
+            manager.show(
+                side="right",
+                directory=Path("D:/images"),
+                items=[],
+                marked=[],
+                current=None,
+                pane_layout=layout,
+            )
         )
 
-        self.assertEqual(controller._terminal_hwnd, 101)
-        command, payload = controller._commands.put.call_args.args[0]
-        self.assertEqual(command, "show")
-        self.assertEqual(payload["terminal_hwnd"], 101)
+        calls = manager._commands.put.call_args_list
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(calls[0].args[0][0], "show")
+        self.assertEqual(calls[0].args[0][1]["side"], "left")
+        self.assertEqual(calls[1].args[0][1]["side"], "right")
 
-    def test_thumbnail_overlay_withdraws_when_external_app_is_foreground(self) -> None:
-        withdrawn: list[bool] = []
+    def test_thumbnail_pane_visibility_does_not_destroy_other_pane(self) -> None:
         window = object.__new__(_ThumbnailWindow)
         window.visible = True
         window.presented = True
-        window._external_suspend_until = 0.0
-        window.root = SimpleNamespace(
-            withdraw=lambda: withdrawn.append(True),
-            deiconify=Mock(),
-        )
-        window._terminal_is_foreground = Mock(return_value=False)
+        window.root = SimpleNamespace(withdraw=Mock())
+        window.force_withdraw()
 
-        window._present_if_terminal_foreground()
-
-        self.assertEqual(withdrawn, [True])
         self.assertFalse(window.presented)
-        window.root.deiconify.assert_not_called()
-
-    def test_thumbnail_external_launch_suspends_overlay(self) -> None:
-        withdrawn: list[bool] = []
-        window = object.__new__(_ThumbnailWindow)
-        window.presented = True
-        window.root = SimpleNamespace(
-            withdraw=lambda: withdrawn.append(True),
-        )
-        window._external_suspend_until = 0.0
-
-        before = time.monotonic()
-        window._suspend_for_external_app()
-
-        self.assertEqual(withdrawn, [True])
-        self.assertFalse(window.presented)
-        self.assertGreater(window._external_suspend_until, before)
+        self.assertTrue(window.visible)
+        window.root.withdraw.assert_called_once()
 
     def test_native_preview_hides_before_external_open(self) -> None:
         opened: list[Path] = []
