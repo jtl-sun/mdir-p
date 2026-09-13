@@ -381,6 +381,9 @@ prevented until the first one finishes.
 
 ## Thumbnail View
 
+**2.26.7 thumbnail stability architecture:** both pane overlays share one Tk event loop. This avoids the two-independent-Tk-thread focus and freeze problems found during 2.26.6 testing while keeping image decoding in background workers.
+
+
 **Pane switching:** `Tab` is the only pane-switch key. The arrow keys are reserved for moving the file/thumbnail cursor.
 
 
