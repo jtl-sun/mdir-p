@@ -41,7 +41,7 @@ class OptionsScreen(ModalScreen[Optional[str]]):
     OptionsScreen { align: center middle; background: #00000073; }
     #options_dialog {
         width: 54;
-        height: 18;
+        height: 20;
         border: solid $primary;
         background: $surface;
         padding: 1 2;

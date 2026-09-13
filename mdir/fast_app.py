@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import faulthandler
 import itertools
 import os
@@ -29,17 +30,20 @@ from . import core as legacy
 
 
 LARGE_DIRECTORY_THRESHOLD = 20_000
-DRIVE_POLL_INTERVAL_SECONDS = 10.0
+DRIVE_POLL_INTERVAL_SECONDS = 30.0
 DRIVE_USAGE_CACHE_SECONDS = 30.0
-DIRECTORY_POLL_INTERVAL_SECONDS = 0.75
+DIRECTORY_POLL_INTERVAL_SECONDS = 5.0
 FILE_LIST_BACKGROUND = "#1e1e1e"
 INITIAL_LISTING_DELAY_SECONDS = 0.01
 FIRST_VISIBLE_ROW_BATCH_SIZE = 250
 LISTING_ROW_BATCH_SIZE = 1_500
 AUTO_REFRESH_ROW_BATCH_SIZE = 500
 UI_HEARTBEAT_INTERVAL_SECONDS = 1.0
-UI_HANG_THRESHOLD_SECONDS = 15.0
-UI_HANG_WATCHDOG_INTERVAL_SECONDS = 2.0
+UI_HANG_THRESHOLD_SECONDS = 20.0
+UI_HANG_WATCHDOG_INTERVAL_SECONDS = 5.0
+WINDOWS_IDLE_POLL_SUSPEND_SECONDS = 300.0
+UI_HANG_REPEAT_DUMP_SECONDS = 30.0
+UI_HANG_MAX_DUMPS = 4
 
 
 class LargeDirectoryFilePane(EditablePathFilePane):
@@ -582,6 +586,9 @@ class FastFileManagerApp(EditablePathApp):
         self._hang_watchdog_stop = threading.Event()
         self._hang_watchdog_thread: threading.Thread | None = None
         self._hang_reported = False
+        self._hang_dump_count = 0
+        self._last_hang_dump = 0.0
+        self._background_poll_suspended = False
         super().__init__()
 
     def compose(self) -> ComposeResult:
@@ -632,6 +639,32 @@ class FastFileManagerApp(EditablePathApp):
         self._ui_heartbeat = time.monotonic()
 
     @staticmethod
+    def _windows_idle_seconds() -> float:
+        """Return Windows keyboard/mouse idle time without touching the filesystem."""
+        if os.name != "nt":
+            return 0.0
+        try:
+            class LASTINPUTINFO(ctypes.Structure):
+                _fields_ = [("cbSize", ctypes.c_uint), ("dwTime", ctypes.c_uint)]
+
+            info = LASTINPUTINFO()
+            info.cbSize = ctypes.sizeof(info)
+            if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(info)):
+                return 0.0
+            now32 = int(ctypes.windll.kernel32.GetTickCount64()) & 0xFFFFFFFF
+            elapsed_ms = (now32 - int(info.dwTime)) & 0xFFFFFFFF
+            return elapsed_ms / 1000.0
+        except Exception:
+            return 0.0
+
+    def _background_polling_paused(self) -> bool:
+        """Pause drive/directory polling while mDIR is unfocused or Windows is idle."""
+        return self._background_poll_suspended or (
+            os.name == "nt"
+            and self._windows_idle_seconds() >= WINDOWS_IDLE_POLL_SUSPEND_SECONDS
+        )
+
+    @staticmethod
     def _hang_log_path() -> Path:
         base = Path(os.environ.get("LOCALAPPDATA", str(Path.home())))
         return base / "mDIR" / "mdir-hang.log"
@@ -655,10 +688,20 @@ class FastFileManagerApp(EditablePathApp):
             elapsed = time.monotonic() - self._ui_heartbeat
             if elapsed < UI_HANG_THRESHOLD_SECONDS:
                 self._hang_reported = False
+                self._hang_dump_count = 0
+                self._last_hang_dump = 0.0
                 continue
-            if self._hang_reported:
+            now = time.monotonic()
+            if self._hang_dump_count >= UI_HANG_MAX_DUMPS:
+                continue
+            if (
+                self._hang_reported
+                and now - self._last_hang_dump < UI_HANG_REPEAT_DUMP_SECONDS
+            ):
                 continue
             self._hang_reported = True
+            self._hang_dump_count += 1
+            self._last_hang_dump = now
             try:
                 path = self._hang_log_path()
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -666,7 +709,8 @@ class FastFileManagerApp(EditablePathApp):
                     log.write(
                         "\n=== mDIR UI hang detected "
                         f"{datetime.now().isoformat(timespec='seconds')} "
-                        f"(no heartbeat for {elapsed:.1f}s) ===\n"
+                        f"(no heartbeat for {elapsed:.1f}s, "
+                        f"dump {self._hang_dump_count}/{UI_HANG_MAX_DUMPS}) ===\n"
                     )
                     log.flush()
                     faulthandler.dump_traceback(file=log, all_threads=True)
@@ -676,12 +720,22 @@ class FastFileManagerApp(EditablePathApp):
                 pass
 
     def on_app_blur(self, event: events.AppBlur) -> None:
-        """Prevent a missed mouse-up from trapping input after focus changes."""
+        """Suspend background filesystem polling while mDIR is not active."""
+        self._background_poll_suspended = True
         for pane in (self.left, self.right):
             pane.table.cancel_pointer_interaction()
 
+    def on_app_focus(self, event: events.AppFocus) -> None:
+        """Resume polling and do one asynchronous catch-up check after returning."""
+        self._background_poll_suspended = False
+        self._last_drive_poll = 0.0
+        self._poll_directory_changes()
+        self.auto_detect_drives()
+
     def _poll_directory_changes(self) -> None:
         """Check both directory timestamps without blocking the UI thread."""
+        if self._background_polling_paused():
+            return
         # Cancelling a Textual thread worker cannot interrupt a Windows
         # filesystem call that is already blocked on a sleeping/disconnected
         # drive. Never start a replacement while the previous poll is alive.
@@ -699,15 +753,23 @@ class FastFileManagerApp(EditablePathApp):
         self,
         paths: tuple[tuple[str, Path], tuple[str, Path]],
     ) -> None:
-        snapshots = tuple(
-            (
-                side,
-                path,
-                LargeDirectoryFilePane._read_directory_change_token(path),
+        try:
+            snapshots = tuple(
+                (
+                    side,
+                    path,
+                    LargeDirectoryFilePane._read_directory_change_token(path),
+                )
+                for side, path in paths
             )
-            for side, path in paths
-        )
-        self.call_from_thread(self._finish_directory_poll, snapshots)
+        except Exception:
+            snapshots = ()
+        try:
+            self.call_from_thread(self._finish_directory_poll, snapshots)
+        except Exception:
+            # The app may already be shutting down. Reset the guard directly so
+            # a transient callback failure cannot leave polling disabled forever.
+            self._directory_poll_running = False
 
     def _finish_directory_poll(
         self,
@@ -1076,6 +1138,8 @@ class FastFileManagerApp(EditablePathApp):
 
     def auto_detect_drives(self) -> None:
         """Schedule a throttled drive scan outside the UI thread."""
+        if self._background_polling_paused():
+            return
         now = time.monotonic()
         if (
             self._drive_scan_running
@@ -1088,12 +1152,16 @@ class FastFileManagerApp(EditablePathApp):
 
     @work(thread=True, group="mdir-drive-scan")
     def _scan_drives_in_background(self) -> None:
-        latest = legacy.list_windows_drives()
+        try:
+            latest = legacy.list_windows_drives()
+        except Exception:
+            latest = None
         self.call_from_thread(self._finish_drive_scan, latest)
 
-    def _finish_drive_scan(self, latest: list[str]) -> None:
+    def _finish_drive_scan(self, latest: list[str] | None) -> None:
         self._drive_scan_running = False
-        self._apply_detected_drives(latest)
+        if latest is not None:
+            self._apply_detected_drives(latest)
 
     def _apply_detected_drives(self, latest: list[str]) -> None:
         if latest == self.available_drives:

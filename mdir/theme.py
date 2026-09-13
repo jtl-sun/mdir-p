@@ -9,7 +9,7 @@ from textual.theme import Theme
 from . import core as legacy
 
 
-THEME_NAME = "total-commander"
+THEME_NAME = "mDir theme"
 
 BACKGROUND = "#202020"
 SURFACE = "#292929"
@@ -26,7 +26,7 @@ MARKED = "#f1cd69"
 ACCENT = "#7894a8"
 
 
-TOTAL_COMMANDER_THEME = Theme(
+MDIR_THEME = Theme(
     name=THEME_NAME,
     primary=ACCENT,
     secondary="#78838a",
@@ -74,7 +74,7 @@ _current_marked = MARKED
 
 
 def cached_name_text(entry: CachedEntryLike, marked: bool) -> Text:
-    """Render one cached directory entry with the default MDIR theme."""
+    """Render one cached directory entry with the default mDir theme."""
     prefix = "* " if marked else "  "
     text = Text(
         prefix
@@ -135,7 +135,7 @@ def install_file_colors(theme: Theme | None = None) -> None:
     EditablePathFilePane._name_text = staticmethod(cached_name_text)
 
 
-TOTAL_COMMANDER_CSS = f"""
+MDIR_THEME_CSS = f"""
 Screen {{
     background: $background;
     color: $foreground;

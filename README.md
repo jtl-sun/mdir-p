@@ -60,10 +60,13 @@ manage files quickly and efficiently from the keyboard.
 
 ### Easy installation or update (recommended)
 
-1. Click **Code > Download ZIP** on this GitHub page.
-2. Extract the downloaded ZIP.
-3. Open the extracted `mdir-p-main` folder.
+1. Open the **latest Release** from the Download section above.
+2. Download the current stable `mDIR-P-<version>.zip` release asset.
+3. Extract the ZIP and open the extracted mDIR-P folder.
 4. Double-click **`INSTALL_MDIR.bat`**.
+
+Use **Code > Download ZIP** only when you intentionally want the current
+`main` development source rather than the latest published stable release.
 
 The installer creates a private environment under `%LOCALAPPDATA%\mDIR`,
 installs Preview support, creates permanent `m` and `mdir` commands, adds the
@@ -225,7 +228,6 @@ are normally not required for `CurrentUser` or `Process` scope.
 | `Ctrl+Shift+D`         | Exact and visually similar duplicates       |
 | `Ctrl+Shift+C`         | Compare the two current folders             |
 | `Ctrl+Shift+Y`         | Safe sync active pane to opposite pane      |
-| `Ctrl+Z`               | Undo Center                                 |
 | `Ctrl+Shift+S/L`       | Save/load a named Workspace                 |
 | `Ctrl+Shift+M`         | Start/stop Copy/Move Macro recording        |
 | `Ctrl+Alt+M`           | Review and play a saved Macro               |
@@ -484,8 +486,9 @@ Type an explicit safe file request in the AI panel with `/file` or `/파일`,
 for example `/파일 선택한 파일을 오른쪽으로 복사`. mDIR converts the request
 into a local plan and shows the operation, files, and destination in a separate
 approval dialog. The AI provider never receives permission to bypass this
-dialog. Copy/Move/Rename/MkDir are recorded by Undo Center; Delete remains in
-the operating-system Recycle Bin and is not automatically restored by mDIR.
+dialog. mDIR does not provide automatic Undo. Copy/Move/Rename/MkDir therefore
+require an explicit review or confirmation before changing files, and Delete uses
+the operating-system Recycle Bin when allowed.
 
 ## Advanced Lightweight Tools
 
@@ -539,8 +542,3 @@ left-to-right/right-to-left ZIP destination defaults. It also verifies that
 operation, `Esc` requests cancellation after the current top-level item.
 
 MDIR-P is released under the [MIT License](LICENSE).
-
-## Windows Terminal menu
-
-To hide Azure Cloud Shell while preserving Ubuntu and other profiles, use the
-[optional Windows Terminal cleanup tool](tools/windows-terminal/README.md).

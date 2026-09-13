@@ -43,15 +43,15 @@ from .platform_support import open_with_default_app
 from .keymap import load_keymap, save_keymap
 from .theme import (
     THEME_NAME,
-    TOTAL_COMMANDER_CSS,
-    TOTAL_COMMANDER_THEME,
+    MDIR_THEME_CSS,
+    MDIR_THEME,
     install_file_colors,
 )
 from . import __version__
 
 
 VERSION = __version__
-HOTKEY_POLL_SECONDS = 0.04
+HOTKEY_POLL_SECONDS = 0.25
 HOTKEY_DEDUP_SECONDS = 0.22
 VK_CONTROL = 0x11
 VK_F3 = 0x72
@@ -168,7 +168,7 @@ class MDirApp(FastFileManagerApp):
         height: 1fr;
         min-height: 0;
     }
-    """ + TOTAL_COMMANDER_CSS
+    """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
         Binding(
             "ctrl+f3",
@@ -196,7 +196,7 @@ class MDirApp(FastFileManagerApp):
         super().__init__()
         self.user_keymap = load_keymap()
         self.set_keymap(self.user_keymap)
-        self.register_theme(TOTAL_COMMANDER_THEME)
+        self.register_theme(MDIR_THEME)
         self.theme = THEME_NAME
 
     @property
@@ -591,6 +591,19 @@ class MDirApp(FastFileManagerApp):
             return False
 
     def _poll_ctrl_f3(self) -> None:
+        # Native key polling exists only as a Windows fallback for shortcuts
+        # that a terminal may consume. Keep it deliberately low-frequency and
+        # suspend it with the rest of background polling while mDIR is unfocused
+        # or Windows has been idle for a long time. Textual's normal key binding
+        # remains the primary Ctrl+F3 path.
+        if getattr(self, "_background_polling_paused", lambda: False)():
+            self._ctrl_f3_latched = False
+            self._shift_left_latched = False
+            return
+        if getattr(self, "_file_operation_busy", False) or getattr(
+            self, "_archive_busy", False
+        ):
+            return
         self._poll_windows_shift_range_click()
         pressed = self._read_ctrl_f3_pressed()
         if not pressed:

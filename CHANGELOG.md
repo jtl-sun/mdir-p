@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.26.5
+
+- Stability build for long-running Windows sessions.
+- Reduce native Windows Ctrl+F3 / Shift-click polling from 40 ms to 250 ms.
+- Suspend native key/mouse polling while mDIR is unfocused, Windows is idle, or a large file/archive operation is active.
+- Reduce directory timestamp polling from 0.75 s to 5 s and drive polling from 10 s to 30 s.
+- Reduce the lightweight drive-detection UI timer from 1.5 s to 5 s as well.
+- Keep instant catch-up checks when mDIR regains focus, so slower background polling does not make the UI stale.
+- Improve the UI hang watchdog: persistent freezes now capture up to four thread dumps, 30 seconds apart, instead of only the first snapshot.
+- Harden the directory polling worker so unexpected errors cannot leave a replacement poll running indefinitely.
+
+## 2.26.4
+
+- Pauses automatic directory and drive polling while mDIR is not focused and after five minutes of Windows input idle time, then resumes with one asynchronous catch-up check when the user returns.
+- Prevents long idle sessions from repeatedly touching sleeping, removable, or slow drives.
+- Makes background drive-scan cleanup resilient to unexpected scan errors so a failed worker cannot leave the scan state stuck.
+- Keeps the existing UI hang watchdog log at `%LOCALAPPDATA%\mDIR\mdir-hang.log` for post-freeze diagnosis.
+
+## 2.26.3
+
+- Removed automatic Undo from the product direction because restoring or deleting
+  filesystem state after later edits or overwrites can create additional data-loss
+  paths. Safety now relies on confirmation, Recycle Bin, conflict checks, and
+  atomic/rollback-aware file replacement.
+- Block Copy/Move when a directory target is the source itself or is inside the
+  source tree, preventing recursive self-copy/self-move operations.
+- Harden Safe Sync against destination-inside-source recursion and file/folder
+  type conflicts; changed file replacement is staged and atomically published.
+- Preserve the previous mIndex when a rebuild is cancelled instead of publishing
+  an empty or partial index as completed.
+- Stage Copy overwrites and protect Move overwrites with rollback so an operation
+  failure does not destroy the previously existing destination.
+- Removed stale build/egg-info artifacts from the review package so retired Undo
+  implementation code cannot be mistaken for current source.
+
 ## 2.26.2
 
 - Matched the Keys button styling to Links, Theme, and Help in the Options
