@@ -204,8 +204,8 @@ class MDirApp(FastFileManagerApp):
         self._hotkey_timer: Optional[Timer] = None
         self._preview_layout_timer: Optional[Timer] = None
         self._native_preview: Optional["NativePreviewController"] = None
-        self._native_thumbnail: Optional["NativeThumbnailController"] = None
-        self.thumbnail_mode_side: Optional[str] = None
+        self._native_thumbnails: dict[str, "NativeThumbnailController"] = {}
+        self.thumbnail_mode_sides: set[str] = set()
         self._preview_suppressed_path: Optional[Path] = None
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
@@ -215,20 +215,26 @@ class MDirApp(FastFileManagerApp):
         self.register_theme(MDIR_THEME)
         self.theme = THEME_NAME
 
-    @property
-    def native_thumbnail(self) -> "NativeThumbnailController":
-        """Create the thumbnail overlay only when the user requests it."""
-        if self._native_thumbnail is None:
+    def _thumbnail_controller(
+        self,
+        side: str,
+        *,
+        create: bool = True,
+    ) -> Optional["NativeThumbnailController"]:
+        """Return the independent thumbnail overlay for one pane."""
+        controller = self._native_thumbnails.get(side)
+        if controller is None and create:
             from .thumbnail import NativeThumbnailController
 
-            self._native_thumbnail = NativeThumbnailController(
+            controller = NativeThumbnailController(
                 self,
                 select_callback=self._thumbnail_select_path,
                 toggle_callback=self._thumbnail_toggle_path,
                 open_callback=self._thumbnail_open_path,
-                close_callback=self._thumbnail_close_requested,
+                close_callback=lambda side=side: self._thumbnail_close_requested(side),
             )
-        return self._native_thumbnail
+            self._native_thumbnails[side] = controller
+        return controller
 
     @property
     def native_preview(self) -> "NativePreviewController":
@@ -252,8 +258,7 @@ class MDirApp(FastFileManagerApp):
             native_preview = self._native_preview
             if native_preview is not None:
                 native_preview.update_theme()
-            native_thumbnail = self._native_thumbnail
-            if native_thumbnail is not None:
+            for native_thumbnail in self._native_thumbnails.values():
                 native_thumbnail.update_theme()
             self.call_after_refresh(self._refresh_themed_file_rows)
 
@@ -452,12 +457,13 @@ class MDirApp(FastFileManagerApp):
         if self._delegate_modal_arrow(direction):
             return
 
-        if (
-            self.thumbnail_mode_side is not None
-            and self.active_side == self.thumbnail_mode_side
-        ):
-            if self._native_thumbnail is not None:
-                self._native_thumbnail.navigate(direction)
+        if self.active_side in self.thumbnail_mode_sides:
+            controller = self._thumbnail_controller(
+                self.active_side,
+                create=False,
+            )
+            if controller is not None:
+                controller.navigate(direction)
             return
 
         # The other pane may remain a normal list while Thumbnail View is open
@@ -485,14 +491,16 @@ class MDirApp(FastFileManagerApp):
         return self.left if side == "left" else self.right
 
     def _update_thumbnail_buttons(self) -> None:
-        active = self.thumbnail_mode_side
         for side in ("left", "right"):
             try:
                 button = self.query_one(
                     f"#{side}_thumbnail_toggle",
                     Button,
                 )
-                button.set_class(active == side, "thumbnail-active")
+                button.set_class(
+                    side in self.thumbnail_mode_sides,
+                    "thumbnail-active",
+                )
             except Exception:
                 pass
 
@@ -535,7 +543,11 @@ class MDirApp(FastFileManagerApp):
         if layout is None:
             self.set_status("Thumbnail view is not ready yet.")
             return False
-        shown = self.native_thumbnail.show(
+        controller = self._thumbnail_controller(side)
+        if controller is None:
+            self.set_status("Thumbnail view is unavailable.")
+            return False
+        shown = controller.show(
             side=side,
             directory=pane.current_path,
             items=self._thumbnail_items(side),
@@ -544,55 +556,81 @@ class MDirApp(FastFileManagerApp):
             pane_layout=layout,
         )
         if not shown:
-            detail = self.native_thumbnail.last_error or (
+            detail = controller.last_error or (
                 "Thumbnail view requires Windows and Pillow."
             )
             self.set_status(f"Thumbnail view unavailable: {detail}")
             return False
-        self.thumbnail_mode_side = side
+        self.thumbnail_mode_sides.add(side)
         self.set_active(side)
         self._update_thumbnail_buttons()
+        enabled = " + ".join(sorted(self.thumbnail_mode_sides))
         self.set_status(
-            "Thumbnail view: left-click current | right-click/Ctrl+click mark | "
-            "F5 Copy | F6 Move | Alt+T List"
+            f"Thumbnail view ({enabled}): left-click current | "
+            "right-click/Ctrl+click mark | F5 Copy | F6 Move | Alt+T List"
         )
         return True
 
-    def _refresh_thumbnail_overlay(self) -> None:
-        side = self.thumbnail_mode_side
-        if side is None or self._native_thumbnail is None:
-            return
-        pane = self._thumbnail_pane(side)
-        layout = self._thumbnail_layout(side)
-        if layout is None:
-            return
-        self._native_thumbnail.show(
-            side=side,
-            directory=pane.current_path,
-            items=self._thumbnail_items(side),
-            marked=pane.marked,
-            current=pane.selected_path(),
-            pane_layout=layout,
+    def _refresh_thumbnail_overlay(self, side: Optional[str] = None) -> None:
+        sides = (
+            (side,)
+            if side is not None
+            else tuple(self.thumbnail_mode_sides)
         )
+        for current_side in sides:
+            if current_side not in self.thumbnail_mode_sides:
+                continue
+            controller = self._thumbnail_controller(
+                current_side,
+                create=False,
+            )
+            if controller is None:
+                continue
+            pane = self._thumbnail_pane(current_side)
+            layout = self._thumbnail_layout(current_side)
+            if layout is None:
+                continue
+            controller.show(
+                side=current_side,
+                directory=pane.current_path,
+                items=self._thumbnail_items(current_side),
+                marked=pane.marked,
+                current=pane.selected_path(),
+                pane_layout=layout,
+            )
 
     def _sync_thumbnail_selection(self, side: Optional[str] = None) -> None:
-        current_side = self.thumbnail_mode_side
-        if current_side is None or self._native_thumbnail is None:
-            return
-        if side is not None and side != current_side:
-            return
-        pane = self._thumbnail_pane(current_side)
-        self._native_thumbnail.update_selection(
-            marked=pane.marked,
-            current=pane.selected_path(),
+        sides = (
+            (side,)
+            if side is not None
+            else tuple(self.thumbnail_mode_sides)
         )
+        for current_side in sides:
+            if current_side not in self.thumbnail_mode_sides:
+                continue
+            controller = self._thumbnail_controller(
+                current_side,
+                create=False,
+            )
+            if controller is None:
+                continue
+            pane = self._thumbnail_pane(current_side)
+            controller.update_selection(
+                marked=pane.marked,
+                current=pane.selected_path(),
+            )
 
     def _thumbnail_select_path(self, side: str, path: Path) -> None:
         pane = self._thumbnail_pane(side)
         self.set_active(side)
         row = getattr(pane, "row_by_path", {}).get(path)
         if row is not None and row < pane.table.row_count:
-            pane.table.move_cursor(row=row, column=0, animate=False, scroll=False)
+            pane.table.move_cursor(
+                row=row,
+                column=0,
+                animate=False,
+                scroll=False,
+            )
         pane.update_info()
         self._sync_thumbnail_selection(side)
 
@@ -604,39 +642,49 @@ class MDirApp(FastFileManagerApp):
         pane.toggle_mark_path(path)
         self._sync_thumbnail_selection(side)
 
+    def _suspend_all_thumbnails_for_external_app(self) -> None:
+        for controller in self._native_thumbnails.values():
+            controller.suspend_for_external_app()
+
     def _thumbnail_open_path(self, side: str, path: Path) -> None:
         pane = self._thumbnail_pane(side)
         self.set_active(side)
         if path.is_dir():
             if pane.navigate_to_path(str(path)):
-                self.set_timer(0.10, self._refresh_thumbnail_overlay)
-                self.set_timer(0.45, self._refresh_thumbnail_overlay)
+                self.set_timer(
+                    0.10,
+                    lambda side=side: self._refresh_thumbnail_overlay(side),
+                )
+                self.set_timer(
+                    0.45,
+                    lambda side=side: self._refresh_thumbnail_overlay(side),
+                )
             return
         try:
-            if self._native_thumbnail is not None:
-                self._native_thumbnail.suspend_for_external_app()
+            self._suspend_all_thumbnails_for_external_app()
             open_with_default_app(path)
             self.set_status(f"Opened: {path.name}")
         except Exception as exc:
             self.set_status(f"Open failed: {exc}")
 
-    def _thumbnail_close_requested(self) -> None:
-        self.thumbnail_mode_side = None
-        if self._native_thumbnail is not None:
-            self._native_thumbnail.hide()
+    def _thumbnail_close_requested(self, side: str) -> None:
+        self.thumbnail_mode_sides.discard(side)
+        controller = self._thumbnail_controller(side, create=False)
+        if controller is not None:
+            controller.hide()
         self._update_thumbnail_buttons()
-        self.set_status("List view restored.")
+        if self.thumbnail_mode_sides:
+            enabled = " + ".join(sorted(self.thumbnail_mode_sides))
+            self.set_status(f"Thumbnail view remains active: {enabled}.")
+        else:
+            self.set_status("List view restored.")
 
     def action_toggle_thumbnail(self) -> None:
         side = self.active_side
-        if self.thumbnail_mode_side is not None:
-            if self.thumbnail_mode_side == side:
-                self._thumbnail_close_requested()
-                return
-            self.native_thumbnail.hide()
-            self.thumbnail_mode_side = None
-            self._update_thumbnail_buttons()
-        if self.preview_mode:
+        if side in self.thumbnail_mode_sides:
+            self._thumbnail_close_requested(side)
+            return
+        if self.preview_mode and side == "right":
             self._hide_document_preview(restore_right_focus=False)
         self._show_thumbnail_side(side)
 
@@ -1100,10 +1148,10 @@ class MDirApp(FastFileManagerApp):
         try:
             if event.data_table is self.left.table:
                 self._preview_current_left_selection()
-            if self.thumbnail_mode_side is not None:
-                pane = self._thumbnail_pane(self.thumbnail_mode_side)
+            for side in tuple(self.thumbnail_mode_sides):
+                pane = self._thumbnail_pane(side)
                 if event.data_table is pane.table:
-                    self._sync_thumbnail_selection(self.thumbnail_mode_side)
+                    self._sync_thumbnail_selection(side)
         except Exception:
             pass
 
@@ -1212,8 +1260,7 @@ class MDirApp(FastFileManagerApp):
                 restore_right_focus=False,
                 wait_for_native=True,
             )
-        if self._native_thumbnail is not None:
-            self._native_thumbnail.suspend_for_external_app()
+        self._suspend_all_thumbnails_for_external_app()
         super().open_external_path(path)
 
     def _native_restore_files(self) -> None:
@@ -1288,7 +1335,7 @@ class MDirApp(FastFileManagerApp):
             fatal_error,
             overwrite,
         )
-        if self.thumbnail_mode_side is not None:
+        if self.thumbnail_mode_sides:
             self.set_timer(0.12, self._refresh_thumbnail_overlay)
             self.set_timer(0.50, self._refresh_thumbnail_overlay)
 
@@ -1320,10 +1367,13 @@ class MDirApp(FastFileManagerApp):
     def on_resize(self, event: events.Resize) -> None:
         if self.preview_mode:
             self._schedule_preview_layout(0.12)
-        if self.thumbnail_mode_side is not None and self._native_thumbnail is not None:
-            layout = self._thumbnail_layout(self.thumbnail_mode_side)
+        for side in tuple(self.thumbnail_mode_sides):
+            controller = self._thumbnail_controller(side, create=False)
+            if controller is None:
+                continue
+            layout = self._thumbnail_layout(side)
             if layout is not None:
-                self._native_thumbnail.update_layout(layout)
+                controller.update_layout(layout)
 
     def on_unmount(self) -> None:
         if self._preview_layout_timer is not None:
@@ -1332,8 +1382,9 @@ class MDirApp(FastFileManagerApp):
         if self._hotkey_timer is not None:
             self._hotkey_timer.stop()
             self._hotkey_timer = None
-        if self._native_thumbnail is not None:
-            self._native_thumbnail.shutdown()
+        for controller in tuple(self._native_thumbnails.values()):
+            controller.shutdown()
+        self._native_thumbnails.clear()
         if self._native_preview is not None:
             self._native_preview.shutdown()
         super().on_unmount()
