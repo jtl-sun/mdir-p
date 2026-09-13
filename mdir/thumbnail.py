@@ -560,8 +560,47 @@ class _ThumbnailWindow:
         except Exception:
             pass
 
+    def _raise_overlay_no_activate(self) -> None:
+        """Keep the thumbnail overlay above Terminal without stealing focus."""
+        if os.name != "nt" or not self.visible:
+            return
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            hwnd = self.window_hwnd()
+            if not hwnd:
+                return
+            user32 = ctypes.windll.user32
+            user32.SetWindowPos.argtypes = [
+                wintypes.HWND,
+                wintypes.HWND,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                ctypes.c_int,
+                wintypes.UINT,
+            ]
+            user32.SetWindowPos.restype = wintypes.BOOL
+            HWND_TOP = wintypes.HWND(0)
+            SWP_NOSIZE = 0x0001
+            SWP_NOMOVE = 0x0002
+            SWP_NOACTIVATE = 0x0010
+            SWP_SHOWWINDOW = 0x0040
+            user32.SetWindowPos(
+                wintypes.HWND(hwnd),
+                HWND_TOP,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
+            )
+        except Exception:
+            pass
+
     def _restore_terminal_focus(self) -> None:
-        """Return keyboard input to Windows Terminal after a thumbnail click."""
+        """Return keyboard input to Terminal, then keep thumbnails above it."""
         if os.name != "nt" or not self.terminal_hwnd:
             return
         try:
@@ -571,17 +610,17 @@ class _ThumbnailWindow:
             user32 = ctypes.windll.user32
             user32.SetForegroundWindow.argtypes = [wintypes.HWND]
             user32.SetForegroundWindow.restype = wintypes.BOOL
-            user32.BringWindowToTop.argtypes = [wintypes.HWND]
-            user32.BringWindowToTop.restype = wintypes.BOOL
-            user32.BringWindowToTop(wintypes.HWND(self.terminal_hwnd))
             user32.SetForegroundWindow(wintypes.HWND(self.terminal_hwnd))
         except Exception:
             pass
+        self._raise_overlay_no_activate()
 
     def _restore_terminal_focus_soon(self) -> None:
         try:
             self.root.after(1, self._restore_terminal_focus)
-            self.root.after(35, self._restore_terminal_focus)
+            self.root.after(20, self._raise_overlay_no_activate)
+            self.root.after(50, self._restore_terminal_focus)
+            self.root.after(80, self._raise_overlay_no_activate)
         except Exception:
             self._restore_terminal_focus()
 
@@ -833,14 +872,41 @@ class _ThumbnailWindow:
         self.visible = True
         self._apply_geometry()
         self.root.deiconify()
-        self.root.lift()
         self._render()
+        self._raise_overlay_no_activate()
+        self._restore_terminal_focus_soon()
+
+    def _scroll_current_into_view(self) -> None:
+        if self.current is None or not self.items:
+            return
+        try:
+            index = next(
+                i for i, item in enumerate(self.items)
+                if item.path == self.current
+            )
+        except StopIteration:
+            return
+        columns = self._columns()
+        row = index // columns
+        cell_h = self._cell_height()
+        top = int(self.canvas.canvasy(0))
+        bottom = int(self.canvas.canvasy(max(1, self.canvas.winfo_height())))
+        item_top = row * cell_h
+        item_bottom = item_top + cell_h
+        total = max(1, self._scroll_height())
+        if item_top < top:
+            self.canvas.yview_moveto(max(0.0, item_top / total))
+        elif item_bottom > bottom:
+            target = max(0, item_bottom - max(1, self.canvas.winfo_height()))
+            self.canvas.yview_moveto(min(1.0, target / total))
 
     def _apply_selection(self, payload: dict[str, object]) -> None:
         self.marked = {Path(path) for path in payload.get("marked", [])}
         current = str(payload.get("current", ""))
         self.current = Path(current) if current else None
+        self._scroll_current_into_view()
         self._render()
+        self._raise_overlay_no_activate()
 
     def _apply_palette(self, palette: dict[str, str]) -> None:
         self.palette = palette
@@ -891,6 +957,7 @@ class _ThumbnailWindow:
     def _follow_terminal(self) -> None:
         if self.visible:
             self._apply_geometry()
+            self._raise_overlay_no_activate()
         self.root.after(180, self._follow_terminal)
 
     def run(self) -> None:
