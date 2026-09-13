@@ -704,6 +704,40 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             finally:
                 os.chdir(previous)
 
+    async def test_tab_then_arrows_stay_in_new_active_pane(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "a.txt").write_text("a", encoding="utf-8")
+            (root / "b.txt").write_text("b", encoding="utf-8")
+            previous = os.getcwd()
+            os.chdir(root)
+            try:
+                app = MDirApp()
+                async with app.run_test(size=(130, 42)) as pilot:
+                    app.set_active("left")
+                    app.thumbnail_mode_side = "left"
+                    await pilot.pause()
+
+                    await pilot.press("tab")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "right")
+
+                    before = app.right.table.cursor_row
+                    await pilot.press("down")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "right")
+                    self.assertGreaterEqual(app.right.table.cursor_row, before)
+
+                    await pilot.press("right")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "right")
+
+                    await pilot.press("left")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "right")
+            finally:
+                os.chdir(previous)
+
     def test_editable_key_bindings_have_stable_ids(self) -> None:
         bindings_by_id = {
             binding.id: binding
