@@ -388,6 +388,26 @@ class MDirApp(FastFileManagerApp):
             right_selected=self.right.selected_path(),
         )
 
+    def on_key(self, event: events.Key) -> None:
+        """Reserve arrow keys for item navigation; Tab alone switches panes."""
+        key = event.key.lower()
+        if key in {"left", "right"}:
+            event.prevent_default()
+            event.stop()
+            if (
+                self.thumbnail_mode_side is not None
+                and self._native_thumbnail is not None
+            ):
+                self._native_thumbnail.navigate(key)
+            return
+
+        if key in {"up", "down"} and self.thumbnail_mode_side is not None:
+            event.prevent_default()
+            event.stop()
+            if self._native_thumbnail is not None:
+                self._native_thumbnail.navigate(key)
+            return
+
     def _thumbnail_pane(self, side: str):
         return self.left if side == "left" else self.right
 
