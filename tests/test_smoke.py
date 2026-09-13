@@ -705,36 +705,66 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 os.chdir(previous)
 
     async def test_tab_then_arrows_stay_in_new_active_pane(self) -> None:
+        class FakeThumbnail:
+            def __init__(self) -> None:
+                self.moves: list[str] = []
+
+            def navigate(self, direction: str) -> None:
+                self.moves.append(direction)
+
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "a.txt").write_text("a", encoding="utf-8")
-            (root / "b.txt").write_text("b", encoding="utf-8")
+            for name in ("a.txt", "b.txt", "c.txt"):
+                (root / name).write_text(name, encoding="utf-8")
             previous = os.getcwd()
             os.chdir(root)
             try:
                 app = MDirApp()
                 async with app.run_test(size=(130, 42)) as pilot:
+                    fake = FakeThumbnail()
+                    app._native_thumbnail = fake
                     app.set_active("left")
                     app.thumbnail_mode_side = "left"
                     await pilot.pause()
 
+                    # Tab chooses RIGHT. Every following arrow/Space must stay
+                    # on RIGHT even though LEFT remains in Thumbnail View.
                     await pilot.press("tab")
                     await pilot.pause()
                     self.assertEqual(app.active_side, "right")
 
+                    app.right.table.move_cursor(
+                        row=0, column=0, animate=False, scroll=False
+                    )
                     before = app.right.table.cursor_row
                     await pilot.press("down")
                     await pilot.pause()
                     self.assertEqual(app.active_side, "right")
-                    self.assertGreaterEqual(app.right.table.cursor_row, before)
+                    self.assertGreater(app.right.table.cursor_row, before)
+                    self.assertEqual(fake.moves, [])
 
-                    await pilot.press("right")
+                    selected = app.right.selected_path()
+                    self.assertIsNotNone(selected)
+                    await pilot.press("space")
                     await pilot.pause()
                     self.assertEqual(app.active_side, "right")
+                    self.assertIn(selected, app.right.marked)
+                    self.assertEqual(fake.moves, [])
 
+                    await pilot.press("right")
                     await pilot.press("left")
                     await pilot.pause()
                     self.assertEqual(app.active_side, "right")
+                    self.assertEqual(fake.moves, [])
+
+                    # Tab back to LEFT: arrows now belong to the thumbnail grid.
+                    await pilot.press("tab")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "left")
+                    await pilot.press("right")
+                    await pilot.pause()
+                    self.assertEqual(app.active_side, "left")
+                    self.assertEqual(fake.moves, ["right"])
             finally:
                 os.chdir(previous)
 
