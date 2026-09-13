@@ -20,6 +20,33 @@ DEFAULT_THUMBNAIL_SIZE = 144
 CACHE_LIMIT_BYTES = 1024 * 1024 * 1024
 CACHE_CLEANUP_BATCH = 500
 
+_THUMBNAIL_HWND_LOCK = threading.Lock()
+_THUMBNAIL_HWND_REGISTRY: set[int] = set()
+
+
+def _register_thumbnail_hwnd(hwnd: int) -> None:
+    value = int(hwnd or 0)
+    if not value:
+        return
+    with _THUMBNAIL_HWND_LOCK:
+        _THUMBNAIL_HWND_REGISTRY.add(value)
+
+
+def _unregister_thumbnail_hwnd(hwnd: int) -> None:
+    value = int(hwnd or 0)
+    if not value:
+        return
+    with _THUMBNAIL_HWND_LOCK:
+        _THUMBNAIL_HWND_REGISTRY.discard(value)
+
+
+def _is_thumbnail_hwnd(hwnd: int) -> bool:
+    value = int(hwnd or 0)
+    if not value:
+        return False
+    with _THUMBNAIL_HWND_LOCK:
+        return value in _THUMBNAIL_HWND_REGISTRY
+
 
 @dataclass(frozen=True)
 class ThumbnailItem:
@@ -49,6 +76,7 @@ class NativeThumbnailController:
         toggle_callback: Callable[[str, Path], None],
         open_callback: Callable[[str, Path], None],
         close_callback: Callable[[], None],
+        terminal_hwnd: int = 0,
     ) -> None:
         self.app = app
         self.select_callback = select_callback
@@ -60,7 +88,7 @@ class NativeThumbnailController:
         self._ready = threading.Event()
         self._shutdown_complete = threading.Event()
         self._started_ok = False
-        self._terminal_hwnd = 0
+        self._terminal_hwnd = int(terminal_hwnd or 0)
         self._window_hwnd = 0
         self.available = os.name == "nt"
         self.last_error = ""
@@ -84,7 +112,8 @@ class NativeThumbnailController:
             return False
         if self._thread is not None and self._thread.is_alive():
             return True
-        self._terminal_hwnd = self._foreground_window()
+        if not self._terminal_hwnd:
+            self._terminal_hwnd = self._foreground_window()
         self._ready.clear()
         self._shutdown_complete.clear()
         self._started_ok = False
@@ -264,6 +293,7 @@ class NativeThumbnailController:
                 close_callback=lambda: self._call(self.close_callback),
             )
             self._window_hwnd = window.window_hwnd()
+            _register_thumbnail_hwnd(self._window_hwnd)
             self._started_ok = True
             self._ready.set()
             window.run()
@@ -272,6 +302,7 @@ class NativeThumbnailController:
             self.available = False
             self._ready.set()
         finally:
+            _unregister_thumbnail_hwnd(self._window_hwnd)
             self._window_hwnd = 0
             self._shutdown_complete.set()
 
@@ -591,7 +622,10 @@ class _ThumbnailWindow:
         if not foreground:
             return False
         overlay = self.window_hwnd()
-        return foreground in {self.terminal_hwnd, overlay}
+        return (
+            foreground in {self.terminal_hwnd, overlay}
+            or _is_thumbnail_hwnd(foreground)
+        )
 
     def _present_if_terminal_foreground(self) -> None:
         if not self.visible:
