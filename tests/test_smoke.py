@@ -21,7 +21,12 @@ from mdir.preview.native import (
     _NativePreviewWindow,
     calculate_pane_rectangle,
 )
-from mdir.thumbnail import NativeThumbnailController, _ThumbnailWindow
+from mdir.thumbnail import (
+    NativeThumbnailController,
+    _ThumbnailWindow,
+    _register_thumbnail_hwnd,
+    _unregister_thumbnail_hwnd,
+)
 from mdir.preview.document import can_preview, prepare_document_source
 from mdir.preview import document as document_preview
 from mdir.text_actions import DEFAULT_VIEW_LIMIT, inspect_safe_text_file
@@ -2883,6 +2888,33 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
         rectangle = calculate_pane_rectangle(terminal, pane)
         self.assertGreater(rectangle.width, 800)
         self.assertGreater(rectangle.height, 700)
+
+    def test_two_thumbnail_controllers_share_stable_terminal_handle(self) -> None:
+        app = MDirApp()
+        app._terminal_window_handle = 777
+        left = app._thumbnail_controller("left")
+        right = app._thumbnail_controller("right")
+
+        self.assertIsNotNone(left)
+        self.assertIsNotNone(right)
+        self.assertIsNot(left, right)
+        self.assertEqual(left._terminal_hwnd, 777)
+        self.assertEqual(right._terminal_hwnd, 777)
+
+    def test_sibling_thumbnail_foreground_is_treated_as_mdir_foreground(self) -> None:
+        sibling_hwnd = 303
+        window = object.__new__(_ThumbnailWindow)
+        window.terminal_hwnd = 101
+        window._foreground_window = Mock(return_value=sibling_hwnd)
+        window.window_hwnd = Mock(return_value=202)
+
+        _register_thumbnail_hwnd(sibling_hwnd)
+        try:
+            self.assertTrue(window._terminal_is_foreground())
+        finally:
+            _unregister_thumbnail_hwnd(sibling_hwnd)
+
+        self.assertFalse(window._terminal_is_foreground())
 
     def test_thumbnail_controller_keeps_original_terminal_handle(self) -> None:
         controller = object.__new__(NativeThumbnailController)
