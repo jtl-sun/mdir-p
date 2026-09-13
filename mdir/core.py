@@ -1854,6 +1854,30 @@ class MDir(App):
         text-style: bold;
     }
 
+    .thumbnail-toggle {
+        min-width: 7;
+        width: 7;
+        height: 1;
+        min-height: 1;
+        max-height: 1;
+        margin: 0 0 0 1;
+        padding: 0;
+        border: none;
+        background: #303030;
+        color: #dddddd;
+    }
+
+    .thumbnail-toggle:hover {
+        background: #464646;
+        color: white;
+    }
+
+    .thumbnail-toggle.thumbnail-active {
+        background: #0f766e;
+        color: white;
+        text-style: bold;
+    }
+
     #panes { height: 1fr; }
 
     #status {
@@ -2060,6 +2084,12 @@ class MDir(App):
                         classes="hidden-toggle",
                         tooltip="Show or hide Hidden/System files",
                     )
+                    yield Button(
+                        "Thumb",
+                        id="left_thumbnail_toggle",
+                        classes="thumbnail-toggle",
+                        tooltip="Toggle thumbnail view for LEFT pane (Alt+T)",
+                    )
                 yield Static("", id="left_drive_info", classes="drive-info")
                 yield FilePane(
                     "left",
@@ -2083,6 +2113,12 @@ class MDir(App):
                         id="right_hidden_toggle",
                         classes="hidden-toggle",
                         tooltip="Show or hide Hidden/System files",
+                    )
+                    yield Button(
+                        "Thumb",
+                        id="right_thumbnail_toggle",
+                        classes="thumbnail-toggle",
+                        tooltip="Toggle thumbnail view for RIGHT pane (Alt+T)",
                     )
                 yield Static("", id="right_drive_info", classes="drive-info")
                 yield FilePane(
@@ -2350,6 +2386,20 @@ class MDir(App):
                 "right_hidden_toggle",
             }:
                 self.toggle_hidden_system()
+                event.stop()
+                return
+
+            if button_id in {
+                "left_thumbnail_toggle",
+                "right_thumbnail_toggle",
+            }:
+                side = "left" if button_id.startswith("left_") else "right"
+                self.set_active(side)
+                toggle = getattr(self, "action_toggle_thumbnail", None)
+                if callable(toggle):
+                    toggle()
+                else:
+                    self.set_status("Thumbnail View is not available in this build.")
                 event.stop()
                 return
 
