@@ -1900,7 +1900,6 @@ class MDir(App):
         Binding("ctrl+shift+y", "safe_sync", "Safe sync", show=False, id="mdir.safe_sync"),
         Binding("ctrl+shift+m", "toggle_macro_recording", "Record macro", show=False, id="mdir.record_macro"),
         Binding("ctrl+alt+m", "play_macro", "Play macro", show=False, id="mdir.play_macro"),
-        Binding("ctrl+z", "undo_last", "Undo", show=False, id="mdir.undo"),
         Binding("ctrl+shift+s", "save_workspace", "Save workspace", show=False, id="mdir.save_workspace"),
         Binding("ctrl+shift+l", "load_workspace", "Load workspace", show=False, id="mdir.load_workspace"),
         Binding("ctrl+n", "sort_name", "Name sort", show=False, id="mdir.sort_name"),
@@ -2106,7 +2105,7 @@ class MDir(App):
         self.set_status("")
 
         # Automatic drive hot-plug detection.
-        self.set_interval(1.5, self.auto_detect_drives)
+        self.set_interval(5.0, self.auto_detect_drives)
 
     def on_unmount(self) -> None:
         self._save_paths()
