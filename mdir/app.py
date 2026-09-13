@@ -232,6 +232,7 @@ class MDirApp(FastFileManagerApp):
                 toggle_callback=self._thumbnail_toggle_path,
                 open_callback=self._thumbnail_open_path,
                 close_callback=lambda side=side: self._thumbnail_close_requested(side),
+                terminal_hwnd=self._terminal_window_handle,
             )
             self._native_thumbnails[side] = controller
         return controller
