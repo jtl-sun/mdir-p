@@ -112,9 +112,9 @@ class NativeThumbnailController:
     ) -> bool:
         if not self.start():
             return False
-        foreground = self._foreground_window()
-        if foreground and foreground != self._window_hwnd:
-            self._terminal_hwnd = foreground
+        # The terminal handle is captured when Thumbnail View starts.
+        # Never replace it with the current foreground window: a background
+        # refresh may happen while PotPlayer/Photos/etc. is in front.
         payload = {
             "side": side,
             "directory": str(directory),
@@ -160,6 +160,11 @@ class NativeThumbnailController:
     def update_theme(self) -> None:
         if self._thread is not None:
             self._commands.put(("theme", self._theme_palette()))
+
+    def suspend_for_external_app(self) -> None:
+        """Temporarily hide thumbnails before launching another application."""
+        if self._thread is not None:
+            self._commands.put(("suspend_external", None))
 
     def hide(self) -> None:
         if self._thread is not None:
@@ -325,6 +330,8 @@ class _ThumbnailWindow:
         self.pane_layout: Optional[PaneLayout] = None
         self.thumbnail_size = DEFAULT_THUMBNAIL_SIZE
         self.visible = False
+        self.presented = False
+        self._external_suspend_until = 0.0
         self._generation = 0
         self._photo_by_index: dict[int, object] = {}
         self._pending_indices: set[int] = set()
@@ -565,6 +572,52 @@ class _ThumbnailWindow:
         except Exception:
             pass
 
+    def _foreground_window(self) -> int:
+        if os.name != "nt":
+            return 0
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            get_foreground = ctypes.windll.user32.GetForegroundWindow
+            get_foreground.restype = wintypes.HWND
+            return int(get_foreground() or 0)
+        except Exception:
+            return 0
+
+    def _terminal_is_foreground(self) -> bool:
+        foreground = self._foreground_window()
+        if not foreground:
+            return False
+        overlay = self.window_hwnd()
+        return foreground in {self.terminal_hwnd, overlay}
+
+    def _present_if_terminal_foreground(self) -> None:
+        if not self.visible:
+            return
+        if time.monotonic() < self._external_suspend_until:
+            if self.presented:
+                self.root.withdraw()
+                self.presented = False
+            return
+        if not self._terminal_is_foreground():
+            if self.presented:
+                self.root.withdraw()
+                self.presented = False
+            return
+        if not self.presented:
+            self.root.deiconify()
+            self.presented = True
+        self._apply_geometry()
+        self._raise_overlay_no_activate()
+
+    def _suspend_for_external_app(self) -> None:
+        # Give Windows enough time to create/foreground the launched app.
+        self._external_suspend_until = time.monotonic() + 1.5
+        if self.presented:
+            self.root.withdraw()
+            self.presented = False
+
     def _raise_overlay_no_activate(self) -> None:
         """Keep the thumbnail overlay above Terminal without stealing focus."""
         if os.name != "nt" or not self.visible:
@@ -724,7 +777,7 @@ class _ThumbnailWindow:
         self.select_callback(self.side, self.current)
         self._scroll_current_into_view()
         self._render()
-        self._raise_overlay_no_activate()
+        self._present_if_terminal_foreground()
 
     def _on_left_click(self, event) -> None:
         index = self._event_index(event)
@@ -750,8 +803,14 @@ class _ThumbnailWindow:
             item = self.items[index]
             self.current = item.path
             self.select_callback(self.side, item.path)
-            self.open_callback(self.side, item.path)
-        self._restore_terminal_focus_soon()
+            if item.is_directory:
+                self.open_callback(self.side, item.path)
+                self._restore_terminal_focus_soon()
+            else:
+                # Let the external viewer/player become foreground. Do not
+                # steal focus back to Windows Terminal after launching it.
+                self._suspend_for_external_app()
+                self.open_callback(self.side, item.path)
 
     def _visible_indices(self) -> range:
         columns = self._columns()
@@ -908,10 +967,8 @@ class _ThumbnailWindow:
         )
         self.visible = True
         self._apply_geometry()
-        self.root.deiconify()
         self._render()
-        self._raise_overlay_no_activate()
-        self._restore_terminal_focus_soon()
+        self._present_if_terminal_foreground()
 
     def _scroll_current_into_view(self) -> None:
         if self.current is None or not self.items:
@@ -969,8 +1026,11 @@ class _ThumbnailWindow:
                     self._apply_geometry()
                 elif command == "theme":
                     self._apply_palette(payload)  # type: ignore[arg-type]
+                elif command == "suspend_external":
+                    self._suspend_for_external_app()
                 elif command == "hide":
                     self.visible = False
+                    self.presented = False
                     self.root.withdraw()
                 elif command == "shutdown":
                     self._loader_stop.set()
@@ -995,8 +1055,7 @@ class _ThumbnailWindow:
 
     def _follow_terminal(self) -> None:
         if self.visible:
-            self._apply_geometry()
-            self._raise_overlay_no_activate()
+            self._present_if_terminal_foreground()
         self.root.after(180, self._follow_terminal)
 
     def run(self) -> None:
