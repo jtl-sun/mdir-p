@@ -1,5 +1,74 @@
 # Changelog
 
+## 2.26.15
+
+- Enable right-button drag selection in both thumbnail panes. Toggle crossed items once per gesture, fill skipped indices during fast movement, and preserve the file list's selection semantics for already-marked items.
+- Scroll at the top/bottom edge while dragging. Stop on release, hidden/suspended windows, resize, or listing changes; prevent delayed cursor snapshots from pulling the viewport back during a drag.
+- Batch mark updates on the Textual thread using the existing pane selection and cached totals. Reject stale events and exclude the parent row; retain selection when returning to the file list.
+
+## 2.26.14
+
+- Distinguish marked files and folders from ordinary gold directory labels: use white text, a check prefix, and a dark teal background across the marked row. Use a brighter teal cursor and preserve marked backgrounds under mouse hover.
+- Give marked thumbnails a matching teal fill and outline, white labels, and a check badge above the image. Unmarked directory labels keep their original color.
+- Preserve row hit-test metadata, cached mark updates, bulk selection, and independent pane behavior.
+
+## 2.26.13
+
+- Add right-aligned *a (Select All), *- (Deselect All), and ** (Invert Selection) buttons to both pane toolbars, separated from Th and identified by color and tooltips.
+- Apply bulk selection only to the clicked pane's displayed files and folders, excluding the parent row and hidden items unless shown. Reuse the existing marked-item state for thumbnails and file operations.
+- Update changed mark cells and cached selection totals in one batch without a directory rescan or cursor movement; reset the previous Shift-selection range. Reject partial/loading listings.
+- Restore right-side file view when selecting from Preview; keep AI input untouched until the user returns to files.
+
+## 2.26.12
+
+- Fix native shortcuts stopping after clicking the other pane. Mouse dispatch changes table focus before the active pane, temporarily disabling capture; activating an already-focused table emits no second focus notification. Publish the keyboard context after the complete pane activation.
+- Remove per-key context synchronization from the native test helper so tests follow the production event flow. Reproduce the 2.26.11 failure with actual Textual mouse clicks, and cover repeated pane round trips, same-pane clicks, focus-before-activation ordering, Properties dismissal, and Tab switching without repairing state from the test.
+
+## 2.26.11
+
+- Route all configured file-pane shortcuts through one action map. Capture the exact Windows modifier/key combination before terminal translation or terminal actions: Ctrl+H, Ctrl+Shift+M/S/L, Ctrl+Alt+M, Alt+Enter, Ctrl+Shift+F/C/D/W, and the other listed commands.
+- Scope native capture to the foreground mDIR file pane. Release capture while dialogs, inputs, other screens, or other applications are active; discard queued commands from an obsolete focus/keymap context. Consume held command repeats without executing twice; allow navigation repeats.
+- Make custom shortcuts take precedence over table bindings while keeping dialog/input editing local. Keep F12 available to exit the AI panel and preserve mouse/footer actions.
+- Save a typed key when Save is clicked even without Apply; keep invalid drafts open. List and reserve essential navigation keys and reject Windows-reserved combinations.
+- Add default-key routing in both panes, every editable-key remapping, native capture lifetime/context, actual Ctrl+H visibility, macro copy recording/playback, workspace restoration, and repeated Alt+Enter Properties regression coverage. Preserve Preview/modal/thumbnail fixes from 2.26.8–2.26.10.
+
+## 2.26.10
+
+- Suspend native Preview before Rename and other stacked screens appear, and restore it after the last screen closes. Keep the pending decode, displayed image, and zoom while suspended.
+- Prevent selection refreshes and delayed Preview focus callbacks from reopening the overlay or stealing focus from dialog inputs.
+- Replace the Windows Ctrl+F3 polling fallback and time-based suppression with a key-transition observer. One physical press toggles once; held-key repeats and duplicate terminal reports do not toggle again. Other applications' keys are passed through, and custom Preview shortcuts remain Textual bindings.
+- Keep mouse/footer actions independent of keyboard deduplication. Retain low-frequency Windows Shift-click recovery.
+- Add Rename cancel/confirm, nested dialogs, repeated/default/custom shortcuts, observer lifetime, and native suspend/resume regression coverage.
+
+## 2.26.9
+
+- Fix Preview stuck on Loading after opening thumbnails: bind each ImageTk image to the Preview canvas's Tcl interpreter, independent of which window starts first.
+- Always acknowledge decoded results and reschedule result handling, including stale selections and render failures. Close failed image buffers and show a recoverable error instead of blocking all subsequent previews.
+- Release Preview toolbar/widgets on their owning thread without global garbage collection of the independent thumbnail interpreter.
+- Route Preview's Open button through the shared external-opening path so both Preview and thumbnails hide before launching another application.
+- Restore Tab's Preview-to-files transition by dispatching the file table's priority Tab binding through the app's pane-switch action.
+- Add real Windows Tcl/canvas/decoder regression tests for both startup orders, PNG/JPEG/PDF/Excel rendering, Fit/1:1/zoom, rapid selection, corrupt files, render failure recovery, and shutdown. Add Preview/thumbnail pane restoration and external-open interaction tests.
+
+## 2.26.8
+
+- Fix Th mouse clicks: register the decorated button handler on MDirApp instead of the plain Python mixin, which Textual does not register for decorated handlers.
+- Make Sh/Hi and Ctrl+H independent per pane. Restore keyboard focus to the clicked pane; do not rescan or change the opposite pane.
+- Persist per-pane Hidden/System visibility in settings and saved workspaces, with fallback for legacy global settings. Search respects the source pane and reveals hidden results only in the chosen pane.
+- Show compact Sh/Hi labels and a tooltip describing the action for that specific pane.
+- Add regression tests that send actual mouse clicks and queued native events, including clicks starting the real Tk manager, rather than invoking thumbnail actions directly.
+
+## 2.26.7
+
+- Add independent left/right thumbnail views with Alt+T and per-pane Th buttons.
+- Share the existing file cursor, marks, and F5/F6 copy/move engine. Tab switches panes; arrows navigate only the active pane.
+- Support left-click selection, right-click/Ctrl-click marking, double-click open, scrolling, and 96–240px thumbnail sizes.
+- Use one Tk UI thread for both thumbnail windows and two bounded image workers. Decode only the visible area and one nearby row, with a bounded memory cache and 1GB disk cache keyed by path, nanosecond modification time, file size, and thumbnail size.
+- Use Windows foreground/minimize event notifications, owned non-topmost windows, and no-activate mouse handling. Suspend overlays for dialogs, Preview/AI pane use, and external applications without clearing view state.
+- Preserve 2.26.5's directory/drive polling, idle pause, and hang watchdog behavior.
+- Fix a fast-operation race where a small copy could finish before the progress dialog mounted and leave an empty dialog behind.
+- Include Pillow in the base install so thumbnails work without optional Preview dependencies.
+- Add automated Textual, cache, large-list virtualization, and Windows native window tests. Extended interactive Windows and overnight soak testing remain release acceptance steps.
+
 ## 2.26.5
 
 - Stability build for long-running Windows sessions.

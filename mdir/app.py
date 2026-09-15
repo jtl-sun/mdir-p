@@ -5,7 +5,6 @@ import inspect
 import os
 import subprocess
 import sys
-import time
 import webbrowser
 from ctypes import wintypes
 from pathlib import Path
@@ -48,13 +47,12 @@ from .theme import (
     install_file_colors,
 )
 from . import __version__
+from .thumbnail_app import ThumbnailAppMixin, THUMBNAIL_BINDINGS
+from .keyboard import NativeShortcuts, NativeShortcut, shortcut_routes
 
 
 VERSION = __version__
 HOTKEY_POLL_SECONDS = 0.25
-HOTKEY_DEDUP_SECONDS = 0.22
-VK_CONTROL = 0x11
-VK_F3 = 0x72
 VK_SHIFT = 0x10
 VK_LBUTTON = 0x01
 
@@ -102,12 +100,42 @@ def terminal_screen_point_to_cell(
     return cell_x, cell_y
 
 
-class MDirApp(FastFileManagerApp):
+class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
     """Current MDIR-P application without the historical version chain."""
 
     TITLE = f"MDIR-P {VERSION}"
     SUB_TITLE = "Dual Pane File Manager"
     CSS = FastFileManagerApp.CSS + """
+    .thumbnail-toggle {
+        min-width: 4;
+        width: 4;
+        height: 1;
+        min-height: 1;
+        padding: 0;
+        margin: 0 0 0 1;
+        border: none;
+    }
+    .thumbnail-toggle.thumbnail-on {
+        background: $success;
+        color: $background;
+        text-style: bold;
+    }
+    .selection-spacer { width: 1fr; height: 1; }
+    .selection-actions {
+        width: 12;
+        min-width: 12;
+        height: 1;
+        margin: 0 0 0 2;
+    }
+    .drive-bar .selection-actions Button {
+        width: 4;
+        min-width: 4;
+        margin: 0;
+        text-style: bold;
+    }
+    .drive-bar .selection-actions .select-all { color: #e5a000; }
+    .drive-bar .selection-actions .select-none { color: #eeeeee; }
+    .drive-bar .selection-actions .select-invert { color: #ff5555; }
     #document_preview {
         display: none;
     }
@@ -178,14 +206,20 @@ class MDirApp(FastFileManagerApp):
             priority=True,
             id="mdir.preview",
         ),
-    ]
+    ] + THUMBNAIL_BINDINGS
 
     def __init__(self) -> None:
+        self._init_thumbnails()
         self.preview_enabled = False
         self.preview_mode = False
-        self._ctrl_f3_latched = False
+        self._shortcut_keyboard = None
+        self._shortcut_epoch = 0
+        self._shortcut_context = None
+        self._file_shortcuts = {}
+        self._shortcut_watch_ready = False
+        self._preview_modal_suspended = False
+        self._preview_path = None
         self._shift_left_latched = False
-        self._last_preview_toggle = -1.0
         self._terminal_window_handle = 0
         self._hotkey_timer: Optional[Timer] = None
         self._preview_layout_timer: Optional[Timer] = None
@@ -270,7 +304,7 @@ class MDirApp(FastFileManagerApp):
                     "left",
                     self.left_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self._initial_hidden_system['left'],
                 )
 
             with Vertical(id="right_wrap", classes="pane-wrap"):
@@ -281,7 +315,7 @@ class MDirApp(FastFileManagerApp):
                     "right",
                     self.right_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self._initial_hidden_system['right'],
                 )
                 yield DocumentPreviewPanel(id="document_preview")
 
@@ -310,20 +344,155 @@ class MDirApp(FastFileManagerApp):
             classes="hidden-toggle",
             tooltip="Show or hide Hidden/System files",
         )
+        yield Button('Th', id=f'{side}_thumbnail', classes='thumbnail-toggle',
+                     tooltip='Thumbnail / List for this pane (Alt+T)')
+        yield Static('', classes='selection-spacer')
+        with Horizontal(classes='selection-actions'):
+            for mode, symbol, description in (
+                ('all', '*a', 'Select All'),
+                ('none', '*-', 'Deselect All'),
+                ('invert', '**', 'Invert Selection'),
+            ):
+                yield Button(symbol, id=f'{side}_select_{mode}',
+                             classes=f'selection-button select-{mode}',
+                             tooltip=f'{description} — {side.upper()} pane')
+
+    @on(Button.Pressed, '.selection-button')
+    def selection_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if len(self.screen_stack) != 1:
+            return
+        side, mode = event.button.id.split('_select_')
+        if side == 'right' and self.ai_mode:
+            self.query_one('#ai_panel').focus_prompt()
+            self.set_status('Use F12 to restore the right file pane before selecting files.')
+            return
+        if side == 'right' and self.preview_mode:
+            self._hide_document_preview(restore_right_focus=False)
+            self.preview_enabled = False
+        self.set_active(side)
+        if not self.active.set_bulk_selection(mode):
+            self.set_status(f'{side.title()} pane: wait for the file list to finish loading.')
+            return
+        self._sync_thumbnails()
+        description = {'all': 'Select All', 'none': 'Deselect All', 'invert': 'Invert Selection'}[mode]
+        self.set_status(f'{side.title()} pane: {description} — {len(self.active.marked):,} selected.')
 
     @property
     def document_preview(self) -> DocumentPreviewPanel:
         return self.query_one("#document_preview", DocumentPreviewPanel)
 
+    @on(Button.Pressed, '.thumbnail-toggle')
+    def thumbnail_button_pressed(self, event: Button.Pressed) -> None:
+        # Decorated handlers must live on a Textual class: a plain Python mixin
+        # has no MessagePump metaclass to register @on handlers.
+        event.stop()
+        if len(self.screen_stack) == 1:
+            side = 'left' if event.button.id == 'left_thumbnail' else 'right'
+            self._toggle_thumbnail(side)
+
     def on_mount(self) -> None:
         super().on_mount()
+        self.screen_change_signal.subscribe(self, self._preview_screen_changed, immediate=True)
+        self.screen_change_signal.subscribe(self, self._sync_shortcut_keyboard, immediate=True)
+        self.watch(self.screen, 'focused', self._sync_shortcut_keyboard)
+        self.watch(self, 'app_focus', self._sync_shortcut_keyboard)
+        self._shortcut_watch_ready = True
         self._sync_shortcut_buttons()
         self.document_preview.disabled = True
         self._terminal_window_handle = self._active_window_handle()
+        if not self.is_headless:
+            self._shortcut_keyboard = NativeShortcuts(self._terminal_window_handle,
+                lambda key, epoch: self.post_message(NativeShortcut(key, epoch)))
+            if not self._shortcut_keyboard.start():
+                self.set_status('Windows shortcut capture unavailable; terminal key handling remains active. ' +
+                                self._shortcut_keyboard.error)
+        self._sync_shortcut_keyboard()
         self._hotkey_timer = self.set_interval(
             HOTKEY_POLL_SECONDS,
-            self._poll_ctrl_f3,
+            self._poll_native_pointer,
         )
+
+    def set_active(self, side: str, *, focus_table: bool = True) -> None:
+        super().set_active(side, focus_table=focus_table)
+        # Mouse dispatch focuses the clicked table before it activates its
+        # pane. The focus watcher temporarily disables capture in that gap;
+        # focus() then sees the same table, so there is no second notification.
+        # Publish the completed pane transition, including same-focus clicks.
+        self._sync_shortcut_keyboard()
+
+    def set_keymap(self, keymap) -> None:
+        super().set_keymap(keymap)
+        self._file_shortcuts = shortcut_routes(keymap)
+        if self._shortcut_watch_ready:
+            self._sync_shortcut_keyboard()
+
+    def _in_file_shortcut_context(self) -> bool:
+        if not self.is_running or len(self.screen_stack) != 1 or not self.app_focus:
+            return False
+        return self.focused is self.active.table and not (self.ai_mode and self.active_side == 'right')
+
+    def _sync_shortcut_keyboard(self, *args) -> None:
+        if not self._shortcut_watch_ready:
+            return
+        enabled = self._in_file_shortcut_context()
+        context = (enabled, id(self.screen), id(self.focused), self.active_side,
+                   tuple(self._file_shortcuts.items()))
+        if context == self._shortcut_context:
+            return
+        self._shortcut_context = context
+        self._shortcut_epoch += 1
+        if self._shortcut_keyboard is not None:
+            self._shortcut_keyboard.configure(self._shortcut_epoch, self._file_shortcuts if enabled else {})
+
+    def check_action(self, action, parameters):
+        file_actions = {entry[0] for entry in self._file_shortcuts.values()}
+        if action in file_actions and not self._in_file_shortcut_context():
+            # F12 must still let the user leave the AI input panel.
+            if not (action == 'toggle_ai_terminal' and len(self.screen_stack) == 1 and self.ai_mode):
+                return False
+        return super().check_action(action, parameters)
+
+    async def on_event(self, event: events.Event) -> None:
+        # Route configured file commands before DataTable consumes a custom key
+        # (for example Ctrl+Home). Inputs and modal screens retain their keys.
+        if isinstance(event, events.Key) and not event.is_forwarded and self._in_file_shortcut_context() and event.key in self._file_shortcuts:
+            event.stop()
+            action, parameters = self._file_shortcuts[event.key]
+            await self.run_action((None, action, parameters))
+            return
+        await super().on_event(event)
+
+    async def on_native_shortcut(self, event: NativeShortcut) -> None:
+        self._sync_shortcut_keyboard()
+        if event.epoch != self._shortcut_epoch or not self._in_file_shortcut_context():
+            return
+        route = self._file_shortcuts.get(event.key)
+        if route is not None:
+            await self.run_action((None, route[0], route[1]))
+
+    def _preview_screen_changed(self, screen) -> None:
+        if len(self.screen_stack) > 1:
+            if self.preview_mode:
+                self._preview_modal_suspended = True
+                self.native_preview.suspend(wait=True)
+            self._sync_thumbnails()
+        elif self._preview_modal_suspended:
+            self.call_after_refresh(self._resume_preview_after_modal)
+
+    def _resume_preview_after_modal(self) -> None:
+        if len(self.screen_stack) != 1 or self._closing:
+            return
+        if not self._preview_modal_suspended:
+            return
+        self._preview_modal_suspended = False
+        if self.preview_enabled and self.preview_mode and not self.ai_mode:
+            if self.left.selected_path() == self._preview_path:
+                self.native_preview.resume()
+                self._schedule_preview_layout(0.08)
+            else:
+                self._preview_current_left_selection()
+        self._sync_thumbnails()
 
     @staticmethod
     def _shortcut_tooltip(shortcut: ShortcutDefinition) -> str:
@@ -575,29 +744,10 @@ class MDirApp(FastFileManagerApp):
         except Exception:
             return 0
 
-    @staticmethod
-    def _read_ctrl_f3_pressed() -> bool:
-        if os.name != "nt":
-            return False
-        try:
-            get_key_state = ctypes.windll.user32.GetAsyncKeyState
-            get_key_state.argtypes = [ctypes.c_int]
-            get_key_state.restype = ctypes.c_short
-            return bool(
-                get_key_state(VK_CONTROL) & 0x8000
-                and get_key_state(VK_F3) & 0x8000
-            )
-        except Exception:
-            return False
-
-    def _poll_ctrl_f3(self) -> None:
-        # Native key polling exists only as a Windows fallback for shortcuts
-        # that a terminal may consume. Keep it deliberately low-frequency and
-        # suspend it with the rest of background polling while mDIR is unfocused
-        # or Windows has been idle for a long time. Textual's normal key binding
-        # remains the primary Ctrl+F3 path.
+    def _poll_native_pointer(self) -> None:
+        # Retain the Windows Terminal Shift-click fallback. Ctrl+F3 is handled
+        # by key transitions, never a second, time-based polling path.
         if getattr(self, "_background_polling_paused", lambda: False)():
-            self._ctrl_f3_latched = False
             self._shift_left_latched = False
             return
         if getattr(self, "_file_operation_busy", False) or getattr(
@@ -605,18 +755,6 @@ class MDirApp(FastFileManagerApp):
         ):
             return
         self._poll_windows_shift_range_click()
-        pressed = self._read_ctrl_f3_pressed()
-        if not pressed:
-            self._ctrl_f3_latched = False
-            return
-        if self._ctrl_f3_latched:
-            return
-        self._ctrl_f3_latched = True
-        if (
-            self._terminal_window_handle
-            and self._active_window_handle() == self._terminal_window_handle
-        ):
-            self.action_toggle_preview()
 
     def _poll_windows_shift_range_click(self) -> None:
         """Recover Shift+left-clicks consumed by Windows Terminal."""
@@ -738,13 +876,14 @@ class MDirApp(FastFileManagerApp):
         )
 
     def _show_document_preview(self, path: Path) -> None:
-        if not self.preview_enabled or self.ai_mode or not can_preview(path):
+        if len(self.screen_stack) != 1 or not self.preview_enabled or self.ai_mode or not can_preview(path):
             return
 
         pane_layout = self._native_preview_layout()
         shown = self.native_preview.show(path, pane_layout=pane_layout)
         wrap = self.query_one("#right_wrap", Vertical)
         self.preview_mode = True
+        self._preview_path = path
         self.right.disabled = True
         wrap.set_class(False, "ai-mode")
         wrap.set_class(True, "preview-mode")
@@ -778,6 +917,7 @@ class MDirApp(FastFileManagerApp):
         if not self.preview_mode:
             return
         self.preview_mode = False
+        self._preview_path = None
         self.document_preview.cancel()
         self.document_preview.disabled = True
         self.right.disabled = False
@@ -789,7 +929,7 @@ class MDirApp(FastFileManagerApp):
             self.set_active("right")
 
     def _preview_current_left_selection(self) -> None:
-        if self.ai_mode or not self.preview_enabled:
+        if len(self.screen_stack) != 1 or self.ai_mode or not self.preview_enabled:
             return
         path = self.left.selected_path()
         if path == self._preview_suppressed_path:
@@ -812,10 +952,8 @@ class MDirApp(FastFileManagerApp):
             pass
 
     def action_toggle_preview(self) -> None:
-        now = time.monotonic()
-        if now - self._last_preview_toggle < HOTKEY_DEDUP_SECONDS:
+        if len(self.screen_stack) != 1:
             return
-        self._last_preview_toggle = now
 
         self.preview_enabled = not self.preview_enabled
         if self.preview_enabled:
@@ -835,7 +973,7 @@ class MDirApp(FastFileManagerApp):
             self.set_status("Automatic document preview disabled.")
 
     def _restore_preview_file_focus(self) -> None:
-        if not self.preview_enabled or not self.preview_mode or self.ai_mode:
+        if len(self.screen_stack) != 1 or not self.preview_enabled or not self.preview_mode or self.ai_mode:
             return
         self.native_preview.restore_terminal_focus()
         self.set_active("left")
@@ -900,16 +1038,15 @@ class MDirApp(FastFileManagerApp):
 
     def _native_open_document(self, path: Path) -> None:
         try:
-            self._preview_suppressed_path = path
-            if self.preview_mode:
-                self._hide_document_preview(restore_right_focus=False)
-            super().open_external_path(path)
+            self.open_external_path(path)
             self.set_status(f"Opened with the default application: {path}")
         except Exception as exc:
             self.set_status(f"Could not open {path.name}: {exc}")
 
     def open_external_path(self, path: Path) -> None:
         """Remove Preview before giving the file to another application."""
+        if self._thumbnail_manager is not None:
+            self._thumbnail_manager.suspend_external()
         self._preview_suppressed_path = path
         if self.preview_mode:
             self._hide_document_preview(
@@ -1005,6 +1142,10 @@ class MDirApp(FastFileManagerApp):
             self._schedule_preview_layout(0.12)
 
     def on_unmount(self) -> None:
+        if self._shortcut_keyboard is not None:
+            self._shortcut_keyboard.configure(self._shortcut_epoch + 1, {})
+            self._shortcut_keyboard.shutdown()
+        self._shutdown_thumbnails()
         if self._preview_layout_timer is not None:
             self._preview_layout_timer.stop()
             self._preview_layout_timer = None
@@ -1021,6 +1162,7 @@ def self_check() -> int:
     print(f"MDIR-P {VERSION} package self-check")
     print(f"Default theme: {THEME_NAME}")
     print("Preview starts disabled and uses bounded background rendering")
+    print('Thumbnails: Alt+T / Th, independent panes, one Tk loop, bounded workers')
     print("F3/F4 accept bounded text files only")
     print("Large directories use cached metadata and batched row insertion")
     print("Copy, Move, and Delete use cancellable background workers")
@@ -1032,6 +1174,9 @@ def self_check() -> int:
     app = MDirApp()
     if app.preview_enabled:
         print("ERROR - Preview must start disabled.")
+        return 1
+    if any(app.thumbnail_modes.values()):
+        print('ERROR - Thumbnail views must start disabled.')
         return 1
     if app.theme != THEME_NAME:
         print("ERROR - default theme was not installed.")

@@ -23,8 +23,15 @@ class KeyDefinition:
 
 KEY_DEFINITIONS = (
     KeyDefinition("Switch pane", "switch_pane", "tab", False),
-    KeyDefinition("Left pane", "focus_left", "left", False),
-    KeyDefinition("Right pane", "focus_right", "right", False),
+    KeyDefinition("Previous thumbnail", "thumbnail_navigate", "left", False),
+    KeyDefinition("Next thumbnail", "thumbnail_navigate", "right", False),
+    KeyDefinition("Up", "thumbnail_navigate", "up", False),
+    KeyDefinition("Down", "thumbnail_navigate", "down", False),
+    KeyDefinition("First item", "thumbnail_navigate", "home", False),
+    KeyDefinition("Last item", "thumbnail_navigate", "end", False),
+    KeyDefinition("Page up", "thumbnail_navigate", "pageup", False),
+    KeyDefinition("Page down", "thumbnail_navigate", "pagedown", False),
+    KeyDefinition("Thumbnail / List", "toggle_thumbnail", "alt+t", False),
     KeyDefinition("Open", "open_item", "enter", False),
     KeyDefinition("Parent", "parent", "backspace", False),
     KeyDefinition("Mark", "mark", "space", False),
@@ -113,7 +120,12 @@ def normalize_shortcut(value: str) -> str:
     if key not in _NAMED_KEYS and not _SIMPLE_KEY.fullmatch(key):
         raise ValueError("Unsupported key name.")
     order = {"ctrl": 0, "alt": 1, "shift": 2, "super": 3}
-    return "+".join([*sorted(modifiers, key=order.get), key])
+    normalized = "+".join([*sorted(modifiers, key=order.get), key])
+    if 'super' in modifiers or normalized in {
+        'alt+tab', 'alt+escape', 'alt+f4', 'ctrl+alt+delete', 'ctrl+shift+escape',
+    }:
+        raise ValueError('This shortcut is reserved by Windows. Choose a different key.')
+    return normalized
 
 
 def effective_keys(overrides: Mapping[str, str]) -> dict[str, str]:
