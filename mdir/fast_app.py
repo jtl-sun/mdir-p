@@ -106,6 +106,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         keep_name: str | None = None,
     ) -> tuple[list[tuple[object, str, str, str]], int]:
         """Build cached table rows without blocking on table insertion."""
+        self._thumbnail_revision = getattr(self, '_thumbnail_revision', 0) + 1
         self.table.clear(columns=False)
         self.entries.clear()
         self.row_by_path.clear()
@@ -991,7 +992,7 @@ class FastFileManagerApp(EditablePathApp):
         self.push_screen(
             AdvancedSearchScreen(
                 source_pane.current_path,
-                include_hidden_system=self.show_hidden_system,
+                include_hidden_system=source_pane.show_hidden_system,
             ),
             result_selected,
         )
@@ -1048,12 +1049,10 @@ class FastFileManagerApp(EditablePathApp):
         pane = self.left if side == "left" else self.right
         try:
             if (
-                not self.show_hidden_system
+                not pane.show_hidden_system
                 and legacy.is_hidden_or_system(target)
             ):
-                self.show_hidden_system = True
-                self.left.show_hidden_system = True
-                self.right.show_hidden_system = True
+                pane.show_hidden_system = True
                 self.update_hidden_buttons()
 
             pane.current_path = containing_directory

@@ -203,7 +203,8 @@ are normally not required for `CurrentUser` or `Process` scope.
 
 | Key                    | Action                                      |
 | ---------------------- | ------------------------------------------- |
-| `Tab`, `Left`, `Right` | Switch file pane                            |
+| `Tab`                 | Switch file pane                            |
+| `Alt+T` / `Th`        | Thumbnail / List for the current pane        |
 | `Enter`                | Open a file or directory                    |
 | `Space`                | Mark an item                                |
 | `Shift+Up/Down`        | Extend or shrink the marked range           |
@@ -250,7 +251,28 @@ Use the arrow keys to move between Option buttons. **Help** opens this
 navigation, opening, selection, and the Options key are fixed; the remaining
 file-operation, search, advanced-tool, sorting, AI, and Preview shortcuts can
 be changed. mDIR rejects duplicate shortcuts and keys reserved by essential
-actions. Changes are saved in `~/.mdir-p-keys.json` and take effect immediately.
+actions or Windows system shortcuts. **Save** also applies the key currently
+typed in **New key**; clicking **Apply** first is optional. Changes are saved
+in `~/.mdir-p-keys.json` and take effect immediately.
+
+Close **Keys** and return to a file pane to use these commands. On Windows,
+mDIR reads the exact key combination while its file pane has focus, including
+`Ctrl+H`, `Ctrl+Shift+M/S/L`, `Ctrl+Alt+M`, and `Alt+Enter`. This avoids terminal
+key translation and conflicting terminal actions. Dialogs and text inputs
+keep their own keyboard controls; other applications keep theirs. A held
+command key runs once per press, while navigation keys can repeat.
+
+Each pane has three selection buttons aligned at the right end of its drive
+bar, separated from **Th**: **\*a** selects all, **\*-** clears all marks, and
+**\*\*** inverts the marks. Tooltips show their full names. They affect only
+that pane's currently displayed files and folders, excluding `..`; hidden
+items participate only while shown. Thumbnail view shares these marks.
+The cursor stays in place, so after clearing all marks the current item still
+remains the default target for file commands, as with normal unmarked browsing.
+Marked files and folders show a **✓** prefix, white text, and a dark teal row
+background. The current cursor uses a brighter teal highlight. Ordinary
+directories retain their gold text. Marked thumbnails use a teal outline and
+background with a check badge that stays visible over the image.
 
 When several items are marked, `F2` opens Batch Rename automatically. The
 same tool is always available with `Ctrl+F2`. Its live preview supports `[N]`
@@ -542,3 +564,48 @@ left-to-right/right-to-left ZIP destination defaults. It also verifies that
 operation, `Esc` requests cancellation after the current top-level item.
 
 MDIR-P is released under the [MIT License](LICENSE).
+
+
+## Thumbnail view (2.26.7, Windows)
+
+Version 2.26.8 fixes the **Th mouse button** event registration. **Sh** shows
+Hidden/System files in that button's pane; **Hi** hides them again. **Ctrl+H**
+affects the active pane only. Left/right settings are saved separately, including
+saved workspaces; old shared settings remain compatible on first load.
+
+Use **Alt+T** or the **Th** button above either pane. Both panes can show thumbnails
+at the same time. **Tab** switches panes; arrow keys stay inside the active pane
+(left/right move one tile, up/down move a row). **Space**, right-click, and
+Ctrl-click toggle the same marks used by the normal file list. Left-click selects;
+Enter or double-click opens a file or folder. The mouse wheel scrolls.
+
+Hold the **right mouse button and drag** to toggle a continuous range in either
+thumbnail pane, just as in the file list. Each crossed item changes only once
+per drag, even when you move back over it. Previously marked items are unmarked;
+unmarked items are marked. Hold near the top or bottom edge to scroll and
+continue selecting. Release the button to stop. The parent `..` is never marked.
+
+Use **− / +** for 96–240 pixel tiles and **List** or **Alt+T** to return only that
+pane to its file list. Images show thumbnails; folders and other formats show
+labeled placeholders. Selection and marks survive view changes.
+
+For Copy/Move, set the destination in the opposite pane, then activate the
+**source** pane and press **F5 / F6**. Existing confirmation, overwrite, progress,
+and cancellation behavior applies. Switching to the destination and pressing F5
+would copy from that pane, as in earlier mDIR versions.
+
+The views hide during dialogs and when another application is foreground.
+Preview or AI temporarily reserves the right pane; its thumbnail mode is retained
+and restored when file view returns. Explicitly enabling Th turns automatic
+document Preview off. Startup always uses file lists.
+
+Thumbnail decoding runs in two background workers. Only visible tiles plus a
+nearby row are requested, and scrolling replaces pending work. The disk cache is
+`%LOCALAPPDATA%\mDIR\thumbnail-cache`, limited to approximately 1 GB with
+worker-side periodic cleanup. Paths, modification time, file size, and tile size
+identify cache entries. Unreadable, corrupt, unsupported images, and images above
+40 million source pixels use placeholders. The first frame of animated images is used.
+
+Pillow is installed automatically. Tk support must be present in the Windows
+Python installation. For source-folder launches use `start_mdir_p.ps1`; to update
+the separately installed desktop shortcut and `m` command, run `INSTALL_MDIR.bat`.

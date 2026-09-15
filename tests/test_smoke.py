@@ -423,11 +423,13 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 with (
                     patch.object(app, "action_rename") as rename,
                     patch.object(app, "_open_from_pane") as open_item,
+                    patch("mdir.ui.rename.monotonic", return_value=100.0) as click_clock,
                 ):
                     # Click 1 selects a different file and is then allowed to
                     # expire as selection-only.
                     await pilot.click("#left DataTable", offset=click_offset)
-                    await pilot.pause(0.25)
+                    await pilot.pause()
+                    click_clock.return_value = 100.25
 
                     # Click 2 starts a fresh action pair; it must not Rename or
                     # Open despite the terminal's native click-chain value.
@@ -437,7 +439,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     open_item.assert_not_called()
 
                     # A deliberately slow second action click now Renames.
-                    await pilot.pause(1.05)
+                    # Control elapsed click time: a busy host must not stretch
+                    # the intended 1.05-second interval beyond the 3s limit.
+                    click_clock.return_value = 101.30
                     await pilot.click("#left DataTable", offset=click_offset)
                     await pilot.pause()
                     rename.assert_called_once()
@@ -1572,7 +1576,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 moved = right_root / source.name
                 await self._wait_for_ui(
                     pilot,
-                    lambda: moved.exists() and not source.exists(),
+                    lambda: moved.exists() and not source.exists()
+                    and not app._file_operation_busy and len(app.screen_stack) == 1,
                 )
                 self.assertFalse(source.exists())
                 self.assertTrue(moved.exists())
@@ -1590,7 +1595,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.press("enter")
                 await self._wait_for_ui(
                     pilot,
-                    lambda: not moved.exists(),
+                    lambda: not moved.exists() and not app._file_operation_busy
+                    and len(app.screen_stack) == 1,
                 )
 
                 self.assertFalse(moved.exists())
@@ -2242,6 +2248,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             app.left_start = root
             app.right_start = root
             app._save_paths = lambda: None
+            # Test activity must not depend on the host user moving the mouse.
+            app._windows_idle_seconds = lambda: 0.0
 
             async with app.run_test(size=(100, 24)) as pilot:
                 for _ in range(100):
@@ -2256,17 +2264,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
                 self.assertIn(victim, app.left.entries)
                 self.assertIn(victim, app.right.entries)
+                app._directory_poll_timer.stop()
+                app._directory_poll_timer = app.set_interval(0.05, app._poll_directory_changes)
                 victim.unlink()
 
-                # 2.26.5 intentionally polls directories less often during
-                # long-running sessions. Trigger the same non-blocking poll
-                # explicitly so this test validates refresh behavior without
-                # sleeping for the full production interval.
-                app._background_poll_suspended = False
-                with patch.object(app, "_background_polling_paused", return_value=False):
-                    app._poll_directory_changes()
-
-                for _ in range(200):
+                for _ in range(100):
                     if (
                         victim not in app.left.entries
                         and victim not in app.right.entries
@@ -2295,6 +2297,8 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             app.left_start = root
             app.right_start = root
             app._save_paths = lambda: None
+            # Test activity must not depend on the host user moving the mouse.
+            app._windows_idle_seconds = lambda: 0.0
 
             async with app.run_test(size=(100, 24)) as pilot:
                 for _ in range(100):
@@ -2323,14 +2327,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     LargeDirectoryFilePane,
                     "_read_directory_change_token",
                     side_effect=blocked_token,
-                ), patch.object(
-                    app,
-                    "_background_polling_paused",
-                    return_value=False,
                 ):
-                    # Headless Windows runners can report the session itself as
-                    # idle. Bypass that environment-specific guard here: this
-                    # test is specifically about worker de-duplication.
                     app._poll_directory_changes()
                     for _ in range(100):
                         if started.is_set():
@@ -2735,6 +2732,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             app = SimpleNamespace(
                 ai_mode=False,
                 preview_enabled=True,
+                screen_stack=[None],
                 left=SimpleNamespace(selected_path=lambda: opened),
                 _preview_suppressed_path=opened,
                 _show_document_preview=show_preview,

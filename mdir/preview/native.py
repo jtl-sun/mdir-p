@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ctypes
-import gc
 import math
 import os
 import queue
@@ -477,6 +476,19 @@ class NativePreviewController:
             if acknowledged is not None:
                 acknowledged.wait(timeout=0.5)
 
+    def resume(self) -> None:
+        """Restore the retained image and zoom after a Textual dialog closes."""
+        if self._thread is not None:
+            self._commands.put(("resume", None))
+
+    def suspend(self, *, wait: bool = False) -> None:
+        """Hide for a dialog without cancelling a pending image request."""
+        if self._thread is not None:
+            acknowledged = threading.Event() if wait else None
+            self._commands.put(("suspend", acknowledged))
+            if acknowledged is not None:
+                acknowledged.wait(timeout=0.5)
+
     def shutdown(self, *, timeout: float = 6.0) -> bool:
         """Stop Preview only after its Tk owner thread releases Tcl."""
         thread = self._thread
@@ -572,11 +584,9 @@ class NativePreviewController:
             self._ready.set()
         finally:
             self._preview_hwnd = 0
-            # Tk widgets and ImageTk objects form reference cycles. Collect
-            # them here, on the same thread that created Tcl, rather than
-            # allowing Python's main thread to finalize them at process exit.
+            # run() releases Tk references on this owner thread. Global GC
+            # could finalize objects belonging to the thumbnail Tcl thread.
             window = None
-            gc.collect()
             self._shutdown_complete.set()
 
 
@@ -628,6 +638,7 @@ class _NativePreviewWindow:
         self.photo = None
         self.canvas_image = None
         self.visible = False
+        self._suspended = False
         self._shutdown_requested = False
         self._drag_origin: Optional[tuple[int, int, float, float]] = None
         self._render_after = None
@@ -1068,6 +1079,7 @@ class _NativePreviewWindow:
         latest_layout = None
         latest_theme = None
         hide_requested = False
+        resume_requested = False
         hide_acknowledgements: list[threading.Event] = []
         shutdown_requested = False
         try:
@@ -1076,9 +1088,21 @@ class _NativePreviewWindow:
                 if command == "show":
                     latest_show = payload
                     hide_requested = False
+                    resume_requested = False
                 elif command == "hide":
+                    self._suspended = False
                     hide_requested = True
+                    resume_requested = False
                     latest_show = None
+                    if isinstance(payload, threading.Event):
+                        hide_acknowledgements.append(payload)
+                elif command == "resume":
+                    self._suspended = False
+                    hide_requested = False
+                    resume_requested = True
+                elif command == "suspend":
+                    self._suspended = True
+                    resume_requested = False
                     if isinstance(payload, threading.Event):
                         hide_acknowledgements.append(payload)
                 elif command == "layout":
@@ -1097,9 +1121,12 @@ class _NativePreviewWindow:
             # leave Python/Tk reference cycles for the main thread to collect.
             self.root.quit()
             return
-        if hide_requested:
+        if hide_requested or self._suspended:
             self.visible = False
             self.root.withdraw()
+        elif resume_requested and self.path is not None:
+            self.visible = True
+            self._position_over_terminal()
         for acknowledged in hide_acknowledgements:
             acknowledged.set()
         if latest_theme is not None:
@@ -1145,7 +1172,7 @@ class _NativePreviewWindow:
             font=("Cascadia Mono", 11, "bold"),
             justify="center",
         )
-        self.visible = True
+        self.visible = not self._suspended
         self._apply_windows_styles()
         self._position_over_terminal()
         self._drain_queue(self._load_requests)
@@ -1179,63 +1206,45 @@ class _NativePreviewWindow:
                 pass
 
     def _poll_load_results(self) -> None:
-        latest = None
         try:
             while True:
-                result = self._load_results.get_nowait()
-                generation, _, source, _, acknowledged = result
-                if (
-                    latest is not None
-                    and latest[2] is not None
-                    and latest[0] != self._load_generation
-                ):
-                    latest[2].close()
-                    latest[4].set()
-                if generation == self._load_generation:
-                    if latest is not None and latest[2] is not None:
-                        latest[2].close()
-                        latest[4].set()
-                    latest = result
-                elif source is not None:
-                    source.close()
+                try:
+                    generation, path, source, error, acknowledged = self._load_results.get_nowait()
+                except queue.Empty:
+                    break
+                current = generation == self._load_generation and path == self.path
+                try:
+                    if current:
+                        if error is not None or source is None:
+                            self._show_load_error(error or RuntimeError("Unknown error"))
+                        else:
+                            self.document_source = source
+                            source = None  # Ownership passes to _close_source().
+                            self.source_image = self.document_source.image
+                            self.kind = self.document_source.kind
+                            self.detail = self.document_source.detail
+                            self.fit()
+                except Exception as exc:
+                    if current:
+                        self._show_load_error(exc)
+                finally:
+                    if source is not None:
+                        try:
+                            source.close()
+                        except Exception:
+                            pass
+                    # A failed render or superseded selection must never leave
+                    # the decoder waiting forever before it can load another file.
                     acknowledged.set()
-                else:
-                    acknowledged.set()
-        except queue.Empty:
-            pass
-
-        if latest is not None:
-            generation, path, source, error, acknowledged = latest
-            if (
-                generation == self._load_generation
-                and path == self.path
-                and error is None
-                and source is not None
-            ):
-                self.document_source = source
-                self.source_image = source.image
-                self.kind = source.kind
-                self.detail = source.detail
-                self.fit()
-                acknowledged.set()
-            elif generation == self._load_generation:
-                if source is not None:
-                    source.close()
-                self._show_load_error(error or RuntimeError("Unknown error"))
-                acknowledged.set()
-
-        try:
-            self.root.after(
-                NATIVE_COMMAND_POLL_MS,
-                self._poll_load_results,
-            )
-        except Exception:
-            pass
+        finally:
+            if not self._shutdown_requested:
+                try:
+                    self.root.after(NATIVE_COMMAND_POLL_MS, self._poll_load_results)
+                except Exception:
+                    pass
 
     def _show_load_error(self, error: Exception) -> None:
-        self.source_image = None
-        self.document_source = None
-        self.canvas.delete("all")
+        self._close_source()
         self.canvas.create_text(
             max(20, self.canvas.winfo_width() // 2),
             max(20, self.canvas.winfo_height() // 2),
@@ -1370,21 +1379,18 @@ class _NativePreviewWindow:
         if plan is None:
             return
 
-        cropped = self.source_image.crop(plan.crop_box)
-        resampling = getattr(Image, "Resampling", Image)
-        if cropped.size == plan.display_size:
-            display = cropped
-        else:
-            display = cropped.resize(
-                plan.display_size,
-                resample=resampling.LANCZOS,
+        with self.source_image.crop(plan.crop_box) as cropped:
+            resampling = getattr(Image, "Resampling", Image)
+            display = cropped if cropped.size == plan.display_size else cropped.resize(
+                plan.display_size, resample=resampling.LANCZOS,
             )
-            cropped.close()
-        new_photo = ImageTk.PhotoImage(display)
-        if display is not cropped:
-            display.close()
-        else:
-            cropped.close()
+            try:
+                # Thumbnails have their own Tk interpreter. The implicit
+                # default root may belong to that other window/thread.
+                new_photo = ImageTk.PhotoImage(display, master=self.canvas)
+            finally:
+                if display is not cropped:
+                    display.close()
         self.photo = new_photo
         self.canvas_image = self.canvas.create_image(
             plan.display_position[0],
@@ -1723,9 +1729,10 @@ class _NativePreviewWindow:
             self.canvas_image = None
             self.preview_badge = None
             self.title_label = None
+            self.toolbar_buttons.clear()
+            self.toolbar = None
             self.canvas = None
             self.status_label = None
             self.root = None
             self.tk = None
             del root
-            gc.collect()

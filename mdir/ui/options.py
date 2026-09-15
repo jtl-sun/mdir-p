@@ -161,7 +161,7 @@ class KeyManagerScreen(ModalScreen[Optional[dict[str, str]]]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="key_dialog"):
-            yield Label("Keys", id="key_title")
+            yield Label("Keys — close this window to use file shortcuts", id="key_title")
             table = DataTable(id="key_table", cursor_type="row", zebra_stripes=True)
             table.add_columns("Action", "Key", "Type")
             yield table
@@ -235,10 +235,13 @@ class KeyManagerScreen(ModalScreen[Optional[dict[str, str]]]):
     @on(Button.Pressed, "#key_apply")
     def apply_key(self, event: Button.Pressed) -> None:
         event.stop()
+        self._apply_editor()
+
+    def _apply_editor(self) -> bool:
         index = self._selected_index()
         definition = KEY_DEFINITIONS[index]
         if not definition.editable:
-            return
+            return True
         try:
             previous = self._keys[self._definition_key(index)]
             self._keys[self._definition_key(index)] = normalize_shortcut(
@@ -248,11 +251,12 @@ class KeyManagerScreen(ModalScreen[Optional[dict[str, str]]]):
         except ValueError as exc:
             self._keys[self._definition_key(index)] = previous
             self.query_one("#key_status", Static).update(str(exc))
-            return
+            return False
         self._refresh_table(index)
         self.query_one("#key_status", Static).update(
             "Key updated in the draft. Select Save to keep it."
         )
+        return True
 
     @on(Button.Pressed, "#key_reset")
     def reset_selected(self, event: Button.Pressed) -> None:
@@ -274,6 +278,8 @@ class KeyManagerScreen(ModalScreen[Optional[dict[str, str]]]):
     @on(Button.Pressed, "#key_save")
     def save_keys(self, event: Button.Pressed) -> None:
         event.stop()
+        if not self._apply_editor():
+            return
         try:
             self.dismiss(self._candidate_overrides())
         except ValueError as exc:

@@ -16,6 +16,12 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
+      - name: Reject tracked build artifacts
+        shell: bash
+        run: |
+          if [ -n "$(git ls-files -- build dist '*.egg-info/*' '*/__pycache__/*')" ]; then
+            echo 'Generated build files must not be tracked'; exit 1
+          fi
       - name: Install
         run: python -m pip install -e ".[preview,dev]"
       - name: Self-check
@@ -24,3 +30,32 @@ jobs:
         run: python -m unittest discover -s tests -v
       - name: Build wheel
         run: python -m build
+      - name: Package source and checksums
+        run: python tools/package_release.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-assets
+          path: dist/*
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-assets
+          path: dist
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=$(python3 -c 'import mdir; print(mdir.__version__)')
+          tag="v$version"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists; leaving published assets unchanged."
+            exit 0
+          fi
+          gh release create "$tag" dist/* --target "$GITHUB_SHA" --title "mDIR-P $version" --notes-file RELEASE_NOTES.md

@@ -1869,8 +1869,8 @@ class MDir(App):
     BINDINGS = [
         Binding("ctrl+q", "ignore", "", show=False, priority=True, system=True),
         Binding("tab", "switch_pane", "Pane", show=False),
-        Binding("left", "focus_left", "Left", show=False),
-        Binding("right", "focus_right", "Right", show=False),
+        Binding("left", "ignore", "Previous", show=False),
+        Binding("right", "ignore", "Next", show=False),
         Binding("enter", "open_item", "Open", show=False),
         Binding("backspace", "parent", "Parent"),
         Binding("space", "mark", "Mark"),
@@ -1933,6 +1933,9 @@ class MDir(App):
             self.show_hidden_system = self._load_hidden_system_setting()
         except Exception:
             self.show_hidden_system = False
+        self._initial_hidden_system = {
+            side: self._load_hidden_system_setting(side) for side in ('left', 'right')
+        }
         self.active_side = "left"
         self.available_drives = list_windows_drives()
 
@@ -2008,7 +2011,7 @@ class MDir(App):
 
         return widths
 
-    def _load_hidden_system_setting(self) -> bool:
+    def _load_hidden_system_setting(self, side: str | None = None) -> bool:
         """Load Hidden/System visibility setting.
 
         Default is False so Hidden/System files are not shown.
@@ -2016,6 +2019,11 @@ class MDir(App):
         """
         try:
             data = load_config_data()
+            pane_settings = data.get('show_hidden_system_by_pane', {})
+            if side is not None and isinstance(pane_settings, dict):
+                value = pane_settings.get(side)
+                if isinstance(value, bool):
+                    return value
             return bool(data.get("show_hidden_system", False))
 
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
@@ -2030,7 +2038,11 @@ class MDir(App):
                         "right": str(self.right.current_path),
                         "column_widths": dict(self.column_widths),
                         "column_layout_version": CURRENT_COLUMN_LAYOUT_VERSION,
-                        "show_hidden_system": bool(self.show_hidden_system),
+                        "show_hidden_system": bool(self.active.show_hidden_system),
+                        "show_hidden_system_by_pane": {
+                            'left': bool(self.left.show_hidden_system),
+                            'right': bool(self.right.show_hidden_system),
+                        },
                     },
                     ensure_ascii=False,
                     indent=2,
@@ -2065,7 +2077,7 @@ class MDir(App):
                     "left",
                     self.left_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self._initial_hidden_system['left'],
                 )
 
             with Vertical(id="right_wrap", classes="pane-wrap"):
@@ -2089,7 +2101,7 @@ class MDir(App):
                     "right",
                     self.right_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self._initial_hidden_system['right'],
                 )
 
         yield Static("", id="status")
@@ -2128,6 +2140,7 @@ class MDir(App):
 
     def set_active(self, side: str, *, focus_table: bool = True) -> None:
         self.active_side = side
+        self.show_hidden_system = self.active.show_hidden_system
         self.left.set_active(side == "left")
         self.right.set_active(side == "right")
         self.active.reset_shift_selection_anchor()
@@ -2141,37 +2154,29 @@ class MDir(App):
             pass
 
     def update_hidden_buttons(self) -> None:
-        """Update Hidden/System toggle appearance for both panes."""
-        label = "Hide H/S" if self.show_hidden_system else "Show H/S"
-
-        for button_id in (
-            "#left_hidden_toggle",
-            "#right_hidden_toggle",
-        ):
+        """Each button describes the visibility of its own pane."""
+        for side in ('left', 'right'):
             try:
-                button = self.query_one(button_id, Button)
-                button.label = label
-                button.set_class(
-                    self.show_hidden_system,
-                    "showing-hidden",
-                )
+                pane = self.left if side == 'left' else self.right
+                showing = pane.show_hidden_system
+                button = self.query_one(f'#{side}_hidden_toggle', Button)
+                button.label = 'Hi' if showing else 'Sh'
+                button.tooltip = f"{'Hide' if showing else 'Show'} Hidden/System files in the {side} pane"
+                button.set_class(showing, 'showing-hidden')
             except Exception:
                 pass
 
-    def toggle_hidden_system(self) -> None:
-        """Toggle Hidden/System visibility globally for both panes."""
-        self.show_hidden_system = not self.show_hidden_system
-
-        self.left.set_hidden_system_visibility(self.show_hidden_system)
-        self.right.set_hidden_system_visibility(self.show_hidden_system)
-
+    def toggle_hidden_system(self, side: str | None = None) -> None:
+        """Toggle only the clicked pane, or the active pane for Ctrl+H."""
+        side = side or self.active_side
+        pane = self.left if side == 'left' else self.right
+        pane.set_hidden_system_visibility(not pane.show_hidden_system)
+        self.set_active(side)
         self.update_hidden_buttons()
         self._save_paths()
 
-        if self.show_hidden_system:
-            self.set_status("Hidden/System files are now visible.")
-        else:
-            self.set_status("Hidden/System files are hidden.")
+        state = 'visible' if pane.show_hidden_system else 'hidden'
+        self.set_status(f'{side.title()} pane: Hidden/System files are {state}.')
 
     def _sync_drive_buttons(self) -> None:
         """Show buttons for available drives and hide all others.
@@ -2349,7 +2354,7 @@ class MDir(App):
                 "left_hidden_toggle",
                 "right_hidden_toggle",
             }:
-                self.toggle_hidden_system()
+                self.toggle_hidden_system('left' if button_id == 'left_hidden_toggle' else 'right')
                 event.stop()
                 return
 

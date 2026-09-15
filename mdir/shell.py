@@ -60,7 +60,7 @@ class AIShellApp(legacy.MDir):
                     "left",
                     self.left_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self._initial_hidden_system['left'],
                 )
 
             with Vertical(id="right_wrap", classes="pane-wrap"):
@@ -84,7 +84,7 @@ class AIShellApp(legacy.MDir):
                     "right",
                     self.right_start,
                     self.column_widths,
-                    self.show_hidden_system,
+                    self._initial_hidden_system['right'],
                 )
 
         yield Static("", id="status")

@@ -2,15 +2,35 @@ from __future__ import annotations
 
 from time import monotonic
 from typing import Optional
+from rich.style import Style
 
 from textual import events
 from textual.binding import Binding
 
 from .. import core as legacy
+from ..selection_style import MARK_BACKGROUND, MARK_FOREGROUND
 
 
 class SlowRenameDataTable(legacy.MDirDataTable):
     """File table with Explorer/Commander-style slow-click rename."""
+
+    def _is_marked_row(self, row_index: int) -> bool:
+        pane = self._pane()
+        return (pane is not None and 0 <= row_index < len(pane.entries)
+                and pane.entries[row_index] is not None
+                and pane.entries[row_index] in pane.marked)
+
+    def _get_row_style(self, row_index: int, base_style: Style) -> Style:
+        style = super()._get_row_style(row_index, base_style)
+        if self._is_marked_row(row_index):
+            style += Style(color=MARK_FOREGROUND, bgcolor=MARK_BACKGROUND)
+        return style
+
+    def _render_cell(self, row_index, column_index, base_style, width, cursor=False, hover=False):
+        # Preserve the marked background under the mouse; the cursor still
+        # uses the brighter CSS highlight. Cell metadata remains unchanged.
+        return super()._render_cell(row_index, column_index, base_style, width,
+                                    cursor=cursor, hover=hover and not self._is_marked_row(row_index))
 
     BINDINGS = [
         binding
@@ -135,9 +155,9 @@ class SlowRenameDataTable(legacy.MDirDataTable):
     def action_switch_file_pane(self) -> None:
         pane = self._pane()
         if pane is not None:
-            self._focus_file_pane(
-                "right" if pane.id == "left" else "left"
-            )
+            # The app also restores the right file pane when Preview owns it.
+            # Calling set_active directly bypasses that transition.
+            self.app.action_switch_pane()
 
     async def on_click(self, event: events.Click) -> None:
         if event.button == 1 and self._shift_click_active(event):
