@@ -214,8 +214,9 @@ def main(order):
             assert len(rendered) == sum(not fail for _, fail in steps), rendered
             assert not any(t.name in ('MDIR-Native-Image-Loader', 'mdir-thumbnail-ui') and t.is_alive()
                            for t in threading.enumerate())
-            print('PASS', order, rendered)
+            print('PASS', order, ascii(rendered))
 
 
 if __name__ == '__main__':
     main(sys.argv[1])
+

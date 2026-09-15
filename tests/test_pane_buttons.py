@@ -21,7 +21,7 @@ from test_thumbnail import FakeManager
 class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         for side in ('left', 'right'):
             folder = self.root / side
             folder.mkdir()
@@ -63,6 +63,7 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.thumbnail_modes, {'left': True, 'right': True})
         self.assertEqual(app.active_side, 'right')
         self.assertIs(app.focused, app.right.table)
+        await self.pilot.pause(0.35)  # Button's click animation suppresses immediate repeats.
         self.assertTrue(await self.pilot.click('#right_thumbnail'))
         self.assertEqual(app.thumbnail_modes, {'left': True, 'right': False})
         self.assertTrue(app.query_one('#left_thumbnail', Button).has_class('thumbnail-on'))
@@ -211,3 +212,4 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(app.thumbnail_modes, {'left': False, 'right': False})
             self.assertTrue(app._thumbnail_manager.shutdown())
             self.assertFalse(any(t.is_alive() and t.name.startswith('mdir-thumbnail-') for t in threading.enumerate()))
+

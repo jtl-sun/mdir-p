@@ -12,7 +12,7 @@ from mdir.keyboard import NativeShortcuts, NativeShortcut
 class PreviewDialogTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         self.path = self.root / 'original.txt'
         self.path.write_text('preview test')
         self.config = patch('mdir.core.load_config_data', return_value={})
@@ -127,10 +127,12 @@ class PreviewDialogTests(unittest.IsolatedAsyncioTestCase):
         app = self.app
         app._shortcut_keyboard = NativeShortcuts(1, lambda *args: None)
         await self.pilot.resize_terminal(200, 38)
+        await self.pilot.pause()
         for index in range(4):
             footer_key = next(key for key in app.query('FooterKey') if key.key == 'ctrl+f3')
             self.assertTrue(await self.pilot.click(footer_key))
             self.assertEqual(app.preview_enabled, index % 2 == 0)
+            await self.pilot.pause(0.35)
 
 
 class PreviewHotkeyTests(unittest.TestCase):
@@ -167,3 +169,4 @@ class PreviewHotkeyTests(unittest.TestCase):
         finally:
             self.assertTrue(monitor.shutdown())
         self.assertFalse(monitor.active)
+

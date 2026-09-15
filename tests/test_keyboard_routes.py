@@ -16,7 +16,7 @@ from mdir.core import PropertiesScreen
 class KeyboardRoutesTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        self.root = Path(self.temp.name)
+        self.root = Path(self.temp.name).resolve()
         (self.root / 'item.txt').write_text('item')
         self.config = patch('mdir.core.load_config_data', return_value={})
         self.keys = patch('mdir.app.load_keymap', return_value={})
@@ -351,3 +351,4 @@ class NativeKeyMatchingTests(unittest.TestCase):
     def test_reserved_keys_and_hidden_fixed_navigation_cannot_be_assigned(self):
         for key in ('up', 'home', 'pagedown', 'alt+f4', 'super+l', 'ctrl+alt+delete'):
             with self.assertRaises(ValueError, msg=key): validate_keymap({'mdir.copy': key})
+
