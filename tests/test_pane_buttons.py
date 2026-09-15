@@ -63,7 +63,12 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.thumbnail_modes, {'left': True, 'right': True})
         self.assertEqual(app.active_side, 'right')
         self.assertIs(app.focused, app.right.table)
-        await self.pilot.pause(0.35)  # Button's click animation suppresses immediate repeats.
+        button = app.query_one('#right_thumbnail', Button)
+        for _ in range(150):
+            if not button.has_class('-active'):
+                break
+            await self.pilot.pause(0.02)
+        self.assertFalse(button.has_class('-active'))
         self.assertTrue(await self.pilot.click('#right_thumbnail'))
         self.assertEqual(app.thumbnail_modes, {'left': True, 'right': False})
         self.assertTrue(app.query_one('#left_thumbnail', Button).has_class('thumbnail-on'))

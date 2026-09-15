@@ -204,6 +204,7 @@ class KeyboardRoutesTests(unittest.IsolatedAsyncioTestCase):
             pane = app.right if side == 'right' else app.left
             await self.pilot.click(pane.table, offset=(5, 2))
             path = self.root / 'item.txt'
+            await self.wait_for(lambda: pane.initial_listing_complete and path in pane.row_by_path)
             pane.table.move_cursor(row=pane.row_by_path[path])
             await self.pilot.pause()
             await self.native_press('alt+enter')
