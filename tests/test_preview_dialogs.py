@@ -130,6 +130,8 @@ class PreviewDialogTests(unittest.IsolatedAsyncioTestCase):
         for index in range(4):
             footer_key = next(key for key in app.query('FooterKey') if key.key == 'ctrl+f3')
             self.assertTrue(await self.pilot.click(footer_key))
+            # Footer queues a simulated key; allow that posted action to finish.
+            await self.wait_for(lambda: app.preview_enabled == (index % 2 == 0))
             self.assertEqual(app.preview_enabled, index % 2 == 0)
             await self.pilot.pause(0.35)
 
