@@ -23,7 +23,7 @@ class PreviewDialogTests(unittest.IsolatedAsyncioTestCase):
         self.app._save_paths = lambda: None
         self.app._native_preview = Mock()
         self.app._native_preview.show.return_value = True
-        self.context = self.app.run_test(size=(120, 38))
+        self.context = self.app.run_test(size=(200, 38))
         self.pilot = await self.context.__aenter__()
         await self.wait_for(lambda: self.app.left.initial_listing_complete)
         self.app.left.table.move_cursor(row=self.app.left.row_by_path[self.path])
@@ -126,7 +126,6 @@ class PreviewDialogTests(unittest.IsolatedAsyncioTestCase):
     async def test_footer_mouse_clicks_work_with_native_keyboard_observer(self):
         app = self.app
         app._shortcut_keyboard = NativeShortcuts(1, lambda *args: None)
-        await self.pilot.resize_terminal(200, 38)
         await self.pilot.pause()
         for index in range(4):
             footer_key = next(key for key in app.query('FooterKey') if key.key == 'ctrl+f3')
