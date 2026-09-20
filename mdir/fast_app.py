@@ -13,7 +13,7 @@ from pathlib import Path
 from rich.text import Text
 from textual import events, work
 from textual.app import ComposeResult
-from textual.containers import Vertical
+from textual.containers import Horizontal, Vertical
 from textual.widgets import Button, Static
 
 from .ui.search import AdvancedSearchScreen
@@ -80,11 +80,18 @@ class LargeDirectoryFilePane(EditablePathFilePane):
 
     def compose(self) -> ComposeResult:
         """Keep summary and detail information in one fixed bottom area."""
-        yield DirectoryPathInput(
-            value=display_directory_path(self.current_path),
-            id=f"{self.id}_path",
-            classes="pane_path",
-        )
+        with Horizontal(classes="pane-path-row"):
+            yield DirectoryPathInput(
+                value=display_directory_path(self.current_path),
+                id=f"{self.id}_path",
+                classes="pane_path",
+            )
+            yield Button(
+                "▼",
+                id=f"{self.id}_recent_folders",
+                classes="recent-folder-path-button",
+                tooltip=f"Recent folders — {str(self.id).upper()} pane (Alt+Down)",
+            )
         table = SlowRenameDataTable(cursor_type="row", zebra_stripes=False)
         self._add_columns(table)
         yield table
@@ -348,6 +355,7 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         self.last_listing_seconds = time.perf_counter() - started
         self.update_info()
         self.update_summary()
+        self._record_recent_visit(observed_path)
 
     @staticmethod
     def _format_display_values(
@@ -633,7 +641,8 @@ class FastFileManagerApp(EditablePathApp):
             cover.remove()
         except Exception:
             pass
-        self.active.table.focus()
+        if len(self.screen_stack) == 1:
+            self.active.table.focus()
 
     def _record_ui_heartbeat(self) -> None:
         """Record that Textual's event loop is still processing callbacks."""

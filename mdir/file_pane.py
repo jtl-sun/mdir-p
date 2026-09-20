@@ -8,10 +8,11 @@ from pathlib import Path
 from rich.text import Text
 from textual import events, on
 from textual.app import ComposeResult
+from textual.containers import Horizontal
 from textual.binding import Binding
 from textual.coordinate import Coordinate
 from textual.message import Message
-from textual.widgets import Static
+from textual.widgets import Button, Static
 
 from .base import BaseApp
 from . import core as legacy
@@ -195,13 +196,34 @@ class EditablePathFilePane(BaseFilePane):
         self.total_file_count = 0
         self.total_folder_count = 0
         self.total_file_size = 0
+        # Previous Shift-range endpoint.  Keep this separate from the cursor
+        # so repeated Shift+PageUp/PageDown can update only the rows entering
+        # or leaving the range instead of rebuilding the full selection.
+        self._shift_extent_row: int | None = None
+        self._recent_recorded_path: Path | None = None
+
+    def _record_recent_visit(self, path: Path) -> None:
+        """Record actual directory transitions, not ordinary refreshes."""
+        if self._recent_recorded_path == path:
+            return
+        recorder = getattr(self.app, "record_recent_folder", None)
+        if callable(recorder):
+            recorder(path)
+        self._recent_recorded_path = path
 
     def compose(self) -> ComposeResult:
-        yield DirectoryPathInput(
-            value=display_directory_path(self.current_path),
-            id=f"{self.id}_path",
-            classes="pane_path",
-        )
+        with Horizontal(classes="pane-path-row"):
+            yield DirectoryPathInput(
+                value=display_directory_path(self.current_path),
+                id=f"{self.id}_path",
+                classes="pane_path",
+            )
+            yield Button(
+                "▼",
+                id=f"{self.id}_recent_folders",
+                classes="recent-folder-path-button",
+                tooltip=f"Recent folders — {str(self.id).upper()} pane (Alt+Down)",
+            )
         table = SlowRenameDataTable(cursor_type="row", zebra_stripes=False)
         self._add_columns(table)
         yield table
@@ -389,6 +411,7 @@ class EditablePathFilePane(BaseFilePane):
             self.update_summary()
             return
         self._render_cached_rows(keep_name)
+        self._record_recent_visit(self.current_path)
 
     def _rebuild_columns(self, keep_name: str | None = None) -> None:
         """Rebuild resized columns from cache instead of rescanning the drive."""
@@ -451,15 +474,48 @@ class EditablePathFilePane(BaseFilePane):
             update_width=False,
         )
 
+    def toggle_mark_paths(self, paths) -> int:
+        """Toggle multiple paths with one repaint and one summary pass.
+
+        A fast right-button drag can cross many rows in a single mouse event.
+        Older code updated the cursor, details and summary for every row,
+        which made large-directory selection lag at page boundaries.
+        """
+        changed: list[Path] = []
+        seen: set[Path] = set()
+        for path in paths:
+            if path is None or path in seen:
+                continue
+            seen.add(path)
+            if path not in self.metadata_by_path:
+                continue
+            if path in self.marked:
+                self.marked.remove(path)
+            else:
+                self.marked.add(path)
+            changed.append(path)
+
+        if not changed:
+            return 0
+
+        with self.app.batch_update():
+            for path in changed:
+                self._update_mark_cell(path)
+            self.update_info()
+            self.update_summary()
+        return len(changed)
+
     def toggle_mark_path(self, path: Path) -> None:
         """Toggle one row without rebuilding a large directory."""
-        if path in self.marked:
-            self.marked.remove(path)
-        else:
-            self.marked.add(path)
-        self._update_mark_cell(path)
-        self.update_info()
-        self.update_summary()
+        self.toggle_mark_paths((path,))
+
+    def reset_shift_selection_anchor(self) -> None:
+        super().reset_shift_selection_anchor()
+        self._shift_extent_row = None
+
+    def set_shift_selection_anchor(self, row: int) -> None:
+        super().set_shift_selection_anchor(row)
+        self._shift_extent_row = self.shift_anchor_row
 
     def set_bulk_selection(self, mode: str) -> bool:
         """Mark the displayed directory in one pass, without rescanning it."""
@@ -480,13 +536,14 @@ class EditablePathFilePane(BaseFilePane):
         return True
 
     def shift_select(self, delta: int) -> None:
-        """Extend a range and repaint only rows whose mark state changed."""
+        """Extend a range while touching only rows that actually change."""
         if self.table.row_count <= 0:
             return
         current_row = max(0, self.table.cursor_row)
         if self.shift_anchor_row is None:
             self.shift_anchor_row = current_row
             self.shift_base_marked = set(self.marked)
+            self._shift_extent_row = current_row
 
         target_row = max(
             0,
@@ -494,31 +551,89 @@ class EditablePathFilePane(BaseFilePane):
         )
         self.select_range_to(target_row)
 
+    @staticmethod
+    def _row_interval(start: int, end: int):
+        return range(start, end + 1) if start <= end else ()
+
     def select_range_to(self, target_row: int) -> None:
-        """Select through a mouse/keyboard endpoint and repaint changed rows."""
+        """Extend/shrink a Shift range incrementally and repaint once.
+
+        The old and new ranges both contain the anchor, so only the outer
+        tails can change.  Updating those tails avoids copying the complete
+        marked set and rebuilding an ever-growing range on every PageDown.
+        """
         if self.table.row_count <= 0:
             return
+
         current_row = max(0, self.table.cursor_row)
         if self.shift_anchor_row is None:
             self.shift_anchor_row = current_row
             self.shift_base_marked = set(self.marked)
+            self._shift_extent_row = current_row
 
+        anchor = int(self.shift_anchor_row)
+        old_extent = anchor if self._shift_extent_row is None else int(self._shift_extent_row)
+        old_extent = max(0, min(self.table.row_count - 1, old_extent))
         target_row = max(0, min(self.table.row_count - 1, target_row))
-        lo = min(self.shift_anchor_row, target_row)
-        hi = max(self.shift_anchor_row, target_row)
-        range_paths = {
-            path
-            for path in self.entries[lo : hi + 1]
-            if path is not None
-        }
-        previous = set(self.marked)
-        self.marked = set(self.shift_base_marked) | range_paths
-        for path in previous.symmetric_difference(self.marked):
-            self._update_mark_cell(path)
 
-        self.table.move_cursor(row=target_row, column=0)
-        self.update_info()
-        self.update_summary()
+        old_lo, old_hi = sorted((anchor, old_extent))
+        new_lo, new_hi = sorted((anchor, target_row))
+
+        entering = []
+        leaving = []
+        if new_lo < old_lo:
+            entering.append(self._row_interval(new_lo, old_lo - 1))
+        if new_hi > old_hi:
+            entering.append(self._row_interval(old_hi + 1, new_hi))
+        if old_lo < new_lo:
+            leaving.append(self._row_interval(old_lo, new_lo - 1))
+        if old_hi > new_hi:
+            leaving.append(self._row_interval(new_hi + 1, old_hi))
+
+        changed: list[Path] = []
+
+        # A range always includes the anchor. Add it on the first extension
+        # if it was not already part of the base selection.
+        if self._shift_extent_row == anchor and 0 <= anchor < len(self.entries):
+            anchor_path = self.entries[anchor]
+            if anchor_path is not None and anchor_path not in self.marked:
+                self.marked.add(anchor_path)
+                changed.append(anchor_path)
+
+        for rows in entering:
+            for row in rows:
+                if not 0 <= row < len(self.entries):
+                    continue
+                path = self.entries[row]
+                if path is None or path in self.marked:
+                    continue
+                self.marked.add(path)
+                changed.append(path)
+
+        for rows in leaving:
+            for row in rows:
+                if not 0 <= row < len(self.entries):
+                    continue
+                path = self.entries[row]
+                if path is None:
+                    continue
+                should_be_marked = path in self.shift_base_marked
+                is_marked = path in self.marked
+                if should_be_marked == is_marked:
+                    continue
+                if should_be_marked:
+                    self.marked.add(path)
+                else:
+                    self.marked.discard(path)
+                changed.append(path)
+
+        self._shift_extent_row = target_row
+        with self.app.batch_update():
+            for path in changed:
+                self._update_mark_cell(path)
+            self.table.move_cursor(row=target_row, column=0, animate=False)
+            self.update_info()
+            self.update_summary()
 
     def update_info(self) -> None:
         """Update the always-visible three-line item detail box."""
@@ -652,6 +767,47 @@ class EditablePathApp(BaseApp):
 
     FilePane.active {{
         border: heavy #35d477;
+    }}
+
+    FilePane .pane-path-row {{
+        width: 100%;
+        height: 1;
+        min-height: 1;
+        max-height: 1;
+        margin: 0;
+        padding: 0;
+    }}
+
+    FilePane .pane-path-row DirectoryPathInput.pane_path {{
+        width: 1fr;
+        min-width: 0;
+    }}
+
+    FilePane .recent-folder-path-button {{
+        width: 3;
+        min-width: 3;
+        max-width: 3;
+        height: 1;
+        min-height: 1;
+        max-height: 1;
+        padding: 0;
+        margin: 0;
+        border: none;
+        background: #173522;
+        color: #eeeeee;
+        text-style: bold;
+        content-align: center middle;
+    }}
+
+    FilePane.active .recent-folder-path-button {{
+        background: #146b3a;
+        color: white;
+    }}
+
+    FilePane .recent-folder-path-button:hover,
+    FilePane .recent-folder-path-button:focus {{
+        background: #178f4b;
+        color: white;
     }}
 
     FilePane DirectoryPathInput.pane_path {{

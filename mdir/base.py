@@ -17,7 +17,9 @@ from .ui.dialogs import (
     CompactConfirmScreen,
     CompactCopyScreen,
     CompactDriveScreen,
+    RecentFolderScreen,
     CopyRequest,
+    ElevatedDeleteProgressScreen,
     FileOperationProgressScreen,
 )
 from .file_operations import (
@@ -27,6 +29,11 @@ from .file_operations import (
     destination_conflicts,
     run_file_operation,
 )
+from .elevation import (
+    ElevationCancelled,
+    run_elevated_delete,
+)
+from .recent_folders import RecentFolderStore
 from .advanced import (
     FileIndex,
     FileMacro,
@@ -218,14 +225,78 @@ class BaseApp(AIShellApp):
         self._file_operation_cancel: Event | None = None
         self._file_operation_pause: Event | None = None
         self._file_operation_screen: FileOperationProgressScreen | None = None
+        self._elevated_delete_screen: ElevatedDeleteProgressScreen | None = None
         self._file_operation_queue: deque[QueuedFileOperation] = deque()
         data_dir = advanced_data_dir("mDIR-P")
         self._workspace_store = WorkspaceStore(data_dir / "workspaces.json")
         self._macro_store = MacroStore(data_dir / "macros.json")
+        self._recent_folder_store = RecentFolderStore(data_dir / "recent_folders.json")
+        self.recent_folders = self._recent_folder_store.load()
         self._macro_recording_name: str | None = None
         self._macro_recording_actions: list[MacroAction] = []
         self._file_index_path = data_dir / "mindex.sqlite3"
         super().__init__()
+
+
+    def record_recent_folder(self, path: Path | str) -> None:
+        """Record a successful pane visit in the shared MRU folder list."""
+        try:
+            self.recent_folders = self._recent_folder_store.record(path)
+        except OSError:
+            # Folder navigation must never fail just because history cannot be saved.
+            return
+
+    def remove_recent_folder(self, path: Path | str) -> None:
+        """Forget a stale MRU entry without affecting pane navigation."""
+        try:
+            self.recent_folders = self._recent_folder_store.remove(path)
+        except OSError:
+            return
+
+    def _show_recent_folders(self, side: str) -> None:
+        side = 'left' if side == 'left' else 'right'
+        folders = list(getattr(self, 'recent_folders', ()))
+        if not folders:
+            self.set_status('Recent folders: no history yet.')
+            return
+        pane = self.left if side == 'left' else self.right
+
+        def selected(value: Optional[str]) -> None:
+            if not value:
+                pane.table.focus()
+                return
+            self.set_active(side)
+            if pane.navigate_to_path(value):
+                self.record_recent_folder(pane.current_path)
+                pane.table.focus()
+            else:
+                self.remove_recent_folder(value)
+
+        anchor_right: int | None = None
+        anchor_top: int | None = None
+        try:
+            button = self.query_one(f"#{side}_recent_folders")
+            region = button.region
+            if region.width > 0 and region.height > 0:
+                anchor_right = region.right
+                anchor_top = region.bottom
+        except Exception:
+            pass
+
+        self.push_screen(
+            RecentFolderScreen(
+                folders,
+                str(pane.current_path),
+                side,
+                anchor_right=anchor_right,
+                anchor_top=anchor_top,
+            ),
+            selected,
+        )
+
+    def action_recent_folders(self) -> None:
+        """Show recent folders for the currently active pane."""
+        self._show_recent_folders(self.active_side)
 
     def action_rename(self) -> None:
         """Use the batch tool automatically when more than one item is selected."""
@@ -766,13 +837,210 @@ class BaseApp(AIShellApp):
             summary += f", {result.skipped:,} skipped"
         if result.errors:
             summary += f", {len(result.errors):,} error(s)"
+        if result.access_denied_items:
+            summary += (
+                f", {len(result.access_denied_items):,} require "
+                "Administrator permission"
+            )
         if result.cancelled:
             summary += " (cancelled)"
         self.set_status(summary)
+
+        if (
+            result.operation == "delete"
+            and result.access_denied_items
+            and os.name == "nt"
+        ):
+            self._prompt_elevated_delete_retry(source_side, result)
+            return
+
         if result.errors:
             self.notify(
                 "\n".join(result.errors[:5]),
                 title=f"{result.operation.title()} errors",
+            )
+        self._start_next_queued_operation()
+
+    def _prompt_elevated_delete_retry(
+        self,
+        source_side: str,
+        result: FileOperationResult,
+    ) -> None:
+        denied = tuple(result.access_denied_items)
+        if not denied:
+            self._start_next_queued_operation()
+            return
+
+        parent = denied[0].parent
+        same_parent = all(path.parent == parent for path in denied)
+        location = str(parent) if same_parent else "multiple protected locations"
+        message = (
+            f"Windows denied access to {len(denied):,} selected item(s).\n"
+            "Administrator permission is required to delete them.\n\n"
+            f"Location: {location}\n\n"
+            "Retry only these protected item(s) as Administrator?\n"
+            "Windows will show a UAC confirmation in front of mDIR. "
+            "The same Recycle Bin and 10 GB delete policy will be preserved."
+        )
+
+        def decided(ok: bool) -> None:
+            if not ok:
+                status = (
+                    f"Delete: {result.completed:,} completed; "
+                    f"{len(denied):,} not deleted "
+                    "(Administrator permission required)"
+                )
+                self.set_status(status)
+                messages = list(result.errors[:4])
+                messages.append(
+                    f"{len(denied):,} item(s) were not deleted because "
+                    "Administrator permission was not granted."
+                )
+                self.notify(
+                    "\n".join(messages),
+                    title="Administrator permission required",
+                )
+                self._start_next_queued_operation()
+                return
+            self._start_elevated_delete_retry(source_side, denied, result)
+
+        self.push_screen(
+            self.CONFIRM_SCREEN(
+                message,
+                title="Administrator permission required",
+                compact=True,
+                yes_label="Continue (Admin)",
+                cancel_label="Cancel",
+            ),
+            decided,
+        )
+
+    def _start_elevated_delete_retry(
+        self,
+        source_side: str,
+        items: tuple[Path, ...],
+        prior_result: FileOperationResult,
+    ) -> None:
+        self._file_operation_busy = True
+        screen = ElevatedDeleteProgressScreen(len(items))
+        self._elevated_delete_screen = screen
+        self.push_screen(screen)
+        self.set_status(
+            f"Waiting for Administrator permission: {len(items):,} item(s)..."
+        )
+        owner_hwnd = int(getattr(self, "_terminal_window_handle", 0) or 0)
+        screen.call_after_refresh(
+            self._run_elevated_delete_in_background,
+            source_side,
+            items,
+            prior_result,
+            owner_hwnd,
+        )
+
+    @work(thread=True, group="elevated-delete", exit_on_error=False)
+    def _run_elevated_delete_in_background(
+        self,
+        source_side: str,
+        items: tuple[Path, ...],
+        prior_result: FileOperationResult,
+        owner_hwnd: int,
+    ) -> None:
+        elevated_result: FileOperationResult | None = None
+        error: str | None = None
+        uac_cancelled = False
+        try:
+            elevated_result = run_elevated_delete(
+                items,
+                permanent_items=prior_result.access_denied_permanent_items,
+                owner_hwnd=owner_hwnd,
+            )
+        except ElevationCancelled:
+            uac_cancelled = True
+        except Exception as exc:
+            error = str(exc)
+        self.call_from_thread(
+            self._finish_elevated_delete_retry,
+            source_side,
+            prior_result,
+            elevated_result,
+            error,
+            uac_cancelled,
+        )
+
+    def _finish_elevated_delete_retry(
+        self,
+        source_side: str,
+        prior_result: FileOperationResult,
+        elevated_result: FileOperationResult | None,
+        error: str | None,
+        uac_cancelled: bool,
+    ) -> None:
+        screen = self._elevated_delete_screen
+        self._elevated_delete_screen = None
+        self._file_operation_busy = False
+        if screen is not None and screen.is_mounted:
+            screen.dismiss(None)
+
+        source = self.left if source_side == "left" else self.right
+        target = self.right if source_side == "left" else self.left
+        source.refresh_listing()
+        if target.current_path == source.current_path:
+            target.refresh_listing()
+
+        denied_count = len(prior_result.access_denied_items)
+        if uac_cancelled:
+            self.set_status(
+                f"Delete: {prior_result.completed:,} completed; "
+                f"Administrator retry cancelled for {denied_count:,} item(s)."
+            )
+            self.notify(
+                "Windows Administrator permission was cancelled. "
+                f"{denied_count:,} protected item(s) were not deleted.",
+                title="Administrator retry cancelled",
+            )
+            self._start_next_queued_operation()
+            return
+
+        if error or elevated_result is None:
+            message = error or "Unknown Administrator delete error"
+            self.set_status(
+                f"Administrator delete failed: {message}"
+            )
+            self.notify(message, title="Administrator delete failed")
+            self._start_next_queued_operation()
+            return
+
+        completed = prior_result.completed + elevated_result.completed
+        recycled = prior_result.recycled + elevated_result.recycled
+        permanent = (
+            prior_result.permanently_deleted
+            + elevated_result.permanently_deleted
+        )
+        errors = list(prior_result.errors) + list(elevated_result.errors)
+        if elevated_result.access_denied_items:
+            errors.extend(
+                f"{path.name}: Access is still denied even with "
+                "Administrator permission"
+                for path in elevated_result.access_denied_items
+            )
+
+        summary = (
+            f"Delete: {completed:,} completed "
+            f"({recycled:,} recycled, {permanent:,} permanently deleted)"
+        )
+        if errors:
+            summary += f", {len(errors):,} error(s)"
+        self.set_status(summary)
+        if errors:
+            self.notify(
+                "\n".join(errors[:5]),
+                title="Administrator delete errors",
+            )
+        else:
+            self.notify(
+                f"Administrator permission granted. "
+                f"{elevated_result.completed:,} protected item(s) deleted.",
+                title="Administrator delete completed",
             )
         self._start_next_queued_operation()
 

@@ -30,6 +30,9 @@ $BinRoot = Join-Path $InstallRoot "bin"
 $IconSource = Join-Path $PSScriptRoot "mdir\assets\mdir.ico"
 $InstalledIcon = Join-Path $InstallRoot "mdir.ico"
 $VersionFile = Join-Path $PSScriptRoot "mdir\__init__.py"
+$TerminalProfileTool = Join-Path $PSScriptRoot "tools\windows-terminal\mdir_profile.py"
+$TerminalFragmentRoot = Join-Path $env:LOCALAPPDATA "Microsoft\Windows Terminal\Fragments\mDIR"
+$TerminalFragment = Join-Path $TerminalFragmentRoot "mdir.json"
 
 $VersionSource = Get-Content -LiteralPath $VersionFile -Raw
 if ($VersionSource -notmatch '__version__\s*=\s*"([^"]+)"') {
@@ -58,6 +61,26 @@ if (Test-Path -LiteralPath $IconSource) {
     Copy-Item -LiteralPath $IconSource -Destination $InstalledIcon -Force
 }
 
+# Install an isolated Windows Terminal profile for the desktop shortcut.
+# The far-right strip seen in Windows Terminal is host scrollbar/padding space,
+# outside Textual's drawable grid, so CSS inside mDIR cannot reclaim it.
+if (Test-Path -LiteralPath $TerminalProfileTool) {
+    New-Item -ItemType Directory -Path $TerminalFragmentRoot -Force | Out-Null
+    $ProfileArgs = @(
+        $TerminalProfileTool,
+        "--output", $TerminalFragment,
+        "--python", $VenvPython,
+        "--starting-directory", [Environment]::GetFolderPath("UserProfile")
+    )
+    if (Test-Path -LiteralPath $InstalledIcon) {
+        $ProfileArgs += @("--icon", $InstalledIcon)
+    }
+    & $Python @ProfileArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Warning "Could not install the dedicated Windows Terminal profile. mDIR will still run, but the terminal host may keep its own right-side gutter."
+    }
+}
+
 $Launcher = "@echo off`r`n`"$VenvPython`" -P -m mdir %*`r`n"
 Set-Content -LiteralPath (Join-Path $BinRoot "m.cmd") -Value $Launcher -Encoding Ascii
 Set-Content -LiteralPath (Join-Path $BinRoot "mdir.cmd") -Value $Launcher -Encoding Ascii
@@ -76,8 +99,15 @@ $Desktop = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $Desktop "mDIR.lnk"
 $Shell = New-Object -ComObject WScript.Shell
 $Shortcut = $Shell.CreateShortcut($ShortcutPath)
-$Shortcut.TargetPath = $VenvPython
-$Shortcut.Arguments = "-P -m mdir"
+$Wt = Get-Command wt.exe -ErrorAction SilentlyContinue
+if ($Wt -and (Test-Path -LiteralPath $TerminalFragment)) {
+    # Use only the mDIR profile. Other Windows Terminal profiles/settings are untouched.
+    $Shortcut.TargetPath = $Wt.Source
+    $Shortcut.Arguments = '-w -1 new-tab -p "mDIR"'
+} else {
+    $Shortcut.TargetPath = $VenvPython
+    $Shortcut.Arguments = "-P -m mdir"
+}
 $Shortcut.WorkingDirectory = [Environment]::GetFolderPath("UserProfile")
 if (Test-Path -LiteralPath $InstalledIcon) {
     $Shortcut.IconLocation = "$InstalledIcon,0"
@@ -97,5 +127,9 @@ if ($Version -ne $ExpectedVersion) {
 Write-Host ""
 Write-Host "mDIR $Version installed successfully." -ForegroundColor Green
 Write-Host "Desktop shortcut: $ShortcutPath"
+if ($Wt -and (Test-Path -LiteralPath $TerminalFragment)) {
+    Write-Host "Windows Terminal profile: mDIR (scrollbar hidden, padding 0)"
+}
 Write-Host "Commands: m, mdir"
+Write-Host "Note: commands typed inside an existing terminal inherit that terminal profile's scrollbar/padding."
 Write-Host "If an open terminal does not recognize m, close and reopen it once."

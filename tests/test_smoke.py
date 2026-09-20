@@ -1257,9 +1257,15 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(all(can_preview(path) for path in (
                 markdown, csv_path, docx, pptx,
             )))
-            with patch(
-                "mdir.preview.document._libreoffice_executable",
-                return_value=None,
+            with (
+                patch(
+                    "mdir.preview.document._libreoffice_executable",
+                    return_value=None,
+                ),
+                patch(
+                    "mdir.preview.document._render_pdf_converted_office",
+                    return_value=None,
+                ),
             ):
                 expected = ((markdown, "Markdown"), (csv_path, "CSV"),
                             (docx, "Word"), (pptx, "PowerPoint"))
@@ -1272,25 +1278,46 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     finally:
                         source.close()
 
-    def test_legacy_doc_uses_installed_microsoft_word_preview(self) -> None:
+    def test_powerpoint_uses_cached_pdf_preview_first(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "legacy.doc"
-            path.write_bytes(b"legacy word placeholder")
-            expected = (object(), "Word", "Microsoft Word layout")
+            path = Path(directory) / "deck.pptx"
+            path.write_bytes(b"presentation placeholder")
+            expected = (object(), "PowerPoint", "PDF preview | Microsoft PowerPoint")
             with (
                 patch.object(
                     document_preview,
-                    "_render_office_with_microsoft_office",
+                    "_render_pdf_converted_office",
                     return_value=expected,
-                ) as microsoft_renderer,
+                ) as pdf_renderer,
                 patch.object(
                     document_preview,
-                    "_render_office_with_libreoffice",
-                ) as libreoffice_renderer,
+                    "_render_office_with_microsoft_office",
+                ) as legacy_renderer,
             ):
                 self.assertIs(document_preview._render_office(path), expected)
-            microsoft_renderer.assert_called_once_with(path)
-            libreoffice_renderer.assert_not_called()
+            pdf_renderer.assert_called_once_with(path, kind="PowerPoint")
+            legacy_renderer.assert_not_called()
+
+    def test_legacy_doc_uses_cached_pdf_preview_first(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "legacy.doc"
+            path.write_bytes(b"legacy word placeholder")
+            expected = (object(), "Word", "PDF preview | Microsoft Word")
+            with (
+                patch.object(
+                    document_preview,
+                    "_render_pdf_converted_office",
+                    return_value=expected,
+                ) as pdf_renderer,
+                patch.object(
+                    document_preview,
+                    "_render_office_with_microsoft_office",
+                ) as legacy_renderer,
+            ):
+                self.assertIs(document_preview._render_office(path), expected)
+            pdf_renderer.assert_called_once_with(path, kind="Word")
+            legacy_renderer.assert_not_called()
+
 
     def test_microsoft_word_preview_runs_hidden_powershell_conversion(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

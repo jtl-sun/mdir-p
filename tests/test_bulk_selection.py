@@ -3,8 +3,10 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from textual.content import Content
 from textual.widgets import Button, Static
 from mdir.app import MDirApp
 from mdir.file_pane import CachedEntry
@@ -61,6 +63,10 @@ class BulkSelectionTests(unittest.IsolatedAsyncioTestCase):
                 th = self.app.query_one(f'#{side}_thumbnail')
                 buttons = [self.app.query_one(f'#{side}_select_{mode}', Button) for mode in ('all', 'none', 'invert')]
                 self.assertEqual([str(b.label) for b in buttons], ['*a', '*-', '**'])
+                self.assertEqual(
+                    buttons[2].label,
+                    Content.from_markup('[#e5a000]*[/][#eeeeee]*[/]'),
+                )
                 self.assertGreaterEqual(buttons[0].region.x - th.region.right, 2)
                 self.assertEqual(buttons[-1].region.right, bar.region.right)
                 self.assertTrue(all(b.region.y == th.region.y for b in buttons))
@@ -168,3 +174,154 @@ class BulkSelectionTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn('Files: 5,000 / 5,000', str(pane.query_one('.pane_summary', Static).render()))
             await self.click('left', 'invert')
             self.assertFalse(pane.marked)
+
+    async def test_repeated_shift_page_selection_repaints_only_changed_rows(self):
+        pane = self.app.left
+        entries = [
+            CachedEntry(
+                pane.current_path / f'perf-{i:05}.txt',
+                False,
+                i,
+                0,
+            )
+            for i in range(5000)
+        ]
+        pane._apply_scanned_entries(entries, pane.current_path)
+        pane._render_cached_rows()
+        start_row = pane.row_by_path[entries[10].path]
+        pane.table.move_cursor(row=start_row, column=0)
+        pane.reset_shift_selection_anchor()
+
+        with (
+            patch.object(
+                pane,
+                'refresh_listing',
+                side_effect=AssertionError('Unexpected rescan'),
+            ),
+            patch.object(
+                pane,
+                '_update_mark_cell',
+                wraps=pane._update_mark_cell,
+            ) as repaint,
+        ):
+            pane.shift_select(40)
+            self.assertEqual(len(pane.marked), 41)
+            self.assertLessEqual(repaint.call_count, 41)
+
+            repaint.reset_mock()
+            pane.shift_select(40)
+            self.assertEqual(len(pane.marked), 81)
+            self.assertLessEqual(repaint.call_count, 40)
+
+            repaint.reset_mock()
+            pane.shift_select(-20)
+            self.assertEqual(len(pane.marked), 61)
+            self.assertLessEqual(repaint.call_count, 20)
+
+
+    async def test_right_drag_tracks_captured_pointer_motion_and_accelerates_below_pane(self):
+        pane = self.app.left
+        entries = [
+            CachedEntry(
+                pane.current_path / f'pointer-{i:03}.txt',
+                False,
+                i,
+                0,
+            )
+            for i in range(200)
+        ]
+        pane._apply_scanned_entries(entries, pane.current_path)
+        pane._render_cached_rows()
+        table = pane.table
+        start = pane.row_by_path[entries[2].path]
+        table._right_dragging = True
+        table._drag_rows_seen.clear()
+        table._right_drag_last_row = None
+        table._toggle_drag_range_to(start)
+
+        scroll_y = int(table.scroll_offset.y)
+        target = min(table.row_count - 1, scroll_y + 8)
+        local_y = int(table.header_height) + target - scroll_y
+        local_x = 10
+        event = SimpleNamespace(
+            screen_x=int(table.region.x) + local_x,
+            screen_y=int(table.region.y) + local_y,
+            x=local_x,
+            y=local_y,
+            # Deliberately stale metadata: captured B3-Motion must follow
+            # geometry rather than this old row.
+            style=SimpleNamespace(meta={'row': start}),
+            stop=Mock(),
+        )
+        # MouseMove only publishes the newest pointer sample. Selection work
+        # is intentionally coalesced into the persistent drag-controller tick
+        # so high-rate B3-Motion bursts cannot starve timers/repaints.
+        with patch.object(
+            table,
+            '_toggle_drag_range_to',
+            wraps=table._toggle_drag_range_to,
+        ) as toggle_range:
+            for _ in range(25):
+                await table.on_mouse_move(event)
+            toggle_range.assert_not_called()
+
+        self.assertEqual(table._right_drag_last_row, start)
+        self.assertEqual(table._right_drag_pointer_x, local_x)
+        self.assertEqual(table._right_drag_pointer_y, local_y)
+
+        with patch.object(
+            table,
+            '_sample_native_right_drag_pointer',
+            return_value=(local_x, local_y, True),
+        ):
+            table._right_drag_auto_scroll_tick()
+
+        self.assertEqual(table._right_drag_last_row, target)
+        self.assertIn(pane.entries[target], pane.marked)
+
+        table._update_right_drag_auto_scroll(int(table.size.height) - 1)
+        near_step = table._right_drag_scroll_step
+        table._update_right_drag_auto_scroll(int(table.size.height) + 18)
+        far_step = table._right_drag_scroll_step
+        self.assertEqual(table._right_drag_scroll_direction, 1)
+        self.assertGreater(far_step, near_step)
+
+        table.end_right_drag()
+
+    async def test_list_right_drag_batches_crossed_rows(self):
+        pane = self.app.left
+        entries = [
+            CachedEntry(
+                pane.current_path / f'drag-{i:03}.txt',
+                False,
+                i,
+                0,
+            )
+            for i in range(100)
+        ]
+        pane._apply_scanned_entries(entries, pane.current_path)
+        pane._render_cached_rows()
+        table = pane.table
+        start = pane.row_by_path[entries[5].path]
+        end = pane.row_by_path[entries[35].path]
+        table._drag_rows_seen.clear()
+        table._right_drag_last_row = None
+
+        with patch.object(
+            pane,
+            'toggle_mark_paths',
+            wraps=pane.toggle_mark_paths,
+        ) as batch_toggle:
+            table._toggle_drag_range_to(start)
+            batch_toggle.reset_mock()
+            table._toggle_drag_range_to(end)
+            batch_toggle.assert_called_once()
+            toggled = tuple(batch_toggle.call_args.args[0])
+            self.assertEqual(len(toggled), end - start)
+
+        expected = {
+            path
+            for path in pane.entries[start : end + 1]
+            if path is not None
+        }
+        self.assertEqual(pane.marked, expected)

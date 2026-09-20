@@ -1,4 +1,127 @@
+## 2.26.29
+
+## 2.26.30
+
+Reviewed 2.26.29; corrected administrator-delete cancellation and partial results, selected-link path handling, queued Office-preview cancellation, and late startup dialog focus. Added regression coverage and Windows test isolation. See docs/REVIEW-2.26.30.md.
+
+
+- Recent Folders now behaves like a normal desktop drop-down: clicking anywhere outside the list closes it immediately and the same click is replayed to the underlying mDIR control, so no second click is required.
+- Clicking the same pane's `▼` button while the list is open now simply closes the list instead of reopening it.
+- Preserved one-click folder selection, shared MRU history, per-pane navigation, and `Alt+Down`.
+
 # Changelog
+
+## 2.26.28
+
+- Replaced the separate `RF` toolbar buttons with compact `▼` Recent Folders buttons embedded at the far right of each pane's directory path bar.
+- A single click now opens the recent-folder list immediately; the picker no longer requires a second click to expand a Select control.
+- The Recent Folders picker is now a drop-down-style `OptionList` anchored under the clicked pane's path-bar button and supports single-click selection plus Up/Down/Enter keyboard navigation.
+- The shared MRU history and per-pane navigation behavior from 2.26.27 are preserved: choosing a path changes only the pane whose `▼` button was used.
+- `Alt+Down` remains available and opens the same drop-down for the active pane.
+- Literal Windows paths are rendered without markup interpretation, and returning from the picker restores focus to the file table.
+
+
+## 2.26.27
+
+- Added an `RF` (Recent Folders) button to both the left and right pane toolbars.
+- Both buttons open the same bounded MRU folder history, but the selected path is opened only in the pane whose button was pressed.
+- Added `Alt+Down` to open Recent Folders for the active pane.
+- Recent folders persist per user in `recent_folders.json` and are written atomically.
+- The MRU list records actual successful directory transitions rather than ordinary rescans, so background refreshes do not reorder history.
+- Missing/stale paths are removed from the list when an attempted reopen fails.
+
+
+## 2.26.26
+
+- Attach the Windows UAC/elevation consent UI to mDIR's actual Windows Terminal top-level HWND through `BIND_OPTS3.hwnd`, so the permission prompt opens in front of mDIR instead of only flashing on the taskbar.
+- Normalise the tracked terminal handle to its root owner window and restore/foreground it immediately before requesting the native elevated `IFileOperation` broker.
+- Forward the owner HWND from the Textual delete flow into the background STA elevation worker without elevating the main mDIR/Python process.
+- Preserve the 2.26.25 native COM delete/recycle implementation, Recycle Bin policy, 10 GiB permanent-delete policy, UAC-cancel behavior, and post-operation verification.
+- Added regression coverage that verifies the owner HWND is accepted and forwarded through the elevation path.
+
+## 2.26.25
+
+- Replaced the 2.26.24 PowerShell-based Administrator delete broker with Windows' native elevated `IFileOperation` COM broker. This avoids environments where `powershell.exe` itself is blocked by Windows security policy.
+- Administrator retry now activates Microsoft's FileOperation COM local server through the standard `Elevation:Administrator!new:{CLSID_FileOperation}` moniker and lets Windows display UAC directly.
+- Protected files/folders that use the normal mDIR delete policy are sent to the Recycle Bin with `FOFX_RECYCLEONDELETE`; only items already classified by mDIR as 10 GiB+ individual files are permanently deleted.
+- The main mDIR/Python process remains non-elevated and no privileged PowerShell script, temporary command file, or user-writable elevated Python code is executed.
+- Preserve the existing confirmation flow, UAC-cancel handling, partial-result reporting, and post-operation existence verification.
+- Added regression coverage for native COM elevation identifiers/flags, 16-byte GUID layout, recycle/permanent policy partitioning, and confirmation that the Administrator path no longer contains PowerShell.
+
+## 2.26.24
+
+- Added Total Commander-style Administrator retry for protected deletes. mDIR first attempts the normal safe delete; only access-denied items are offered for UAC elevation.
+- Added a short-lived UAC-elevated Windows PowerShell broker that retries only the protected items and preserves the existing Recycle Bin / 10 GiB permanent-delete policy instead of relaunching the whole mDIR process as Administrator.
+- Added a dedicated confirmation dialog before elevation and a waiting modal while Windows UAC / the elevated helper is active. Cancelling UAC leaves the protected items untouched.
+- Correctly interpret `SHFileOperationW` shell code `0x78` as source access denied / Administrator permission required instead of displaying the misleading text `Windows error 120`.
+- Keep ordinary delete errors separate from elevation candidates and report any items that remain denied even after Administrator approval.
+- Hash the temporary privileged-delete request and verify it inside the elevated Windows PowerShell broker before processing. The broker does not import Python/mDIR code from the user-writable installation and writes no privileged result file.
+- Added regression coverage for access-denied classification, per-item recycle/permanent policy encoding, pre-delete SHA-256 verification, and confirmation that the elevated broker never imports user-writable mDIR/Python code.
+
+## 2.26.23
+
+- Extended the cached Office-to-PDF Preview pipeline to PowerPoint `PPT/PPTX`.
+- Added a private persistent Microsoft PowerPoint COM worker using `DispatchEx`; presentations open read-only and without a document window, then export through PowerPoint's own PDF renderer.
+- PowerPoint now shares the same path/size/mtime PDF cache, cancellation, 120 ms uncached-selection coalescing, atomic publishing, cache pruning and LibreOffice fallback used by Excel/Word.
+- Cached PowerPoint previews bypass Office startup and render immediately through mDIR's existing PDF/PyMuPDF path.
+- Retained the previous PPTX text extraction only as a final compatibility fallback when no PDF converter is available; legacy PPT still requires PowerPoint or LibreOffice if conversion fails.
+- Added regression coverage for PowerPoint cache publishing/reuse and PDF-first routing.
+
+## 2.26.22
+
+- Replaced the primary Excel Preview renderer with an xViewer-inspired **Office -> cached PDF -> mDIR PDF renderer** pipeline for XLS/XLSX/XLSM/XLTX/XLTM.
+- Added the same PDF-first pipeline for Word DOC/DOCX, preserving the real Microsoft Word page layout instead of drawing a text-only approximation.
+- Added a private persistent Microsoft Office COM worker using `DispatchEx`; Excel and Word stay warm between previews without attaching to the user's interactive Office sessions.
+- Added persistent PDF caching keyed by resolved path, file size, modification time and cache version. Unchanged documents skip Office conversion on repeat Preview.
+- Cancel superseded Office conversions as soon as the Preview selection changes, preventing an old workbook/document from blocking the newly selected file.
+- Coalesce uncached native Office Preview requests for 120 ms while the cursor is moving, while cached PDFs start almost immediately.
+- Retained xViewer's bounded Excel page-setup retry and a private headless LibreOffice fallback when Microsoft Office is absent or fails.
+- Added bounded cache pruning (900 PDFs / 3 GiB), PDF integrity checks, atomic cache publishing and rotating conversion diagnostics under LocalAppData.
+- Kept the previous Excel grid and DOCX text renderers only as compatibility fallbacks when no PDF converter is available; PowerPoint behavior is unchanged.
+- Added `pywin32` to the Windows Preview dependencies and new regression coverage for cache invalidation, cache hits, first-render publishing and cancellation.
+
+## 2.26.21
+
+- Re-identified the far-right blank strip as Windows Terminal host UI space (scrollbar reservation plus profile padding), not a Textual `Screen`/`#panes` width defect.
+- Added a dedicated **mDIR** Windows Terminal profile as an official per-user JSON fragment, with `scrollbarState: hidden` and `padding: 0`, so mDIR can use the complete terminal viewport without changing other Terminal profiles.
+- Updated the desktop shortcut to launch a new Windows Terminal window with the dedicated `mDIR` profile when `wt.exe` is available; classic/direct Python launch remains the fallback.
+- Kept the `m` / `mdir` command aliases unchanged so they can still run inside an existing terminal; those commands intentionally inherit that terminal profile's own scrollbar/padding settings.
+- Added regression coverage for the generated profile fragment and installer routing.
+
+## 2.26.20
+
+- Removed the unnecessary far-right root Screen scrollbar gutter by making the fixed mDIR application Screen non-scrollable.
+- Explicitly keep `#panes` at full width so the two pane wrappers use the reclaimed terminal column.
+- Preserved each FilePane/DataTable's own vertical scrolling; only the outer application-level scrollbar reservation is removed.
+- Added regression coverage for the root-screen layout rule.
+
+## 2.26.19
+
+- Reworked list-view right-button drag into a single persistent controller: high-rate MouseMove/B3-Motion events now only publish the latest pointer coordinates and never repaint selection directly.
+- The 30 ms drag controller is now the only path that advances selection, samples the native Windows pointer, scrolls at the pane edge, and applies distance-based acceleration. This prevents motion-event floods from starving the timer and causing 5-10 second pauses while the pointer is moving.
+- Preserved one-toggle-per-row semantics, skipped-row filling, left/right pane independence, native right-button release detection, and distance-based top/bottom acceleration.
+- Added regression coverage proving repeated MouseMove events do not perform selection work and that the controller tick consumes the latest pointer position.
+
+## 2.26.18
+
+- Keep right-button list selection active while the pointer moves by tracking the captured pointer from geometry instead of relying on potentially stale DataTable row metadata.
+- Poll the physical Windows pointer during an active right-drag so selection continues when Windows Terminal coalesces or omits B3-Motion events, including while the pointer is below the terminal grid.
+- Accelerate edge scrolling according to pointer distance beyond the top/bottom pane boundary, capped at eight rows per 35 ms tick for control.
+- Pause scrolling when the pointer leaves the active pane horizontally, resume when it returns, and detect right-button release through Win32 to avoid a stuck drag if the terminal misses MouseUp.
+- Added regression coverage for captured-pointer motion and distance-based edge-scroll acceleration.
+
+## 2.26.17
+
+- Accelerated large-directory range selection by updating only rows that enter or leave the active Shift range instead of rebuilding/copying the full marked set on every repeated Shift+PageUp/PageDown.
+- Batch list-view right-drag selection so cursor movement, row painting, detail text and selection totals update once per mouse event instead of once per crossed row.
+- Increased right-drag edge-scroll responsiveness from a 55 ms to a 35 ms row interval while preserving one-row continuous selection semantics.
+- Added regression coverage for incremental repeated page selection and batched list right-drag selection.
+
+## 2.26.16
+
+- Changed each pane's **Invert Selection** button from a red `**` to a two-tone symbol: the first `*` is yellow and the second `*` is white.
+- Preserved independent left/right pane invert-selection behavior; only the button presentation changed.
+- Added regression coverage for the two-tone invert label and pane independence.
 
 ## 2.26.15
 

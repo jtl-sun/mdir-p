@@ -37,3 +37,17 @@ per-item hiding option is available in the documented Terminal settings.
 References:
 - https://learn.microsoft.com/windows/terminal/dynamic-profiles
 - https://learn.microsoft.com/windows/terminal/customize-settings/appearance
+
+## mDIR application profile
+
+mDIR 2.26.21+ also ships `mdir_profile.py`. The Windows installer uses it to
+write a per-user Windows Terminal JSON fragment at:
+
+`%LOCALAPPDATA%\Microsoft\Windows Terminal\Fragments\mDIR\mdir.json`
+
+The fragment adds an isolated profile named `mDIR` with the host scrollbar
+hidden and terminal padding set to zero. This avoids the far-right host gutter
+without editing `settings.json` or changing PowerShell, Command Prompt, WSL, or
+other profiles. The desktop shortcut uses this profile when `wt.exe` is
+available. The `m` and `mdir` commands still run in the current terminal profile
+and inherit that profile's appearance.
