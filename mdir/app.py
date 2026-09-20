@@ -12,6 +12,7 @@ from typing import Optional, TYPE_CHECKING
 
 from textual import events, on
 from textual.app import ComposeResult
+from textual.content import Content
 from textual.binding import Binding
 from textual.containers import Horizontal, HorizontalScroll, Vertical
 from textual.timer import Timer
@@ -106,6 +107,18 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
     TITLE = f"MDIR-P {VERSION}"
     SUB_TITLE = "Dual Pane File Manager"
     CSS = FastFileManagerApp.CSS + """
+    /* The main application screen is a fixed dashboard, not a scrollable
+       document. Prevent an internal Textual root scrollbar; Windows Terminal
+       host scrollbar/padding is outside this renderable grid and is handled by
+       the dedicated mDIR Terminal profile installed with the desktop shortcut. */
+    Screen {
+        overflow: hidden;
+    }
+
+    #panes {
+        width: 100%;
+    }
+
     .thumbnail-toggle {
         min-width: 4;
         width: 4;
@@ -135,7 +148,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
     }
     .drive-bar .selection-actions .select-all { color: #e5a000; }
     .drive-bar .selection-actions .select-none { color: #eeeeee; }
-    .drive-bar .selection-actions .select-invert { color: #ff5555; }
+    .drive-bar .selection-actions .select-invert { color: #eeeeee; }
     #document_preview {
         display: none;
     }
@@ -205,6 +218,14 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             show=True,
             priority=True,
             id="mdir.preview",
+        ),
+        Binding(
+            "alt+down",
+            "recent_folders",
+            "Recent folders",
+            show=False,
+            priority=True,
+            id="mdir.recent_folders",
         ),
     ] + THUMBNAIL_BINDINGS
 
@@ -351,7 +372,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             for mode, symbol, description in (
                 ('all', '*a', 'Select All'),
                 ('none', '*-', 'Deselect All'),
-                ('invert', '**', 'Invert Selection'),
+                ('invert', Content.from_markup('[#e5a000]*[/][#eeeeee]*[/]'), 'Invert Selection'),
             ):
                 yield Button(symbol, id=f'{side}_select_{mode}',
                              classes=f'selection-button select-{mode}',
@@ -381,6 +402,23 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
     @property
     def document_preview(self) -> DocumentPreviewPanel:
         return self.query_one("#document_preview", DocumentPreviewPanel)
+
+
+    @on(Button.Pressed, '.recent-folder-path-button')
+    def recent_folder_button_pressed(self, event: Button.Pressed) -> None:
+        event.stop()
+        if len(self.screen_stack) != 1:
+            return
+        side = 'left' if event.button.id == 'left_recent_folders' else 'right'
+        if side == 'right' and self.ai_mode:
+            self.query_one('#ai_panel').focus_prompt()
+            self.set_status('Use F12 to restore the right file pane before opening recent folders.')
+            return
+        if side == 'right' and self.preview_mode:
+            self._hide_document_preview(restore_right_focus=False)
+            self.preview_enabled = False
+        self.set_active(side)
+        self._show_recent_folders(side)
 
     @on(Button.Pressed, '.thumbnail-toggle')
     def thumbnail_button_pressed(self, event: Button.Pressed) -> None:

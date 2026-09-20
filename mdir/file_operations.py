@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import ctypes
+import errno
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -30,6 +31,8 @@ class FileOperationResult:
     completed_names: list[str] = field(default_factory=list)
     completed_pairs: list[tuple[Path, Path]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    access_denied_items: list[Path] = field(default_factory=list)
+    access_denied_permanent_items: list[Path] = field(default_factory=list)
 
 
 def _same_path(first: Path, second: Path) -> bool:
@@ -161,6 +164,54 @@ def should_permanently_delete(*, is_directory: bool, size: int) -> bool:
     return not is_directory and size >= PERMANENT_DELETE_THRESHOLD_BYTES
 
 
+class RecycleBinError(OSError):
+    """Failure returned by the legacy Windows Shell recycle operation."""
+
+    def __init__(self, code: int, message: str) -> None:
+        super().__init__(message)
+        self.code = int(code)
+
+
+_SHFILEOP_ERROR_MESSAGES = {
+    0x71: "Source and destination refer to the same file",
+    0x72: "Multiple source paths were supplied for one destination",
+    0x73: "Rename operation specified multiple source files",
+    0x74: "Source is a root directory and cannot be moved or renamed",
+    0x75: "Operation was cancelled",
+    0x76: "Destination is inside the source tree",
+    0x78: "Administrator permission is required to access the source",
+    0x79: "Path is too deep",
+    0x7C: "Source or destination path is invalid",
+    0x81: "File name is too long",
+    0xB7: "Destination is read-only",
+}
+
+
+def recycle_bin_error_message(code: int, *, aborted: bool = False) -> str:
+    """Translate SHFileOperation return codes without treating them as Win32 errors."""
+    if aborted and not code:
+        return "Recycle Bin operation was cancelled"
+    detail = _SHFILEOP_ERROR_MESSAGES.get(int(code))
+    if detail:
+        return detail
+    return f"Recycle Bin operation failed (shell code 0x{int(code):02X})"
+
+
+def is_access_denied_error(exc: BaseException) -> bool:
+    """Return True when a delete failure can reasonably be retried with UAC."""
+    if isinstance(exc, RecycleBinError):
+        return exc.code == 0x78
+    if isinstance(exc, PermissionError):
+        return True
+    if isinstance(exc, OSError):
+        winerror = getattr(exc, "winerror", None)
+        if winerror in {5, 1314}:  # ACCESS_DENIED / PRIVILEGE_NOT_HELD
+            return True
+        if getattr(exc, "errno", None) in {errno.EACCES, errno.EPERM}:
+            return True
+    return False
+
+
 def send_to_recycle_bin(path: Path) -> None:
     """Move one Windows filesystem item to the Recycle Bin.
 
@@ -195,8 +246,14 @@ def send_to_recycle_bin(path: Path) -> None:
     operation.fFlags = 0x0040 | 0x0010 | 0x0004 | 0x0400
     result = ctypes.windll.shell32.SHFileOperationW(ctypes.byref(operation))
     if result or operation.fAnyOperationsAborted:
-        detail = f"Windows error {result}" if result else "operation aborted"
-        raise OSError(f"Could not move item to Recycle Bin ({detail})")
+        detail = recycle_bin_error_message(
+            int(result),
+            aborted=bool(operation.fAnyOperationsAborted),
+        )
+        raise RecycleBinError(
+            int(result),
+            f"Could not move item to Recycle Bin ({detail})",
+        )
 
 
 def run_file_operation(
@@ -233,14 +290,16 @@ def run_file_operation(
             break
 
         display_name = source.name
+        delete_permanently = False
         try:
             if operation == "delete":
                 is_directory = source.is_dir() and not source.is_symlink()
                 size = 0 if is_directory else int(source.stat().st_size)
-                if should_permanently_delete(
+                delete_permanently = should_permanently_delete(
                     is_directory=is_directory,
                     size=size,
-                ):
+                )
+                if delete_permanently:
                     source.unlink()
                     result.permanently_deleted += 1
                 else:
@@ -292,7 +351,12 @@ def run_file_operation(
             result.completed += 1
             result.completed_names.append(display_name)
         except Exception as exc:
-            result.errors.append(f"{source.name}: {exc}")
+            if operation == "delete" and is_access_denied_error(exc):
+                result.access_denied_items.append(source)
+                if delete_permanently:
+                    result.access_denied_permanent_items.append(source)
+            else:
+                result.errors.append(f"{source.name}: {exc}")
 
         if progress is not None:
             progress(index, result.total, display_name)

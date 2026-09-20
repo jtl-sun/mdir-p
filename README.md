@@ -32,8 +32,10 @@ manage files quickly and efficiently from the keyboard.
 ## Highlights
 
 - Fast dual-pane file management inspired by MDIR and Total Commander
+- Recent Folders (`▼`) drop-down at the far right of both directory path bars with a shared persistent MRU history; one click opens the list, clicking anywhere else closes it and immediately activates the clicked control, and `Alt+Down` opens it for the active pane
 - Responsive handling of folders containing 20,000 or more image files
 - Preview for images, PDF, Excel, Word, PowerPoint, CSV, text, and Markdown
+- Excel, Word, and PowerPoint Preview use a fast cached PDF pipeline for faithful Office layout
 - Mouse-wheel zoom and drag-to-pan in Preview
 - Integrated AI terminal with Codex, PowerShell, and Ollama providers
 - Copy, move, rename, delete, search, drive selection, and editable paths
@@ -63,7 +65,7 @@ manage files quickly and efficiently from the keyboard.
 1. Open the **latest Release** from the Download section above.
 2. Download the current stable `mDIR-P-<version>.zip` release asset.
 3. Extract the ZIP and open the extracted mDIR-P folder.
-4. Double-click **`INSTALL_MDIR.bat`**.
+4. Double-click **`INSTALL_MDIR.bat`**. The installer also creates an isolated Windows Terminal profile named **mDIR** for the desktop shortcut. That profile hides the Terminal host scrollbar and uses zero terminal padding so the dual panes can occupy the complete terminal viewport; no other Terminal profile is changed.
 
 Use **Code > Download ZIP** only when you intentionally want the current
 `main` development source rather than the latest published stable release.
@@ -300,7 +302,13 @@ before making any changes.
   size, and destination instead of listing every filename.
 - `F8` sends files smaller than 10 GB and folders to the Windows Recycle Bin.
   Individual files of 10 GB or larger are permanently deleted and are counted
-  separately in the confirmation dialog.
+  separately in the confirmation dialog. If Windows denies access to protected
+  items (for example under `Program Files`), mDIR offers to retry only those
+  items through the normal Windows UAC Administrator prompt. The retry uses
+  Windows' native elevated `IFileOperation` Shell broker (not PowerShell), and
+  the main mDIR process remains non-elevated. The elevation request is owned by
+  the mDIR Windows Terminal window so the UAC consent UI should open in front
+  of mDIR instead of remaining as a flashing taskbar item.
 - Cancel or `Esc` closes a Copy/Move/Delete progress window immediately. If a
   Windows filesystem call is already running, it finishes safely in the
   background, but no additional selected item is processed.
@@ -313,8 +321,9 @@ before making any changes.
   responsive even when more than 1,000 items are selected. The progress
   window updates in batches to avoid unnecessary screen redraws; press `Esc`
   or select **Cancel** to stop after the current top-level item.
-- `F8` permanently deletes only after a confirmation window. Windows Recycle
-  Bin is not used, so verify the selected names carefully.
+- Delete never silently converts a Recycle Bin failure into permanent deletion.
+  If Administrator retry is declined or UAC is cancelled, the protected items
+  stay in place and mDIR reports them as not deleted.
 - Click a column header to sort and click it again to reverse the order. Drag
   the visible column separator to resize it; widths are saved automatically.
 - Click any folder name in the green path bar to jump directly to that level.
@@ -404,18 +413,25 @@ prevented until the first one finishes.
 
 - `Ctrl+F3` opens Preview for common images, PDF, Excel, CSV, TXT, Markdown,
   JSON, XML, YAML, HTML, Word, and PowerPoint files.
-- DOCX and PPTX have a lightweight built-in text fallback. On Windows, mDIR
-  uses an installed Microsoft Word or PowerPoint application on demand to
-  preserve Office page and slide layout; macros are disabled and the original
-  file is opened read-only. LibreOffice remains the free fallback, including
-  for legacy DOC and PPT preview when Microsoft Office is unavailable.
+- Excel (`XLS/XLSX/XLSM/XLTX/XLTM`), Word (`DOC/DOCX`), and PowerPoint
+  (`PPT/PPTX`) Preview convert the original Office document to PDF first, then
+  render that PDF through mDIR's existing fast PDF renderer. Microsoft
+  Excel/Word/PowerPoint run in a private COM worker and stay warm between
+  previews; mDIR never attaches to the user's open Office session. Unchanged
+  documents reuse a persistent PDF cache keyed by path, size, and modification
+  time, so repeat previews are nearly immediate. Moving to another file cancels
+  a superseded Office conversion instead of waiting behind it. LibreOffice
+  remains the headless fallback. If no PDF converter is available, XLS/XLSX,
+  DOCX, and PPTX retain bounded compatibility views; legacy DOC/PPT require the
+  corresponding Microsoft Office application or LibreOffice.
 - Image and document preparation is bounded and runs in the background.
   Oversized images are downsampled before terminal rendering.
 - `F3` views supported text files up to 3 MiB. `F4` edits supported text files
   up to 8 MiB. Binary and unsupported document formats are refused rather
   than being loaded into memory as text.
 - The `.[preview]` installation command in this README installs Pillow,
-  PyMuPDF, openpyxl, and xlrd for the full Preview feature set.
+  PyMuPDF, openpyxl, xlrd, and pywin32 on Windows for the full Preview feature
+  set.
 
 ## Performance and Safety
 

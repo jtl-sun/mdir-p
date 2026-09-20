@@ -53,6 +53,15 @@ COLUMN_ORDER = ("name", "extension", "size", "modified")
 EXTENSION_GAP = "  "
 SIZE_MODIFIED_GAP = "  "
 
+# Right-button drag is driven by one persistent ~33 FPS controller while the
+# gesture is active. MouseMove events only publish the newest pointer position;
+# they never repaint rows directly. This prevents Windows Terminal motion-event
+# bursts from starving the selection/scroll timer. The controller also samples
+# the native Windows pointer and accelerates edge scrolling by distance.
+RIGHT_DRAG_SCROLL_INTERVAL = 0.030
+RIGHT_DRAG_ACCEL_CELLS = 3
+RIGHT_DRAG_MAX_SCROLL_STEP = 8
+
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"
 }
@@ -644,7 +653,11 @@ class MDirDataTable(DataTable):
         self._drag_rows_seen: set[int] = set()
         self._right_drag_last_row: Optional[int] = None
         self._right_drag_scroll_direction = 0
+        self._right_drag_scroll_step = 1
         self._right_drag_scroll_timer = None
+        self._right_drag_pointer_x: Optional[int] = None
+        self._right_drag_pointer_y: Optional[int] = None
+        self._right_drag_terminal_grid = None
 
         self._resize_key: Optional[str] = None
         self._resize_next_key: Optional[str] = None
@@ -687,14 +700,53 @@ class MDirDataTable(DataTable):
             pass
         return None
 
+    def _event_local_pointer(self, event: events.MouseEvent) -> tuple[int, int]:
+        """Return pointer coordinates relative to this table.
+
+        Captured mouse events may no longer carry DataTable row metadata after
+        the pointer crosses a rendered row boundary. Textual still exposes
+        screen-cell coordinates, so prefer those when available and convert
+        them back to table-local cells.
+        """
+        try:
+            screen_x = int(getattr(event, "screen_x"))
+            screen_y = int(getattr(event, "screen_y"))
+            region = self.region
+            return screen_x - int(region.x), screen_y - int(region.y)
+        except Exception:
+            return int(event.x), int(event.y)
+
+    def _row_from_local_y(self, mouse_y: int) -> Optional[int]:
+        """Map a local pointer row to the currently rendered data row."""
+        if self.row_count <= 0:
+            return None
+        header = max(0, int(self.header_height))
+        height = max(1, int(self.size.height))
+        if mouse_y < header or mouse_y >= height:
+            return None
+        try:
+            row = int(self.scroll_offset.y) + int(mouse_y) - header
+        except Exception:
+            return None
+        return row if 0 <= row < self.row_count else None
+
     def _event_row(self, event: events.MouseEvent) -> Optional[int]:
-        """Resolve the row attached to this event before using hover fallback."""
+        """Resolve the row attached to this event, including captured motion."""
         try:
             row = int(event.style.meta.get("row", -1))
             if 0 <= row < self.row_count:
                 return row
         except Exception:
             pass
+
+        try:
+            _mouse_x, mouse_y = self._event_local_pointer(event)
+            row = self._row_from_local_y(mouse_y)
+            if row is not None:
+                return row
+        except Exception:
+            pass
+
         return self._hover_row()
 
     def _pane(self):
@@ -730,57 +782,186 @@ class MDirDataTable(DataTable):
                 pane.toggle_mark_path(path)
 
     def _toggle_drag_range_to(self, row: int) -> None:
-        """Toggle every crossed row, even when fast mouse motion skips events."""
+        """Toggle crossed rows in one batch, even after fast mouse motion.
+
+        Moving the cursor, recalculating the summary and repainting once per
+        crossed row made right-drag selection visibly lag at page boundaries.
+        Gather every newly crossed row first, then update FilePane once.
+        """
         if self._right_drag_last_row is None:
             candidates = (row,)
         else:
             step = 1 if row >= self._right_drag_last_row else -1
             candidates = range(self._right_drag_last_row + step, row + step, step)
 
+        pane = self._pane()
+        rows: list[int] = []
+        paths: list[Path] = []
         for candidate in candidates:
             if candidate in self._drag_rows_seen:
                 continue
             self._drag_rows_seen.add(candidate)
-            self._toggle_row(candidate)
+            if not 0 <= candidate < self.row_count:
+                continue
+            rows.append(candidate)
+            if pane is not None and candidate < len(pane.entries):
+                path = pane.entries[candidate]
+                if path is not None:
+                    paths.append(path)
+
+        if rows:
+            endpoint = rows[-1]
+            self.move_cursor(
+                row=endpoint,
+                column=0,
+                animate=False,
+                scroll=True,
+            )
+            self._activate_pane()
+            if pane is not None:
+                batch_toggle = getattr(pane, "toggle_mark_paths", None)
+                if callable(batch_toggle):
+                    batch_toggle(paths)
+                else:
+                    for path in paths:
+                        pane.toggle_mark_path(path)
+
         self._right_drag_last_row = row
 
-    def _set_right_drag_auto_scroll(self, direction: int) -> None:
-        """Start or pause edge scrolling while a right-button drag is active."""
-        direction = -1 if direction < 0 else 1 if direction > 0 else 0
-        self._right_drag_scroll_direction = direction
-
-        timer = self._right_drag_scroll_timer
-        if not self._right_dragging or direction == 0:
-            if timer is not None:
-                timer.pause()
+    def _ensure_right_drag_timer(self) -> None:
+        """Keep a lightweight pointer/scroll timer alive for the whole drag."""
+        if not self._right_dragging:
             return
-
+        timer = self._right_drag_scroll_timer
         if timer is None:
             self._right_drag_scroll_timer = self.set_interval(
-                0.055,
+                RIGHT_DRAG_SCROLL_INTERVAL,
                 self._right_drag_auto_scroll_tick,
             )
         else:
             timer.resume()
 
+    def _set_right_drag_auto_scroll(
+        self,
+        direction: int,
+        step: int = 1,
+    ) -> None:
+        """Set edge-scroll direction/speed without stopping pointer polling."""
+        direction = -1 if direction < 0 else 1 if direction > 0 else 0
+        self._right_drag_scroll_direction = direction
+        self._right_drag_scroll_step = max(1, min(
+            RIGHT_DRAG_MAX_SCROLL_STEP,
+            int(step),
+        ))
+        self._ensure_right_drag_timer()
+
     def _update_right_drag_auto_scroll(self, mouse_y: int) -> None:
-        """Enable scrolling when the captured pointer reaches either edge."""
+        """Scroll faster as the pointer moves farther beyond the pane edge."""
         height = max(1, int(self.size.height))
         top_edge = max(1, int(self.header_height))
         bottom_edge = max(top_edge + 1, height - 2)
 
         if mouse_y <= top_edge:
-            self._set_right_drag_auto_scroll(-1)
+            distance = max(0, top_edge - int(mouse_y))
+            step = 1 + distance // RIGHT_DRAG_ACCEL_CELLS
+            self._set_right_drag_auto_scroll(-1, step)
         elif mouse_y >= bottom_edge:
-            self._set_right_drag_auto_scroll(1)
+            distance = max(0, int(mouse_y) - bottom_edge)
+            step = 1 + distance // RIGHT_DRAG_ACCEL_CELLS
+            self._set_right_drag_auto_scroll(1, step)
         else:
-            self._set_right_drag_auto_scroll(0)
+            self._set_right_drag_auto_scroll(0, 1)
+
+    def _sample_native_right_drag_pointer(
+        self,
+    ) -> Optional[tuple[int, int, bool]]:
+        """Read the physical Windows pointer even outside the terminal grid.
+
+        Windows Terminal may coalesce B3-Motion messages while the right button
+        is held. Sampling GetCursorPos from the drag timer makes the gesture
+        continuous and also lets distance below/above the pane control speed.
+        """
+        if os.name != "nt":
+            return None
+        try:
+            import ctypes
+            from ctypes import wintypes
+            from .preview.native import windows_terminal_grid_rectangle
+
+            app = self.app
+            terminal_hwnd = int(getattr(app, "_terminal_window_handle", 0) or 0)
+            if not terminal_hwnd:
+                return None
+
+            user32 = ctypes.windll.user32
+            get_key_state = user32.GetAsyncKeyState
+            get_key_state.argtypes = [ctypes.c_int]
+            get_key_state.restype = ctypes.c_short
+            right_down = bool(int(get_key_state(0x02)) & 0x8000)  # VK_RBUTTON
+
+            point = wintypes.POINT()
+            if not user32.GetCursorPos(ctypes.byref(point)):
+                return None
+
+            grid = self._right_drag_terminal_grid
+            if grid is None:
+                grid = windows_terminal_grid_rectangle(terminal_hwnd)
+                self._right_drag_terminal_grid = grid
+            if grid is None:
+                return None
+
+            columns = max(1, int(app.size.width))
+            rows = max(1, int(app.size.height))
+            cell_x = int((point.x - grid.left) * columns / grid.width)
+            cell_y = int((point.y - grid.top) * rows / grid.height)
+            region = self.region
+            return (
+                cell_x - int(region.x),
+                cell_y - int(region.y),
+                right_down,
+            )
+        except Exception:
+            return None
+
+    def _right_drag_horizontal_ok(self, mouse_x: int) -> bool:
+        """Pause outside the pane horizontally without ending the gesture."""
+        return 0 <= int(mouse_x) < max(1, int(self.size.width))
 
     def _right_drag_auto_scroll_tick(self) -> None:
-        """Advance one row and keep selection continuous across pages."""
+        """Track pointer motion continuously and accelerate edge scrolling."""
+        if not self._right_dragging or self.row_count <= 0:
+            if self._right_drag_scroll_timer is not None:
+                self._right_drag_scroll_timer.pause()
+            return
+
+        native_pointer = self._sample_native_right_drag_pointer()
+        if native_pointer is not None:
+            mouse_x, mouse_y, right_down = native_pointer
+            if not right_down:
+                self.end_right_drag()
+                try:
+                    self.release_mouse()
+                except Exception:
+                    pass
+                return
+            self._right_drag_pointer_x = mouse_x
+            self._right_drag_pointer_y = mouse_y
+
+        mouse_x = self._right_drag_pointer_x
+        mouse_y = self._right_drag_pointer_y
+        if mouse_x is not None and not self._right_drag_horizontal_ok(mouse_x):
+            self._right_drag_scroll_direction = 0
+            self._right_drag_scroll_step = 1
+            return
+
+        if mouse_y is not None:
+            self._update_right_drag_auto_scroll(mouse_y)
+            hovered_row = self._row_from_local_y(mouse_y)
+            if hovered_row is not None:
+                self._toggle_drag_range_to(hovered_row)
+
         direction = self._right_drag_scroll_direction
-        if not self._right_dragging or direction == 0 or self.row_count <= 0:
-            self._set_right_drag_auto_scroll(0)
+        if direction == 0:
             return
 
         current = self._right_drag_last_row
@@ -790,22 +971,30 @@ class MDirDataTable(DataTable):
             except Exception:
                 current = 0 if direction > 0 else self.row_count - 1
 
-        target = max(0, min(self.row_count - 1, current + direction))
+        step = max(1, int(self._right_drag_scroll_step))
+        target = max(
+            0,
+            min(self.row_count - 1, current + direction * step),
+        )
         if target == current:
-            self._set_right_drag_auto_scroll(0)
+            self._right_drag_scroll_direction = 0
+            self._right_drag_scroll_step = 1
             return
 
         self._toggle_drag_range_to(target)
-        self.move_cursor(row=target, column=0, animate=False, scroll=True)
 
     def end_right_drag(self) -> None:
         """Clear right-drag state and stop any pending edge scroll."""
         self._right_dragging = False
         self._right_drag_scroll_direction = 0
+        self._right_drag_scroll_step = 1
         if self._right_drag_scroll_timer is not None:
             self._right_drag_scroll_timer.pause()
         self._drag_rows_seen.clear()
         self._right_drag_last_row = None
+        self._right_drag_pointer_x = None
+        self._right_drag_pointer_y = None
+        self._right_drag_terminal_grid = None
 
     def cancel_pointer_interaction(self) -> None:
         """Release mouse state when the terminal loses application focus.
@@ -979,7 +1168,15 @@ class MDirDataTable(DataTable):
             self._right_dragging = True
             self._drag_rows_seen.clear()
             self._right_drag_last_row = None
-            self._set_right_drag_auto_scroll(0)
+            self._right_drag_scroll_direction = 0
+            self._right_drag_scroll_step = 1
+            self._right_drag_terminal_grid = None
+            mouse_x, mouse_y = self._event_local_pointer(event)
+            self._right_drag_pointer_x = mouse_x
+            self._right_drag_pointer_y = mouse_y
+            self._ensure_right_drag_timer()
+            if self._right_drag_horizontal_ok(mouse_x):
+                self._update_right_drag_auto_scroll(mouse_y)
 
             try:
                 self.capture_mouse()
@@ -1052,13 +1249,20 @@ class MDirDataTable(DataTable):
         if not self._right_dragging:
             return
 
-        self._update_right_drag_auto_scroll(event.y)
-        row = self._event_row(event)
-        if row is None:
-            event.stop()
-            return
-
-        self._toggle_drag_range_to(row)
+        # MouseMove can arrive at a much higher rate than Textual can repaint
+        # a large selected range.  Doing selection work for every B3-Motion
+        # event floods the message queue; interval callbacks then appear to
+        # freeze until the pointer stops moving.  Treat motion events only as
+        # the latest pointer sample.  The persistent right-drag timer is the
+        # single driver for selection, edge scrolling and acceleration.
+        #
+        # This deliberately coalesces hundreds of physical mouse messages into
+        # one UI update per timer tick, giving continuous Total Commander-like
+        # dragging while preserving the last observed position on platforms
+        # where native pointer sampling is unavailable.
+        mouse_x, mouse_y = self._event_local_pointer(event)
+        self._right_drag_pointer_x = mouse_x
+        self._right_drag_pointer_y = mouse_y
         event.stop()
 
     async def on_mouse_up(self, event: events.MouseUp) -> None:

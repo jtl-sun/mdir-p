@@ -120,7 +120,7 @@ class FakeManager:
 class ThumbnailAppTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.temporary = tempfile.TemporaryDirectory()
-        self.root = Path(self.temporary.name)
+        self.root = Path(self.temporary.name).resolve()
         self.left = self.root / 'left'
         self.right = self.root / 'right'
         self.left.mkdir()
@@ -208,10 +208,16 @@ class ThumbnailAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(destination.read_text(), source.read_text())
         self.assertTrue(source.exists())
         self.assertTrue(all(app.thumbnail_modes.values()))
-        await self.wait_for(lambda: len(app.screen_stack) == 1)
+        # Completion dismisses progress before asynchronous pane rescans finish.
+        # Wait for selection metadata before issuing the next user operation.
+        await self.wait_for(lambda: len(app.screen_stack) == 1
+                            and app.left.initial_listing_complete
+                            and app.right.initial_listing_complete
+                            and app.focused is app.left.table)
         destination.unlink()
         app.left.marked.clear()
         app.left.toggle_mark_path(source)
+        self.assertEqual(app.left.selected_items(), [source])
         await self.pilot.press('f6', 'enter')
         await self.wait_for(lambda: not source.exists() and destination.exists() and not app._file_operation_busy)
         self.assertEqual(destination.read_text(), 'file 3')
@@ -403,3 +409,4 @@ class ThumbnailNativeTests(unittest.TestCase):
             del window, root
             import gc
             gc.collect()
+

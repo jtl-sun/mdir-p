@@ -1157,6 +1157,9 @@ class _NativePreviewWindow:
 
     def _request_path(self, path: Path) -> None:
         """Queue only the newest selection without decoding on the Tk thread."""
+        from ..office_pdf_preview import cancel_office_pdf_preview
+
+        cancel_office_pdf_preview()
         self._load_generation += 1
         generation = self._load_generation
         self._close_source()
@@ -1185,6 +1188,33 @@ class _NativePreviewWindow:
             if request is None:
                 return
             generation, path = request
+
+            # Opening Excel/Word/PowerPoint is much more expensive than rendering an
+            # image/PDF.  Give uncached Office selections a short coalescing
+            # window so fast cursor movement starts only the newest document.
+            try:
+                from ..office_pdf_preview import (
+                    OFFICE_PDF_EXTENSIONS,
+                    office_pdf_cache_hit,
+                )
+
+                if (
+                    path.suffix.lower() in OFFICE_PDF_EXTENSIONS
+                    and office_pdf_cache_hit(path) is None
+                ):
+                    if self._loader_stop.wait(0.12):
+                        return
+                    try:
+                        while True:
+                            newer = self._load_requests.get_nowait()
+                            if newer is None:
+                                return
+                            generation, path = newer
+                    except queue.Empty:
+                        pass
+            except Exception:
+                pass
+
             source = None
             error: Optional[Exception] = None
             try:

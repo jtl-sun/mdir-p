@@ -726,7 +726,33 @@ def _trim_excel_rows(rows: list[list[str]]) -> list[list[str]]:
     return cleaned
 
 
+def _render_pdf_converted_office(path: Path, *, kind: str):
+    """Convert an Office file through the cached PDF pipeline, then render page 1."""
+    from ..office_pdf_preview import render_office_pdf_cached
+
+    result = render_office_pdf_cached(path)
+    if not result.ok or result.pdf_path is None:
+        return None
+    image, _, pdf_detail = _render_pdf(result.pdf_path)
+    source_note = "cache" if result.from_cache else result.backend
+    timing = "cached" if result.from_cache else f"{result.elapsed:.2f}s"
+    return (
+        image,
+        kind,
+        f"PDF preview | {source_note} | {timing} | {pdf_detail}",
+    )
+
+
 def _render_excel(path: Path):
+    """Prefer an exact Office-rendered PDF; keep the old grid as fallback."""
+    converted = _render_pdf_converted_office(path, kind="Excel")
+    if converted is not None:
+        return converted
+    image, kind, detail = _render_excel_compat(path)
+    return image, kind, f"Compatibility view | {detail}"
+
+
+def _render_excel_compat(path: Path):
     suffix = path.suffix.lower()
     if suffix == ".xls":
         rows, sheet_name = _read_legacy_xls(path)
@@ -1108,22 +1134,37 @@ def _render_office(path: Path):
         raise RuntimeError(
             "Office preview is limited to 256 MiB; use Open for this file."
         )
-    converted = _render_office_with_microsoft_office(path)
-    if converted is not None:
-        return converted
-    converted = _render_office_with_libreoffice(path)
-    if converted is not None:
-        return converted
 
     suffix = path.suffix.lower()
-    if suffix == ".docx":
-        lines = _wrap_preview_lines("\n".join(_extract_docx_lines(path)))
-        image = _draw_text_document(lines, path.name, kind="Word")
-        return (
-            image,
-            "Word",
-            "Text fallback | install LibreOffice for page layout",
+
+    # Word now follows the same PDF-first path as xViewer's Excel preview.
+    # Microsoft Word is kept alive in a private COM worker and unchanged files
+    # reopen from the persistent PDF cache.
+    if suffix in WORD_EXTENSIONS:
+        converted = _render_pdf_converted_office(path, kind="Word")
+        if converted is not None:
+            return converted
+        if suffix == ".docx":
+            lines = _wrap_preview_lines("\n".join(_extract_docx_lines(path)))
+            image = _draw_text_document(lines, path.name, kind="Word")
+            return (
+                image,
+                "Word",
+                "Compatibility text view | PDF converter unavailable",
+            )
+        raise RuntimeError(
+            "DOC PDF preview needs Microsoft Word or LibreOffice. "
+            "Install one of them and select the file again."
         )
+
+    # PowerPoint uses the same persistent PDF-first path as Excel and Word.
+    # The private PowerPoint COM worker stays warm between files and cached
+    # presentations reopen without launching Office again.
+    if suffix in POWERPOINT_EXTENSIONS:
+        converted = _render_pdf_converted_office(path, kind="PowerPoint")
+        if converted is not None:
+            return converted
+
     if suffix == ".pptx":
         extracted, slide_count = _extract_pptx_lines(path)
         lines = _wrap_preview_lines("\n".join(extracted))
@@ -1135,7 +1176,7 @@ def _render_office(path: Path):
             "install LibreOffice for slide layout",
         )
     raise RuntimeError(
-        "Legacy DOC/PPT preview needs Microsoft Word/PowerPoint or the free "
+        "Legacy PPT preview needs Microsoft PowerPoint or the free "
         "LibreOffice application. Install one of them and select the file again."
     )
 
@@ -1344,6 +1385,9 @@ class DocumentPreviewPanel(Vertical):
 
     def show_path(self, path: Path) -> None:
         """Debounce selection changes before starting document conversion."""
+        from ..office_pdf_preview import cancel_office_pdf_preview
+
+        cancel_office_pdf_preview()
         self.cancel()
         self.path = path
         self.preview = None
@@ -1361,7 +1405,21 @@ class DocumentPreviewPanel(Vertical):
             f"{path.suffix.lower().lstrip('.').upper() or 'FILE'} | "
             "Move the left cursor to preview another file"
         )
-        self.request_render(delay=0.14)
+        delay = 0.14
+        try:
+            from ..office_pdf_preview import (
+                OFFICE_PDF_EXTENSIONS,
+                office_pdf_cache_hit,
+            )
+
+            if (
+                path.suffix.lower() in OFFICE_PDF_EXTENSIONS
+                and office_pdf_cache_hit(path) is not None
+            ):
+                delay = 0.035
+        except Exception:
+            pass
+        self.request_render(delay=delay)
 
     def request_render(self, *, delay: float = 0.06) -> None:
         """Schedule a render while retaining the prepared document source."""

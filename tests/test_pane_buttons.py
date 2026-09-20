@@ -9,12 +9,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from textual.widgets import Button
+from textual.widgets import Button, OptionList
 
 from mdir.app import MDirApp
 from mdir import core
 from mdir.thumbnail_native import ThumbnailEvent, ThumbnailManager
 from mdir.advanced import Workspace, WorkspaceStore
+from mdir.ui.dialogs import RecentFolderScreen
 from test_thumbnail import FakeManager
 
 
@@ -50,7 +51,8 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
 
     async def ready(self):
         for _ in range(150):
-            if self.app.left.initial_listing_complete and self.app.right.initial_listing_complete:
+            if (self.app.left.initial_listing_complete and self.app.right.initial_listing_complete
+                    and not self.app.query("#startup_cover")):
                 return
             await self.pilot.pause(0.02)
         self.fail('Listing did not finish')
@@ -73,6 +75,107 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(app.thumbnail_modes, {'left': True, 'right': False})
         self.assertTrue(app.query_one('#left_thumbnail', Button).has_class('thumbnail-on'))
         self.assertFalse(app.query_one('#right_thumbnail', Button).has_class('thumbnail-on'))
+
+
+    async def test_recent_folder_buttons_are_path_bar_triangles_and_open_list_in_one_click(self):
+        app = self.app
+        app.recent_folders = [str(self.root / 'left'), str(self.root / 'right')]
+
+        for side in ('left', 'right'):
+            button = app.query_one(f'#{side}_recent_folders', Button)
+            self.assertEqual(str(button.label), '▼')
+            self.assertTrue(button.has_class('recent-folder-path-button'))
+            self.assertIsNotNone(button.parent)
+            self.assertTrue(button.parent.has_class('pane-path-row'))
+
+        self.assertTrue(await self.pilot.click('#left_recent_folders'))
+        for _ in range(100):
+            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
+                break
+            await self.pilot.pause(0.02)
+        self.assertIsInstance(app.screen, RecentFolderScreen)
+        options = app.screen.query_one('#recent_folder_list', OptionList)
+        self.assertEqual(options.option_count, 2)
+        self.assertTrue(options.has_focus)
+        app._finish_startup_frame()
+        await self.pilot.pause()
+        self.assertTrue(options.has_focus, "Late startup callbacks must not steal modal focus")
+        await self.pilot.press('escape')
+        await self.pilot.pause()
+        self.assertIs(app.focused, app.left.table)
+
+    async def test_recent_folder_outside_click_closes_and_executes_clicked_control(self):
+        app = self.app
+        app.recent_folders = [str(self.root / 'left'), str(self.root / 'right')]
+
+        target = app.query_one('#right_thumbnail', Button)
+        region = target.region
+        click_x = int(region.x) + max(0, int(region.width) // 2)
+        click_y = int(region.y) + max(0, int(region.height) // 2)
+
+        self.assertTrue(await self.pilot.click('#left_recent_folders'))
+        for _ in range(100):
+            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
+                break
+            await self.pilot.pause(0.02)
+        self.assertIsInstance(app.screen, RecentFolderScreen)
+
+        # One physical click outside the popup must both close the list and
+        # activate the control underneath. No second click should be needed.
+        await self.pilot.click(offset=(click_x, click_y))
+        for _ in range(50):
+            if not isinstance(app.screen, RecentFolderScreen) and app.thumbnail_modes['right']:
+                break
+            await self.pilot.pause(0.01)
+
+        self.assertNotIsInstance(app.screen, RecentFolderScreen)
+        self.assertTrue(app.thumbnail_modes['right'])
+        self.assertEqual(app.active_side, 'right')
+
+    async def test_recent_folder_triangle_click_toggles_popup_closed(self):
+        app = self.app
+        app.recent_folders = [str(self.root / 'left'), str(self.root / 'right')]
+
+        triangle = app.query_one('#left_recent_folders', Button)
+        region = triangle.region
+        click_x = int(region.x) + max(0, int(region.width) // 2)
+        click_y = int(region.y) + max(0, int(region.height) // 2)
+
+        self.assertTrue(await self.pilot.click('#left_recent_folders'))
+        for _ in range(100):
+            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
+                break
+            await self.pilot.pause(0.02)
+        self.assertIsInstance(app.screen, RecentFolderScreen)
+        await self.pilot.click(offset=(click_x, click_y))
+        for _ in range(50):
+            if not isinstance(app.screen, RecentFolderScreen):
+                break
+            await self.pilot.pause(0.01)
+
+        self.assertNotIsInstance(app.screen, RecentFolderScreen)
+
+    async def test_recent_folder_picker_changes_only_the_button_pane(self):
+        app = self.app
+        target = self.root / 'recent-target'
+        target.mkdir()
+        app.recent_folders = [str(target)]
+        original_right = app.right.current_path
+
+        self.assertTrue(await self.pilot.click('#left_recent_folders'))
+        for _ in range(100):
+            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
+                break
+            await self.pilot.pause(0.02)
+        self.assertIsInstance(app.screen, RecentFolderScreen)
+        await self.pilot.press('enter')
+        for _ in range(100):
+            if app.left.current_path == target:
+                break
+            await self.pilot.pause(0.01)
+        self.assertEqual(app.left.current_path, target)
+        self.assertEqual(app.right.current_path, original_right)
+        self.assertIs(app.focused, app.left.table)
 
     async def test_hidden_buttons_change_only_clicked_pane(self):
         app = self.app
