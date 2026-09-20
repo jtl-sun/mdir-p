@@ -224,7 +224,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             app.left_start = child
             app.right_start = root
             app._save_paths = lambda: None
-            async with app.run_test(size=(120, 35)) as pilot:
+            async with app.run_test(size=(240, 35)) as pilot:
                 for _ in range(100):
                     if app.left.initial_listing_complete:
                         break
@@ -2017,9 +2017,11 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 table._right_drag_scroll_direction = 1
 
                 steps = table.size.height + 5
-                for _ in range(steps):
-                    table._right_drag_auto_scroll_tick()
-                    await pilot.pause(0)
+                # This test drives synthetic ticks, not the host physical mouse.
+                with patch.object(table, "_sample_native_right_drag_pointer", return_value=None):
+                    for _ in range(steps):
+                        table._right_drag_auto_scroll_tick()
+                        await pilot.pause(0)
 
                 end_row = start_row + steps
                 expected = {
@@ -2815,3 +2817,4 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
