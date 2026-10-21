@@ -101,7 +101,10 @@ def _copy_to_staging(source: Path, target: Path, tracker: ProgressTracker | None
     staging = _temporary_sibling(target, "copy")
     try:
         if source.is_dir() and not source.is_symlink():
-            shutil.copytree(source, staging, copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
+            if tracker is None:
+                shutil.copytree(source, staging)
+            else:
+                shutil.copytree(source, staging, copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
         else:
             _copy_with_progress(str(source), str(staging), tracker)
         return staging
@@ -143,7 +146,10 @@ def _move_with_rollback(source: Path, target: Path, tracker: ProgressTracker | N
         backup = _temporary_sibling(target, "backup")
         target.replace(backup)
     try:
-        shutil.move(str(source), str(target), copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
+        if tracker is None:
+            shutil.move(str(source), str(target))
+        else:
+            shutil.move(str(source), str(target), copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
     except Exception:
         try:
             if _path_exists(target):
