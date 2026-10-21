@@ -11,6 +11,8 @@ from threading import Event
 from time import sleep
 from typing import Callable, Iterable, Literal
 
+from .progress import OperationCancelled, ProgressTracker
+
 
 FileOperation = Literal["copy", "move", "delete"]
 ProgressCallback = Callable[[int, int, str], None]
@@ -94,14 +96,17 @@ def _temporary_sibling(path: Path, kind: str) -> Path:
             return candidate
 
 
-def _copy_to_staging(source: Path, target: Path) -> Path:
+def _copy_to_staging(source: Path, target: Path, tracker: ProgressTracker | None = None) -> Path:
     """Finish a copy at a hidden sibling before publishing the target name."""
     staging = _temporary_sibling(target, "copy")
     try:
         if source.is_dir() and not source.is_symlink():
-            shutil.copytree(source, staging)
+            if tracker is None:
+                shutil.copytree(source, staging)
+            else:
+                shutil.copytree(source, staging, copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
         else:
-            shutil.copy2(source, staging)
+            _copy_with_progress(str(source), str(staging), tracker)
         return staging
     except Exception:
         if _path_exists(staging):
@@ -134,14 +139,17 @@ def _publish_staging(staging: Path, target: Path) -> str | None:
     return None
 
 
-def _move_with_rollback(source: Path, target: Path) -> str | None:
+def _move_with_rollback(source: Path, target: Path, tracker: ProgressTracker | None = None) -> str | None:
     """Protect an approved existing target while moving a source over it."""
     backup: Path | None = None
     if _path_exists(target):
         backup = _temporary_sibling(target, "backup")
         target.replace(backup)
     try:
-        shutil.move(str(source), str(target))
+        if tracker is None:
+            shutil.move(str(source), str(target))
+        else:
+            shutil.move(str(source), str(target), copy_function=lambda s, d: _copy_with_progress(s, d, tracker))
     except Exception:
         try:
             if _path_exists(target):
@@ -256,6 +264,41 @@ def send_to_recycle_bin(path: Path) -> None:
         )
 
 
+def _estimate_size(path: Path) -> int:
+    """Best-effort byte estimate for top-level items, including nested files."""
+    try:
+        if not path.is_dir() or path.is_symlink():
+            return max(0, path.stat().st_size)
+        total = 0
+        for root, dirs, files in os.walk(path, followlinks=False):
+            for name in files:
+                try:
+                    total += max(0, (Path(root) / name).stat().st_size)
+                except OSError:
+                    pass
+        return total
+    except OSError:
+        return 0
+
+
+def _copy_with_progress(source: str, target: str, tracker: ProgressTracker | None) -> str:
+    """Copy data in cancellable chunks and preserve file metadata."""
+    if tracker is None:
+        return shutil.copy2(source, target)
+    size = _estimate_size(Path(source))
+    tracker.begin_item(str(source), size)
+    with open(source, "rb") as src, open(target, "wb") as dst:
+        while True:
+            tracker.checkpoint()
+            block = src.read(1024 * 1024)
+            if not block:
+                break
+            dst.write(block)
+            tracker.advance(len(block))
+    shutil.copystat(source, target)
+    return target
+
+
 def run_file_operation(
     operation: FileOperation,
     items: Iterable[Path],
@@ -266,6 +309,7 @@ def run_file_operation(
     cancel_event: Event | None = None,
     pause_event: Event | None = None,
     progress: ProgressCallback | None = None,
+    tracker: ProgressTracker | None = None,
 ) -> FileOperationResult:
     """Run a batch file operation without touching any UI objects.
 
@@ -277,6 +321,8 @@ def run_file_operation(
     if pause_event is None and cancel_event is not None:
         pause_event = getattr(cancel_event, "mdir_pause_event", None)
     result = FileOperationResult(operation=operation, total=len(paths))
+    if tracker is not None:
+        tracker.set_totals(items=len(paths), bytes_total=sum(_estimate_size(p) for p in paths))
     if operation in {"copy", "move"} and destination is None:
         raise ValueError(f"{operation} requires a destination")
 
@@ -290,6 +336,14 @@ def run_file_operation(
             break
 
         display_name = source.name
+        item_size = _estimate_size(source) if tracker is not None else 0
+        item_start = tracker.snapshot().bytes_done if tracker is not None else 0
+        if tracker is not None:
+            try:
+                tracker.begin_item(str(source), item_size if not source.is_dir() else 0)
+            except OperationCancelled:
+                result.cancelled = True
+                break
         delete_permanently = False
         try:
             if operation == "delete":
@@ -315,6 +369,8 @@ def run_file_operation(
                 target = destination / target_name
                 if _same_path(source, target):
                     result.skipped += 1
+                    if tracker is not None:
+                        tracker.complete_item(remaining_bytes=item_size)
                     if progress is not None:
                         progress(index, result.total, display_name)
                     continue
@@ -329,12 +385,14 @@ def run_file_operation(
                 target_exists = _path_exists(target)
                 if target_exists and not overwrite:
                     result.skipped += 1
+                    if tracker is not None:
+                        tracker.complete_item(remaining_bytes=item_size)
                     if progress is not None:
                         progress(index, result.total, display_name)
                     continue
                 warning: str | None = None
                 if operation == "copy":
-                    staging = _copy_to_staging(source, target)
+                    staging = _copy_to_staging(source, target, tracker)
                     try:
                         warning = _publish_staging(staging, target)
                     except Exception:
@@ -342,7 +400,7 @@ def run_file_operation(
                             _remove_existing_target(staging)
                         raise
                 else:
-                    warning = _move_with_rollback(source, target)
+                    warning = _move_with_rollback(source, target, tracker)
                 display_name = target_name
                 result.completed_pairs.append((source, target))
                 if warning:
@@ -350,6 +408,9 @@ def run_file_operation(
 
             result.completed += 1
             result.completed_names.append(display_name)
+        except OperationCancelled:
+            result.cancelled = True
+            break
         except Exception as exc:
             if operation == "delete" and is_access_denied_error(exc):
                 result.access_denied_items.append(source)
@@ -358,9 +419,14 @@ def run_file_operation(
             else:
                 result.errors.append(f"{source.name}: {exc}")
 
+        if tracker is not None:
+            transferred = tracker.snapshot().bytes_done - item_start
+            tracker.complete_item(remaining_bytes=max(0, item_size - transferred))
         if progress is not None:
             progress(index, result.total, display_name)
 
     if cancel_event is not None and cancel_event.is_set():
         result.cancelled = True
+    if tracker is not None:
+        tracker.finish("cancelled" if result.cancelled else "completed")
     return result
