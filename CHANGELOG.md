@@ -1,3 +1,10 @@
+## 2.26.31 — Unified operation progress (2026-10-21)
+
+- Introduce a shared thread-safe progress model for Copy, Move, Delete, ZIP and search.
+- Add independent current-file and overall progress bars, transfer rate and ETA.
+- Background operations can be reopened with Ctrl+Alt+P; pause and cancel operate at safe checkpoints.
+- Preserve legacy callbacks; add regression coverage for cancellation and ZIP roundtrips.
+
 ## 2.26.29
 
 ## 2.26.30
