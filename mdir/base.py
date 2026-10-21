@@ -22,6 +22,7 @@ from .ui.dialogs import (
     ElevatedDeleteProgressScreen,
     FileOperationProgressScreen,
 )
+from .progress import ProgressSnapshot, ProgressTracker
 from .file_operations import (
     PERMANENT_DELETE_THRESHOLD_BYTES,
     FileOperation,
@@ -713,7 +714,9 @@ class BaseApp(AIShellApp):
         pause_event = Event()
         cancel_event.mdir_pause_event = pause_event  # type: ignore[attr-defined]
         screen = FileOperationProgressScreen(
-            operation, len(items), cancel_event, pause_event
+            operation, len(items), cancel_event, pause_event,
+            source=str(items[0].parent) if items else "",
+            destination=str(destination) if destination is not None else "Recycle Bin / Trash",
         )
         self._file_operation_cancel = cancel_event
         self._file_operation_pause = pause_event
@@ -747,6 +750,15 @@ class BaseApp(AIShellApp):
         pause_event: Event,
     ) -> None:
         """Run large file batches without blocking the Textual event loop."""
+        tracker = ProgressTracker(
+            operation,
+            total_items=len(items),
+            cancel_event=cancel_event,
+            pause_event=pause_event,
+            callback=lambda state: self.call_from_thread(
+                self._update_file_operation_snapshot, state
+            ),
+        )
         last_update = 0.0
 
         def report(completed: int, total: int, name: str) -> None:
@@ -769,6 +781,7 @@ class BaseApp(AIShellApp):
                 overwrite=overwrite,
                 cancel_event=cancel_event,
                 progress=report,
+                tracker=tracker,
             )
             fatal_error = None
         except Exception as exc:
@@ -782,6 +795,11 @@ class BaseApp(AIShellApp):
             fatal_error,
             overwrite,
         )
+
+    def _update_file_operation_snapshot(self, state: ProgressSnapshot) -> None:
+        screen = self._file_operation_screen
+        if screen is not None and screen.is_mounted:
+            screen.update_snapshot(state)
 
     def _update_file_operation_progress(
         self, completed: int, item_name: str
