@@ -22,7 +22,7 @@ from .ui.dialogs import (
     ElevatedDeleteProgressScreen,
     FileOperationProgressScreen,
 )
-from .progress import ProgressSnapshot, ProgressTracker
+from .progress import OperationCancelled, ProgressSnapshot, ProgressTracker
 from .file_operations import (
     PERMANENT_DELETE_THRESHOLD_BYTES,
     FileOperation,
@@ -222,6 +222,7 @@ class BaseApp(AIShellApp):
 
     def __init__(self) -> None:
         self._archive_busy = False
+        self._archive_progress_screen: FileOperationProgressScreen | None = None
         self._file_operation_busy = False
         self._file_operation_cancel: Event | None = None
         self._file_operation_pause: Event | None = None
@@ -335,6 +336,17 @@ class BaseApp(AIShellApp):
 
         self.push_screen(BatchRenameScreen(items), rename_requested)
 
+    def _update_archive_progress(self, state: ProgressSnapshot) -> None:
+        screen = self._archive_progress_screen
+        if screen is not None and screen.is_mounted:
+            screen.update_snapshot(state)
+
+    def _dismiss_archive_progress(self) -> None:
+        screen = self._archive_progress_screen
+        self._archive_progress_screen = None
+        if screen is not None and screen.is_mounted:
+            screen.dismiss(None)
+
     def action_compress_zip(self) -> None:
         """Create a ZIP from the active pane in the opposite pane by default."""
         source_side = self.active_side
@@ -372,11 +384,24 @@ class BaseApp(AIShellApp):
                 self.set_status("Another ZIP operation is already running.")
                 return
             self._archive_busy = True
-            self.set_status(f"Creating ZIP: {request.destination.name} ...")
-            self._create_zip_in_background(
-                tuple(items),
-                request,
-                source_side,
+            cancel = Event()
+            pause = Event()
+            tracker = ProgressTracker(
+                "compress", cancel_event=cancel, pause_event=pause,
+                callback=lambda state: self.call_from_thread(
+                    self._update_archive_progress, state
+                ),
+            )
+            screen = FileOperationProgressScreen(
+                "Compress", len(items), cancel, pause,
+                source=str(source_pane.current_path),
+                destination=str(request.destination),
+            )
+            self._archive_progress_screen = screen
+            self.push_screen(screen)
+            screen.call_after_refresh(
+                self._create_zip_in_background,
+                tuple(items), request, source_side, tracker,
             )
 
         self.push_screen(CreateZipScreen(items, destination), create_requested)
@@ -387,11 +412,15 @@ class BaseApp(AIShellApp):
         items: tuple[Path, ...],
         request: CreateZipRequest,
         source_side: str,
+        tracker: ProgressTracker,
     ) -> None:
         """Compress without blocking navigation or screen redraws."""
         try:
-            result = create_zip_archive(items, request)
+            result = create_zip_archive(items, request, tracker=tracker)
             error = None
+        except OperationCancelled:
+            result = None
+            error = "Cancelled"
         except Exception as exc:
             result = None
             error = str(exc)
@@ -411,6 +440,10 @@ class BaseApp(AIShellApp):
         error: str | None,
     ) -> None:
         self._archive_busy = False
+        self._dismiss_archive_progress()
+        if error == "Cancelled":
+            self.set_status("ZIP creation cancelled.")
+            return
         if error or result is None:
             message = error or "Unknown ZIP creation error"
             self.set_status(f"ZIP creation failed: {message}")
@@ -473,11 +506,24 @@ class BaseApp(AIShellApp):
                 self.set_status("Another ZIP operation is already running.")
                 return
             self._archive_busy = True
-            self.set_status(f"Extracting ZIP: {archive_path.name} ...")
-            self._extract_zip_in_background(
-                archive_path,
-                request,
-                source_side,
+            cancel = Event()
+            pause = Event()
+            tracker = ProgressTracker(
+                "extract", cancel_event=cancel, pause_event=pause,
+                callback=lambda state: self.call_from_thread(
+                    self._update_archive_progress, state
+                ),
+            )
+            screen = FileOperationProgressScreen(
+                "Extract", 1, cancel, pause,
+                source=str(archive_path),
+                destination=str(request.destination),
+            )
+            self._archive_progress_screen = screen
+            self.push_screen(screen)
+            screen.call_after_refresh(
+                self._extract_zip_in_background,
+                archive_path, request, source_side, tracker,
             )
 
         self.push_screen(
@@ -491,11 +537,15 @@ class BaseApp(AIShellApp):
         archive_path: Path,
         request: ExtractZipRequest,
         source_side: str,
+        tracker: ProgressTracker,
     ) -> None:
         """Extract without blocking keyboard and mouse input."""
         try:
-            result = extract_zip_archive(archive_path, request)
+            result = extract_zip_archive(archive_path, request, tracker=tracker)
             error = None
+        except OperationCancelled:
+            result = None
+            error = "Cancelled"
         except Exception as exc:
             result = None
             error = str(exc)
@@ -517,6 +567,10 @@ class BaseApp(AIShellApp):
         error: str | None,
     ) -> None:
         self._archive_busy = False
+        self._dismiss_archive_progress()
+        if error == "Cancelled":
+            self.set_status("ZIP extraction cancelled.")
+            return
         if error or result is None:
             message = error or "Unknown ZIP extraction error"
             self.set_status(f"ZIP extraction failed: {message}")
