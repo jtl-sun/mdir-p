@@ -499,15 +499,15 @@ def render_office_pdf_cached(
             target.stem + "." + uuid.uuid4().hex + ".tmp.pdf"
         )
 
-        # Serialize COM use but keep the worker alive between files.  Recheck
-        # the cache after waiting: another preview thread may have just made it.
-        # Register queued work too, so a newer selection cancels requests
-        # waiting behind the current Office conversion.
+        # Register the request before waiting for the shared Office lock so a
+        # newer Preview selection can cancel a queued request before it ever
+        # starts Office work.
         with _ACTIVE_LOCK:
             _ACTIVE_CANCELS.add(cancel)
+
+        # Serialize COM use but keep the worker alive between files.  Recheck
+        # the cache after waiting: another preview thread may have just made it.
         with _SESSION_LOCK:
-            if cancel.is_set():
-                raise RuntimeError("cancelled")
             cached = office_pdf_cache_hit(source)
             if cached is not None:
                 return OfficePdfResult(

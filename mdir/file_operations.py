@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import ntpath
 import shutil
 import ctypes
 import errno
@@ -42,9 +43,41 @@ def _same_path(first: Path, second: Path) -> bool:
     )
 
 
-def _path_exists(path: Path) -> bool:
+_IS_WINDOWS = os.name == "nt"
+_TRANSIENT_COPY_WINERRORS = {2, 3}
+_COPY_RETRY_DELAYS = (0.03, 0.08)
+
+
+def _windows_extended_path(path: os.PathLike[str] | str) -> str:
+    """Return an absolute filesystem path that is long-path safe on Windows.
+
+    Prefixing the *root* supplied to shutil.copytree means every child path
+    produced during recursive traversal inherits the Win32 extended-path form,
+    avoiding MAX_PATH failures deep inside projects such as Unity caches.
+    """
+    raw = os.fspath(path)
+    if not _IS_WINDOWS:
+        return os.path.abspath(raw)
+    if raw.startswith("\\\\?\\"):
+        return raw
+    absolute = ntpath.abspath(raw)
+    if absolute.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + absolute[2:]
+    return "\\\\?\\" + absolute
+
+
+def _path_exists(path: os.PathLike[str] | str) -> bool:
     """Return True for normal entries and broken symbolic links."""
-    return os.path.lexists(path)
+    return os.path.lexists(_windows_extended_path(path))
+
+
+def _is_directory(path: os.PathLike[str] | str) -> bool:
+    fs_path = _windows_extended_path(path)
+    return os.path.isdir(fs_path) and not os.path.islink(fs_path)
+
+
+def _replace_path(source: Path, target: Path) -> None:
+    os.replace(_windows_extended_path(source), _windows_extended_path(target))
 
 
 def _path_is_within(path: Path, parent: Path) -> bool:
@@ -77,31 +110,79 @@ def destination_conflicts(
 
 
 def _remove_existing_target(path: Path) -> None:
-    """Remove one explicitly approved overwrite target."""
-    if path.is_dir() and not path.is_symlink():
-        shutil.rmtree(path)
+    """Remove one explicitly approved overwrite target, including long trees."""
+    fs_path = _windows_extended_path(path)
+    if os.path.isdir(fs_path) and not os.path.islink(fs_path):
+        shutil.rmtree(fs_path)
     else:
-        path.unlink()
+        os.unlink(fs_path)
 
 
 def _temporary_sibling(path: Path, kind: str) -> Path:
-    """Return a unique hidden sibling path used for staging or rollback."""
+    """Return a short hidden sibling used for staging or rollback.
+
+    The previous name embedded the full target name plus a 32-character UUID.
+    That made already-deep destination trees even deeper during safe staging.
+    Keep the same transactional sibling design but use a compact unique name.
+    """
+    code = {"copy": "c", "backup": "b"}.get(kind, (kind[:1] or "x"))
     while True:
-        candidate = path.with_name(
-            f".{path.name}.mdir-{kind}-{uuid.uuid4().hex}"
-        )
+        candidate = path.with_name(f".~m{code}-{uuid.uuid4().hex[:12]}")
         if not _path_exists(candidate):
             return candidate
+
+
+def _is_retryable_copy_error(exc: BaseException, source: os.PathLike[str] | str) -> bool:
+    """Return True only for transient Windows missing-path copy errors."""
+    if not _IS_WINDOWS or not isinstance(exc, OSError):
+        return False
+    winerror = getattr(exc, "winerror", None)
+    if winerror not in _TRANSIENT_COPY_WINERRORS:
+        return False
+    # Retry only while the source still exists.  Never silently skip files that
+    # disappeared from a live project while it was being copied.
+    return _path_exists(source)
+
+
+def _copy2_with_retry(
+    source: os.PathLike[str] | str,
+    target: os.PathLike[str] | str,
+    *,
+    follow_symlinks: bool = True,
+):
+    """copy2 with long-path support and two cheap retries for WinError 2/3."""
+    source_fs = _windows_extended_path(source)
+    target_fs = _windows_extended_path(target)
+    for attempt in range(len(_COPY_RETRY_DELAYS) + 1):
+        try:
+            return shutil.copy2(
+                source_fs,
+                target_fs,
+                follow_symlinks=follow_symlinks,
+            )
+        except OSError as exc:
+            if attempt >= len(_COPY_RETRY_DELAYS) or not _is_retryable_copy_error(
+                exc, source_fs
+            ):
+                raise
+            sleep(_COPY_RETRY_DELAYS[attempt])
+    raise AssertionError("unreachable")
 
 
 def _copy_to_staging(source: Path, target: Path) -> Path:
     """Finish a copy at a hidden sibling before publishing the target name."""
     staging = _temporary_sibling(target, "copy")
     try:
-        if source.is_dir() and not source.is_symlink():
-            shutil.copytree(source, staging)
+        source_fs = _windows_extended_path(source)
+        staging_fs = _windows_extended_path(staging)
+        if _is_directory(source):
+            shutil.copytree(
+                source_fs,
+                staging_fs,
+                copy_function=_copy2_with_retry,
+            )
         else:
-            shutil.copy2(source, staging)
+            _copy2_with_retry(source_fs, staging_fs)
         return staging
     except Exception:
         if _path_exists(staging):
@@ -114,16 +195,16 @@ def _publish_staging(staging: Path, target: Path) -> str | None:
     backup: Path | None = None
     if _path_exists(target):
         backup = _temporary_sibling(target, "backup")
-        target.replace(backup)
+        _replace_path(target, backup)
     try:
-        staging.replace(target)
+        _replace_path(staging, target)
     except Exception:
         try:
             if _path_exists(target):
                 _remove_existing_target(target)
         finally:
             if backup is not None and _path_exists(backup):
-                backup.replace(target)
+                _replace_path(backup, target)
         raise
 
     if backup is not None and _path_exists(backup):
@@ -139,16 +220,20 @@ def _move_with_rollback(source: Path, target: Path) -> str | None:
     backup: Path | None = None
     if _path_exists(target):
         backup = _temporary_sibling(target, "backup")
-        target.replace(backup)
+        _replace_path(target, backup)
     try:
-        shutil.move(str(source), str(target))
+        shutil.move(
+            _windows_extended_path(source),
+            _windows_extended_path(target),
+            copy_function=_copy2_with_retry,
+        )
     except Exception:
         try:
             if _path_exists(target):
                 _remove_existing_target(target)
         finally:
             if backup is not None and _path_exists(backup):
-                backup.replace(target)
+                _replace_path(backup, target)
         raise
 
     if backup is not None and _path_exists(backup):
@@ -157,7 +242,6 @@ def _move_with_rollback(source: Path, target: Path) -> str | None:
         except Exception as exc:
             return f"old target backup could not be removed ({backup.name}): {exc}"
     return None
-
 
 def should_permanently_delete(*, is_directory: bool, size: int) -> bool:
     """Only individual files of 10 GiB or larger bypass the Recycle Bin."""
@@ -293,14 +377,14 @@ def run_file_operation(
         delete_permanently = False
         try:
             if operation == "delete":
-                is_directory = source.is_dir() and not source.is_symlink()
-                size = 0 if is_directory else int(source.stat().st_size)
+                is_directory = _is_directory(source)
+                size = 0 if is_directory else int(os.stat(_windows_extended_path(source)).st_size)
                 delete_permanently = should_permanently_delete(
                     is_directory=is_directory,
                     size=size,
                 )
                 if delete_permanently:
-                    source.unlink()
+                    os.unlink(_windows_extended_path(source))
                     result.permanently_deleted += 1
                 else:
                     send_to_recycle_bin(source)
@@ -319,8 +403,7 @@ def run_file_operation(
                         progress(index, result.total, display_name)
                     continue
                 if (
-                    source.is_dir()
-                    and not source.is_symlink()
+                    _is_directory(source)
                     and _path_is_within(target, source)
                 ):
                     raise ValueError(

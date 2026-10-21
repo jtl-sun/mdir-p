@@ -235,6 +235,7 @@ class BulkSelectionTests(unittest.IsolatedAsyncioTestCase):
         table = pane.table
         start = pane.row_by_path[entries[2].path]
         table._right_dragging = True
+        table._right_drag_started = True
         table._drag_rows_seen.clear()
         table._right_drag_last_row = None
         table._toggle_drag_range_to(start)
@@ -286,6 +287,69 @@ class BulkSelectionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(table._right_drag_scroll_direction, 1)
         self.assertGreater(far_step, near_step)
 
+        table.end_right_drag()
+
+
+    async def test_plain_right_click_never_toggles_native_neighbor_rows(self):
+        pane = self.app.left
+        entries = [
+            CachedEntry(
+                pane.current_path / f'click-{i:03}.txt',
+                False,
+                i,
+                0,
+            )
+            for i in range(40)
+        ]
+        pane._apply_scanned_entries(entries, pane.current_path)
+        pane._render_cached_rows()
+        table = pane.table
+        start = pane.row_by_path[entries[8].path]
+        scroll_y = int(table.scroll_offset.y)
+        mismatched_row = min(table.row_count - 1, start + 2)
+        mismatched_y = int(table.header_height) + mismatched_row - scroll_y
+        local_x = 10
+
+        def begin_click() -> None:
+            table._right_dragging = True
+            table._right_drag_started = False
+            table._drag_rows_seen.clear()
+            table._right_drag_last_row = None
+            table._right_drag_origin_x = local_x
+            table._right_drag_origin_y = int(table.header_height) + start - scroll_y
+            table._right_drag_pointer_x = table._right_drag_origin_x
+            table._right_drag_pointer_y = table._right_drag_origin_y
+            table._right_drag_native_origin_x = None
+            table._right_drag_native_origin_y = None
+            table._toggle_drag_range_to(start)
+
+        # Select one row.  Even if native pointer-to-grid rounding reports a
+        # neighbouring row, repeated polling without physical movement must
+        # not turn a simple click into a drag range.
+        begin_click()
+        with patch.object(
+            table,
+            '_sample_native_right_drag_pointer',
+            return_value=(local_x, mismatched_y, True),
+        ):
+            table._right_drag_auto_scroll_tick()
+            table._right_drag_auto_scroll_tick()
+        self.assertEqual(pane.marked, {entries[8].path})
+        self.assertFalse(table._right_drag_started)
+        table.end_right_drag()
+
+        # The same guarantee applies when the one clicked row is being
+        # deselected: no unrelated neighbour may become selected.
+        begin_click()
+        with patch.object(
+            table,
+            '_sample_native_right_drag_pointer',
+            return_value=(local_x, mismatched_y, True),
+        ):
+            table._right_drag_auto_scroll_tick()
+            table._right_drag_auto_scroll_tick()
+        self.assertFalse(pane.marked)
+        self.assertFalse(table._right_drag_started)
         table.end_right_drag()
 
     async def test_list_right_drag_batches_crossed_rows(self):
