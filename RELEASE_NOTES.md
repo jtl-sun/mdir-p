@@ -1,3 +1,18 @@
+# mDIR-P 2.26.31
+
+Unified progress reporting for file operations. Copy, Move, Delete, ZIP creation and extraction share a progress tracker and two-level progress dialog with live item/overall progress, processed bytes, average transfer speed, and ETA. File search shares the reporting model and shows actual scanned and matched counts without an invented percentage.
+
+- Added Pause/Resume, Cancel and Background controls; `Ctrl+Alt+P` reopens an active background operation.
+- Added chunk-level progress and cooperative cancellation for large transfers and ZIP operations.
+- Preserved existing Copy/Move/Delete semantics, overwrite prompts, Trash/Recycle Bin handling and platform shortcuts.
+- Added regression tests for progress, ZIP integrity, and cancellation.
+- OS-managed Recycle Bin and some metadata-only moves cannot be interrupted mid-call.
+- Test on a removable drive before applying to important data; no automatic rollback is promised for every OS-level error.
+
+Download the mDIR-P 2.26.31 archive, close mDIR, extract it and run `INSTALL_MDIR.bat`. Personal settings are preserved.
+
+---
+
 # mDIR-P 2.26.30
 
 This release integrates and reviews the 2.26.16–2.26.29 updates: large-folder selection and right-drag improvements, a dedicated Windows Terminal profile, cached Office PDF previews, native administrator delete retries, and shared Recent Folders menus on both panes.
