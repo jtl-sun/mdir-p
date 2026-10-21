@@ -1,3 +1,23 @@
+## 2.26.32
+
+- Fixed plain right-click selection sometimes toggling two or more rows because the 30 ms native pointer poller could map the stationary pointer to a neighbouring terminal row and incorrectly treat it as a drag.
+- A right-button MouseDown now toggles exactly the clicked row, while continuous drag selection remains disarmed until actual pointer movement is observed.
+- Native Windows pointer coordinates keep a separate drag origin from Textual MouseDown coordinates so terminal-grid rounding differences cannot arm a drag by themselves.
+- Edge auto-scroll is disabled until drag movement has genuinely started; a stationary right click near the top/bottom of the pane can no longer auto-select another row.
+- Very fast real drags still include the MouseUp endpoint even when the 30 ms controller has not reached its next tick.
+- Preserved the existing one-toggle-per-row drag semantics, skipped-row filling, distance-based acceleration, and 2.26.31 long-path Copy/Move changes.
+- Added regression coverage for both single-row selection and single-row deselection when native pointer sampling reports a mismatched neighbouring row.
+
+Also merged into this release (long-path Copy/Move work from the local 2.26.31 line):
+
+- Added Windows extended-length path handling to Copy/Move internals so deep directory trees such as Unity `Library/PackageCache` do not fail merely because a staged destination path crosses the classic MAX_PATH boundary.
+- Shortened transactional staging/rollback sibling names from target-name-plus-UUID forms to compact `.~mc-*` / `.~mb-*` names, preserving overwrite safety while reducing temporary path depth.
+- Added two bounded retries for transient Windows `WinError 2/3` copy failures only when the source still exists; disappearing live-project files are never silently skipped.
+- Preserved the existing throttled progress UI (batched by item count/time) so the long-path fix adds no per-file repaint cost on normal copies.
+- Preserved the 2.26.30 review fixes for elevated-delete cancellation/partial results, selected-link shell paths, queued Office-preview cancellation, and startup-dialog focus.
+- Added regression coverage for extended drive/UNC paths, compact staging names, transient retry behavior, and normal-copy no-retry behavior.
+>>>>>>> ziptree-2.26.32
+
 ## 2.26.31 — Unified operation progress (2026-10-21)
 
 - Introduce a shared thread-safe progress model for Copy, Move, Delete, ZIP and search.
@@ -5,12 +25,11 @@
 - Background operations can be reopened with Ctrl+Alt+P; pause and cancel operate at safe checkpoints.
 - Preserve legacy callbacks; add regression coverage for cancellation and ZIP roundtrips.
 
-## 2.26.29
-
 ## 2.26.30
 
-Reviewed 2.26.29; corrected administrator-delete cancellation and partial results, selected-link path handling, queued Office-preview cancellation, and late startup dialog focus. Added regression coverage and Windows test isolation. See docs/REVIEW-2.26.30.md.
+- Reviewed the 2.26.29 integration and corrected administrator-delete cancellation/partial results, selected-link path handling, queued Office-preview cancellation, and late startup dialog focus.
 
+## 2.26.29
 
 - Recent Folders now behaves like a normal desktop drop-down: clicking anywhere outside the list closes it immediately and the same click is replayed to the underlying mDIR control, so no second click is required.
 - Clicking the same pane's `▼` button while the list is open now simply closes the list instead of reopening it.

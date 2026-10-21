@@ -1187,6 +1187,8 @@ class BaseApp(AIShellApp):
         )
         if errors:
             summary += f", {len(errors):,} error(s)"
+        if elevated_result.cancelled:
+            summary += " (cancelled)"
         self.set_status(summary)
         if errors:
             self.notify(

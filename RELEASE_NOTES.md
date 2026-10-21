@@ -1,3 +1,40 @@
+# mDIR-P 2.26.32
+
+This update fixes accidental multi-row toggling from a single right click while preserving continuous Total Commander-style right-button drag selection.
+
+## Right-click selection stability
+
+- A stationary right click now toggles exactly one row.
+- The right-drag controller remains idle until real pointer movement is detected.
+- Textual click coordinates and native Windows pointer coordinates keep separate movement origins, preventing Windows Terminal grid-rounding differences from looking like movement.
+- Edge scrolling does not start on MouseDown; it becomes active only after drag movement starts.
+- Fast real drags still commit the final MouseUp row before the gesture closes.
+
+## Preserved behavior
+
+The 30 ms coalesced drag controller, one-toggle-per-row rule, skipped-row filling, distance-based edge acceleration, large-folder selection optimizations, Office PDF Preview, Recent Folders, native administrator delete, and the long-path Copy/Move support described below remain intact.
+
+## Validation
+
+Regression coverage now includes a stationary right-click case where native pointer sampling intentionally reports a neighbouring row. The selected or deselected state must remain limited to the clicked row. Actual Windows Terminal mouse behavior should still be confirmed manually.
+
+## Long-path-safe file operations
+
+- Copy/Move internally use Windows extended-length filesystem paths (`\\?\...`, including UNC handling) so deep children inherit long-path support during recursive operations.
+- Safe staging and rollback names are now compact (`.~mc-*` / `.~mb-*`) instead of repeating the full destination name plus a 32-character UUID.
+- Transient Windows `WinError 2/3` file-copy failures get at most two short retries, and only while the source still exists. Files that disappear from a live project are reported rather than silently omitted.
+- The existing progress UI throttling remains in place, so normal copies do not gain extra repaint work.
+
+## Preserved 2.26.30 fixes
+
+Administrator-delete cancellation/partial-result handling, selected-link shell paths, queued Office Preview cancellation, late startup dialog focus protection, Recent Folders, Office PDF Preview, and native UAC delete behavior remain intact.
+
+## Validation
+
+The long-path helper/retry tests and the existing non-UI advanced file-operation tests pass in the build environment. Windows extended-path behavior still requires final manual confirmation on Windows with an actually deep project tree.
+
+---
+
 # mDIR-P 2.26.31
 
 Unified progress reporting for file operations. Copy, Move, Delete, ZIP creation and extraction share a progress tracker and two-level progress dialog with live item/overall progress, processed bytes, average transfer speed, and ETA. File search shares the reporting model and shows actual scanned and matched counts without an invented percentage.
@@ -15,24 +52,11 @@ Download the mDIR-P 2.26.31 archive, close mDIR, extract it and run `INSTALL_MDI
 
 # mDIR-P 2.26.30
 
-This release integrates and reviews the 2.26.16–2.26.29 updates: large-folder selection and right-drag improvements, a dedicated Windows Terminal profile, cached Office PDF previews, native administrator delete retries, and shared Recent Folders menus on both panes.
-
-## Review fixes
-
-- Stop administrator deletion after cancellation instead of starting the next permanent-delete batch.
-- Preserve completed-item counts when a later administrator batch fails.
-- Pass the selected link path to Windows Shell without resolving it to the link target.
-- Cancel Office preview requests even while they are waiting for another conversion.
-- Prevent delayed startup callbacks from taking keyboard focus away from an open dialog.
-- Make recent-folder UI tests wait for startup and menu focus; isolate test logging to avoid locked temporary files on Windows.
-
-## Installation and verification
-
-Close mDIR, extract `mDIR-P-2.26.30.zip`, run `INSTALL_MDIR.bat`, and reopen it. Both panels retain independent hidden-file, thumbnail, and selection controls. See `docs/REVIEW-2.26.30.md` for review scope, regression checks, and remaining manual checks. Office/UAC integration requires validation with the installed Office version and Windows account; mocked tests do not establish those manual results.
+Reviewed 2.26.29 and corrected administrator-delete cancellation/partial results, selected-link path handling, queued Office-preview cancellation, and late startup dialog focus.
 
 ---
 
-## mDIR-P 2.26.29
+# mDIR-P 2.26.29
 
 Recent Folders is now a true click-through drop-down. While the list is open, one click anywhere outside it closes the list and immediately performs the action at the clicked location. The same `▼` button toggles the list closed without reopening it.
 

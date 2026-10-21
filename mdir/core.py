@@ -61,6 +61,7 @@ SIZE_MODIFIED_GAP = "  "
 RIGHT_DRAG_SCROLL_INTERVAL = 0.030
 RIGHT_DRAG_ACCEL_CELLS = 3
 RIGHT_DRAG_MAX_SCROLL_STEP = 8
+RIGHT_DRAG_START_THRESHOLD_CELLS = 1
 
 IMAGE_EXTENSIONS = {
     ".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp", ".tif", ".tiff"
@@ -657,6 +658,11 @@ class MDirDataTable(DataTable):
         self._right_drag_scroll_timer = None
         self._right_drag_pointer_x: Optional[int] = None
         self._right_drag_pointer_y: Optional[int] = None
+        self._right_drag_origin_x: Optional[int] = None
+        self._right_drag_origin_y: Optional[int] = None
+        self._right_drag_native_origin_x: Optional[int] = None
+        self._right_drag_native_origin_y: Optional[int] = None
+        self._right_drag_started = False
         self._right_drag_terminal_grid = None
 
         self._resize_key: Optional[str] = None
@@ -923,6 +929,28 @@ class MDirDataTable(DataTable):
         except Exception:
             return None
 
+
+    @staticmethod
+    def _right_drag_moved(
+        mouse_x: int,
+        mouse_y: int,
+        origin_x: Optional[int],
+        origin_y: Optional[int],
+    ) -> bool:
+        """Return True only after the pointer has actually moved a cell.
+
+        A plain right click must toggle exactly one row.  Native Windows pointer
+        sampling and Textual event coordinates can differ by a row near terminal
+        boundaries, so the drag controller is not allowed to advance selection
+        until real pointer movement has been observed.
+        """
+        if origin_x is None or origin_y is None:
+            return False
+        return max(
+            abs(int(mouse_x) - int(origin_x)),
+            abs(int(mouse_y) - int(origin_y)),
+        ) >= RIGHT_DRAG_START_THRESHOLD_CELLS
+
     def _right_drag_horizontal_ok(self, mouse_x: int) -> bool:
         """Pause outside the pane horizontally without ending the gesture."""
         return 0 <= int(mouse_x) < max(1, int(self.size.width))
@@ -944,8 +972,34 @@ class MDirDataTable(DataTable):
                 except Exception:
                     pass
                 return
+
+            if self._right_drag_native_origin_x is None:
+                # Keep native coordinates in their own coordinate space.  Do
+                # not compare them with Textual MouseDown coordinates because
+                # Windows Terminal grid rounding can differ by a row.
+                self._right_drag_native_origin_x = mouse_x
+                self._right_drag_native_origin_y = mouse_y
+            elif (
+                not self._right_drag_started
+                and self._right_drag_moved(
+                    mouse_x,
+                    mouse_y,
+                    self._right_drag_native_origin_x,
+                    self._right_drag_native_origin_y,
+                )
+            ):
+                self._right_drag_started = True
+
             self._right_drag_pointer_x = mouse_x
             self._right_drag_pointer_y = mouse_y
+
+        # MouseDown already toggled exactly one row.  Until actual pointer
+        # movement is observed, polling must never toggle a neighbouring row
+        # or start edge scrolling.
+        if not self._right_drag_started:
+            self._right_drag_scroll_direction = 0
+            self._right_drag_scroll_step = 1
+            return
 
         mouse_x = self._right_drag_pointer_x
         mouse_y = self._right_drag_pointer_y
@@ -994,6 +1048,11 @@ class MDirDataTable(DataTable):
         self._right_drag_last_row = None
         self._right_drag_pointer_x = None
         self._right_drag_pointer_y = None
+        self._right_drag_origin_x = None
+        self._right_drag_origin_y = None
+        self._right_drag_native_origin_x = None
+        self._right_drag_native_origin_y = None
+        self._right_drag_started = False
         self._right_drag_terminal_grid = None
 
     def cancel_pointer_interaction(self) -> None:
@@ -1166,17 +1225,32 @@ class MDirDataTable(DataTable):
 
         if event.button == 3:
             self._right_dragging = True
+            self._right_drag_started = False
             self._drag_rows_seen.clear()
             self._right_drag_last_row = None
             self._right_drag_scroll_direction = 0
             self._right_drag_scroll_step = 1
             self._right_drag_terminal_grid = None
+            self._right_drag_native_origin_x = None
+            self._right_drag_native_origin_y = None
             mouse_x, mouse_y = self._event_local_pointer(event)
+            self._right_drag_origin_x = mouse_x
+            self._right_drag_origin_y = mouse_y
             self._right_drag_pointer_x = mouse_x
             self._right_drag_pointer_y = mouse_y
+
+            # Capture a native-space origin immediately while the button is
+            # still down.  This preserves drag detection even if Windows
+            # Terminal later coalesces all B3-Motion events before the first
+            # 30 ms timer tick.  Native and Textual origins remain separate.
+            native_origin = self._sample_native_right_drag_pointer()
+            if native_origin is not None:
+                native_x, native_y, native_down = native_origin
+                if native_down:
+                    self._right_drag_native_origin_x = native_x
+                    self._right_drag_native_origin_y = native_y
+
             self._ensure_right_drag_timer()
-            if self._right_drag_horizontal_ok(mouse_x):
-                self._update_right_drag_auto_scroll(mouse_y)
 
             try:
                 self.capture_mouse()
@@ -1263,6 +1337,16 @@ class MDirDataTable(DataTable):
         mouse_x, mouse_y = self._event_local_pointer(event)
         self._right_drag_pointer_x = mouse_x
         self._right_drag_pointer_y = mouse_y
+        if (
+            not self._right_drag_started
+            and self._right_drag_moved(
+                mouse_x,
+                mouse_y,
+                self._right_drag_origin_x,
+                self._right_drag_origin_y,
+            )
+        ):
+            self._right_drag_started = True
         event.stop()
 
     async def on_mouse_up(self, event: events.MouseUp) -> None:
@@ -1294,6 +1378,16 @@ class MDirDataTable(DataTable):
             return
 
         if self._right_dragging and event.button == 3:
+            # A very fast drag can end before the 30 ms controller gets its
+            # next tick.  If movement was already confirmed, include the row
+            # under MouseUp once before closing the gesture.  A plain click
+            # remains a one-row toggle because _right_drag_started is False.
+            if self._right_drag_started:
+                mouse_x, mouse_y = self._event_local_pointer(event)
+                if self._right_drag_horizontal_ok(mouse_x):
+                    row = self._row_from_local_y(mouse_y)
+                    if row is not None:
+                        self._toggle_drag_range_to(row)
             self.end_right_drag()
             try:
                 self.release_mouse()

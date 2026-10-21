@@ -2011,6 +2011,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 table = pane.table
                 start_row = pane.row_by_path[files[2]]
                 table._right_dragging = True
+                table._right_drag_started = True
                 table._drag_rows_seen.clear()
                 table._right_drag_last_row = None
                 table._toggle_drag_range_to(start_row)

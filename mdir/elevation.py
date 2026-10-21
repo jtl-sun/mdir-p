@@ -232,7 +232,7 @@ def _create_shell_item(path: Path) -> ctypes.c_void_p:
     output = ctypes.c_void_p()
     hr = int(
         shell32.SHCreateItemFromParsingName(
-            os.path.abspath(path),
+            os.path.abspath(os.fspath(path)),
             None,
             ctypes.byref(iid),
             ctypes.byref(output),
@@ -381,6 +381,30 @@ def _run_native_shell_delete(
         _release(file_operation)
 
 
+def _append_batch_outcomes(
+    result: FileOperationResult,
+    paths: tuple[Path, ...],
+    permanent_keys: set[str],
+    *,
+    attempted: bool = True,
+) -> None:
+    """Merge actual filesystem outcomes into an elevated-delete result."""
+    for path in paths:
+        key = os.path.normcase(os.path.abspath(path))
+        if not os.path.lexists(path):
+            if path.name not in result.completed_names:
+                result.completed += 1
+                result.completed_names.append(path.name)
+                if key in permanent_keys:
+                    result.permanently_deleted += 1
+                else:
+                    result.recycled += 1
+        elif attempted:
+            message = f"{path.name}: Administrator retry did not remove this item"
+            if message not in result.errors:
+                result.errors.append(message)
+
+
 def run_elevated_delete(
     items: Iterable[Path],
     *,
@@ -389,10 +413,9 @@ def run_elevated_delete(
 ) -> FileOperationResult:
     """Retry protected deletes with Windows' native elevated Shell broker.
 
-    The implementation deliberately avoids PowerShell and does not elevate the
-    mDIR Python process.  Windows itself creates the signed FileOperation COM
-    local server through the standard COM elevation moniker, shows UAC, and
-    performs only the requested delete operation.
+    Recycle and permanent-delete batches are intentionally separate because
+    their IFileOperation flags differ.  Partial results are recorded after each
+    batch so a later cancellation/error never loses already completed work.
     """
     paths = tuple(Path(item) for item in items)
     permanent_paths = tuple(Path(item) for item in permanent_items)
@@ -404,6 +427,7 @@ def run_elevated_delete(
     recycle_paths, permanent_batch, permanent_keys = _partition_delete_paths(
         paths, permanent_paths
     )
+    result = FileOperationResult(operation="delete", total=len(paths))
 
     ole32 = ctypes.WinDLL("ole32", use_last_error=True)
     ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, ctypes.c_uint32]
@@ -428,51 +452,60 @@ def run_elevated_delete(
             "Administrator delete requires a Windows STA worker thread"
         )
 
-    aborted = False
-    failure: ElevationError | ElevationCancelled | None = None
     try:
-        # Keep the original mDIR policy: normal files/folders go to the Recycle
-        # Bin; only individual files already classified as 10 GiB+ are deleted
-        # permanently.  Separate operations are necessary because the recycle
-        # policy is configured per IFileOperation instance.
         if recycle_paths:
-            aborted = _run_native_shell_delete(
-                recycle_paths,
-                recycle=True,
-                owner_hwnd=owner_hwnd,
-            ) or aborted
-        if permanent_batch and not aborted:
-            aborted = _run_native_shell_delete(
-                permanent_batch,
-                recycle=False,
-                owner_hwnd=owner_hwnd,
-            ) or aborted
-    except (ElevationError, ElevationCancelled) as exc:
-        failure = exc
-        aborted = isinstance(exc, ElevationCancelled)
+            try:
+                aborted = _run_native_shell_delete(
+                    recycle_paths,
+                    recycle=True,
+                    owner_hwnd=owner_hwnd,
+                )
+            except ElevationCancelled:
+                _append_batch_outcomes(result, recycle_paths, permanent_keys)
+                if result.completed == 0:
+                    raise
+                result.cancelled = True
+                return result
+            except Exception as exc:
+                _append_batch_outcomes(result, recycle_paths, permanent_keys)
+                result.errors.append(f"Administrator recycle batch failed: {exc}")
+                return result
+            _append_batch_outcomes(result, recycle_paths, permanent_keys)
+            if aborted:
+                result.cancelled = True
+                if result.completed == 0:
+                    raise ElevationCancelled(
+                        "Administrator delete operation was cancelled"
+                    )
+                # Do not start the permanent-delete batch after cancellation.
+                return result
+
+        if permanent_batch:
+            try:
+                aborted = _run_native_shell_delete(
+                    permanent_batch,
+                    recycle=False,
+                    owner_hwnd=owner_hwnd,
+                )
+            except ElevationCancelled:
+                _append_batch_outcomes(result, permanent_batch, permanent_keys)
+                if result.completed == 0:
+                    raise
+                result.cancelled = True
+                return result
+            except Exception as exc:
+                _append_batch_outcomes(result, permanent_batch, permanent_keys)
+                result.errors.append(f"Administrator permanent-delete batch failed: {exc}")
+                return result
+            _append_batch_outcomes(result, permanent_batch, permanent_keys)
+            if aborted:
+                result.cancelled = True
+                if result.completed == 0:
+                    raise ElevationCancelled(
+                        "Administrator delete operation was cancelled"
+                    )
+        return result
     finally:
         if initialized_here:
             ole32.CoUninitialize()
 
-    result = FileOperationResult(operation="delete", total=len(paths))
-    for path in paths:
-        if not os.path.lexists(path):
-            result.completed += 1
-            result.completed_names.append(path.name)
-            key = os.path.normcase(os.path.abspath(path))
-            if key in permanent_keys:
-                result.permanently_deleted += 1
-            else:
-                result.recycled += 1
-        else:
-            result.errors.append(
-                f"{path.name}: {failure or 'Administrator retry did not remove this item'}"
-            )
-
-    if failure is not None and result.completed == 0:
-        raise failure
-    if aborted and result.completed == 0:
-        raise ElevationCancelled("Administrator delete operation was cancelled")
-    if aborted:
-        result.cancelled = True
-    return result

@@ -40,9 +40,6 @@ class _FakeSession:
 class OfficePdfPreviewTests(unittest.TestCase):
     def setUp(self):
         office.shutdown_office_pdf_preview()
-        diagnostic = patch.object(office, '_diagnostic')
-        diagnostic.start()
-        self.addCleanup(diagnostic.stop)
 
     def tearDown(self):
         office.shutdown_office_pdf_preview()

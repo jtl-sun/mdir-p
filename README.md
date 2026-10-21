@@ -40,6 +40,7 @@ manage files quickly and efficiently from the keyboard.
 - Integrated AI terminal with Codex, PowerShell, and Ollama providers
 - Copy, move, rename, delete, search, drive selection, and editable paths
 - Responsive background Copy, Move, and Delete for batches exceeding 1,000
+- Windows long-path-aware Copy/Move with compact transactional staging for deep project trees such as Unity caches
   items, with live progress and cancellation
 - Compact overwrite warning before Copy or Move replaces a same-name item
 - Advanced file search with filename patterns, content search, depth and

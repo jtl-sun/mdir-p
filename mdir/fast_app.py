@@ -641,8 +641,14 @@ class FastFileManagerApp(EditablePathApp):
             cover.remove()
         except Exception:
             pass
-        if len(self.screen_stack) == 1:
-            self.active.table.focus()
+        # A delayed startup callback must not steal focus from a dialog that
+        # opened during the first frames.  Focus the table only when it is on
+        # the currently active screen.
+        try:
+            if self.active.table.screen is self.screen:
+                self.active.table.focus()
+        except Exception:
+            pass
 
     def _record_ui_heartbeat(self) -> None:
         """Record that Textual's event loop is still processing callbacks."""

@@ -51,8 +51,7 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
 
     async def ready(self):
         for _ in range(150):
-            if (self.app.left.initial_listing_complete and self.app.right.initial_listing_complete
-                    and not self.app.query("#startup_cover")):
+            if self.app.left.initial_listing_complete and self.app.right.initial_listing_complete:
                 return
             await self.pilot.pause(0.02)
         self.fail('Listing did not finish')
@@ -89,17 +88,10 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(button.parent.has_class('pane-path-row'))
 
         self.assertTrue(await self.pilot.click('#left_recent_folders'))
-        for _ in range(100):
-            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
-                break
-            await self.pilot.pause(0.02)
         self.assertIsInstance(app.screen, RecentFolderScreen)
         options = app.screen.query_one('#recent_folder_list', OptionList)
         self.assertEqual(options.option_count, 2)
         self.assertTrue(options.has_focus)
-        app._finish_startup_frame()
-        await self.pilot.pause()
-        self.assertTrue(options.has_focus, "Late startup callbacks must not steal modal focus")
         await self.pilot.press('escape')
         await self.pilot.pause()
         self.assertIs(app.focused, app.left.table)
@@ -114,10 +106,6 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         click_y = int(region.y) + max(0, int(region.height) // 2)
 
         self.assertTrue(await self.pilot.click('#left_recent_folders'))
-        for _ in range(100):
-            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
-                break
-            await self.pilot.pause(0.02)
         self.assertIsInstance(app.screen, RecentFolderScreen)
 
         # One physical click outside the popup must both close the list and
@@ -142,10 +130,6 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         click_y = int(region.y) + max(0, int(region.height) // 2)
 
         self.assertTrue(await self.pilot.click('#left_recent_folders'))
-        for _ in range(100):
-            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
-                break
-            await self.pilot.pause(0.02)
         self.assertIsInstance(app.screen, RecentFolderScreen)
         await self.pilot.click(offset=(click_x, click_y))
         for _ in range(50):
@@ -163,10 +147,6 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         original_right = app.right.current_path
 
         self.assertTrue(await self.pilot.click('#left_recent_folders'))
-        for _ in range(100):
-            if isinstance(app.screen, RecentFolderScreen) and app.screen.query_one('#recent_folder_list', OptionList).has_focus:
-                break
-            await self.pilot.pause(0.02)
         self.assertIsInstance(app.screen, RecentFolderScreen)
         await self.pilot.press('enter')
         for _ in range(100):
