@@ -91,6 +91,10 @@ class PaneButtonTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsInstance(app.screen, RecentFolderScreen)
         options = app.screen.query_one('#recent_folder_list', OptionList)
         self.assertEqual(options.option_count, 2)
+        for _ in range(50):
+            if options.has_focus:
+                break
+            await self.pilot.pause(0.02)
         self.assertTrue(options.has_focus)
         await self.pilot.press('escape')
         await self.pilot.pause()
