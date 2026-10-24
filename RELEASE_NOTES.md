@@ -1,3 +1,16 @@
+# mDIR-P 2.26.33
+
+## More comfortable footer mouse controls
+
+- Made the existing bottom function-key command bar **three terminal rows high** so mouse clicks work across the entire button height, not just the text line.
+- Reserved **one blank row below the buttons**, keeping the mouse targets farther from the Windows taskbar / Ubuntu dock.
+- Retained the existing button labels, colors, order, keyboard shortcuts and file operations.
+- No new settings or menus. The layout change is deliberately minimal.
+
+Close and reopen mDIR after updating. On Windows install the `mDIR-P-2.26.33.zip` release as usual; on Ubuntu use the corresponding DEB or source installer. The display remains dependent on the terminal's cell height and window size.
+
+---
+
 # mDIR-P 2.26.32
 
 This update fixes accidental multi-row toggling from a single right click while preserving continuous Total Commander-style right-button drag selection.

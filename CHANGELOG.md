@@ -1,3 +1,8 @@
+## 2.26.33
+
+- Footer command buttons are now three rows tall, with one bottom safety row to reduce taskbar-preview interference during mouse use.
+- Existing keyboard shortcuts, button order and program behavior remain unchanged.
+
 ## 2.26.32
 
 - Fixed plain right-click selection sometimes toggling two or more rows because the 30 ms native pointer poller could map the stationary pointer to a neighbouring terminal row and incorrectly treat it as a drag.
