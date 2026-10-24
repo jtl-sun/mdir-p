@@ -364,11 +364,13 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
             app.left_start = root
             app.right_start = root
             app._save_paths = lambda: None
-            async with app.run_test(size=(100, 24)) as pilot:
+            # Keep the original pane work area despite the taller footer.
+            async with app.run_test(size=(100, 30)) as pilot:
                 for _ in range(100):
-                    if app.left.initial_listing_complete:
+                    if app.left.initial_listing_complete and app.right.initial_listing_complete:
                         break
                     await pilot.pause(0.02)
+                await pilot.pause()
 
                 table = app.left.table
                 current_row = app.left.row_by_path[files[0]]
