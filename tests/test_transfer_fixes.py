@@ -84,57 +84,72 @@ class ProgressUiTests(unittest.IsolatedAsyncioTestCase):
             self.assertIsInstance(app.screen, FileOperationProgressScreen)
 
     async def test_real_worker_continues_after_background(self):
-        import time
+        import asyncio
         from mdir.app import MDirApp
         from test_thumbnail import FakeManager
+
+        async def wait_until(predicate, message, timeout=15):
+            deadline = asyncio.get_running_loop().time() + timeout
+            while not predicate():
+                if asyncio.get_running_loop().time() >= deadline:
+                    self.fail(message)
+                await asyncio.sleep(0.05)
+
         for operation in ('copy', 'move'):
             with self.subTest(operation=operation), tempfile.TemporaryDirectory() as tmp:
                 root = Path(tmp)
                 source_dir = root / 'left'; source_dir.mkdir()
                 out = root / 'right'; out.mkdir()
-                source = source_dir / 'data.bin'; source.write_bytes(b'x' * (8 * 1024 * 1024))
+                payload = b'x' * (2 * 1024 * 1024)
+                source = source_dir / 'data.bin'; source.write_bytes(payload)
                 app = MDirApp(); app.left_start = source_dir; app.right_start = out
                 app._save_paths = lambda: None
+                entered, release = Event(), Event()
                 advance = ProgressTracker.advance
-                def slow_advance(tracker, amount):
-                    time.sleep(0.5)
+                def gated_advance(tracker, amount):
                     advance(tracker, amount)
+                    if not entered.is_set():
+                        entered.set()
+                        if not release.wait(120):
+                            raise TimeoutError('Test did not release transfer worker')
                 replace = ops._replace_path
                 def cross(src, dst):
                     if src == source and operation == 'move':
                         raise OSError(errno.EXDEV, 'cross device')
                     return replace(src, dst)
-                with patch('mdir.core.load_config_data', return_value={}), patch('mdir.thumbnail_app.ThumbnailManager', FakeManager), patch.object(ProgressTracker, 'advance', slow_advance), patch.object(ops, '_replace_path', side_effect=cross):
+                with patch('mdir.core.load_config_data', return_value={}), patch('mdir.thumbnail_app.ThumbnailManager', FakeManager), patch.object(ProgressTracker, 'advance', gated_advance), patch.object(ops, '_replace_path', side_effect=cross):
                     async with app.run_test(size=(120, 38)) as pilot:
-                        for _ in range(100):
-                            if app.left.initial_listing_complete and app.right.initial_listing_complete: break
-                            await pilot.pause(0.02)
-                        app._start_file_operation(operation, (source,), out, 'left')
-                        await pilot.pause(0.1)
-                        await pilot.click('#file_operation_background')
-                        await pilot.pause(0.1)
-                        self.assertNotIsInstance(app.screen, FileOperationProgressScreen)
-                        self.assertTrue(app._file_operation_busy)
-                        window = app._file_mini_window
-                        self.assertIsNotNone(window)
-                        self.assertIsNone(window.process.poll())
-                        app.set_active('right')
-                        self.assertEqual(app.active_side, 'right')
-                        # Exercise commands from the independent window.
-                        window.commands.put('pause')
-                        await pilot.pause(0.2)
-                        self.assertTrue(app._file_operation_pause.is_set())
-                        window.commands.put('resume')
-                        await pilot.pause(0.2)
-                        self.assertFalse(app._file_operation_pause.is_set())
-                        window.commands.put('foreground')
-                        await pilot.pause(0.1)
-                        self.assertIsInstance(app.screen, FileOperationProgressScreen)
-                        await pilot.click('#file_operation_background')
-                        for _ in range(150):
-                            if not app._file_operation_busy: break
-                            await pilot.pause(0.02)
-                        self.assertFalse(app._file_operation_busy)
-                        self.assertIsNone(app._file_mini_window)
-                        self.assertEqual((out / source.name).read_bytes(), b'x' * (8 * 1024 * 1024))
-                        self.assertEqual(source.exists(), operation == 'copy')
+                        try:
+                            await wait_until(lambda: app.left.initial_listing_complete and app.right.initial_listing_complete, 'Pane listing did not finish')
+                            app._start_file_operation(operation, (source,), out, 'left')
+                            await wait_until(entered.is_set, 'Transfer worker did not start')
+                            await pilot.click('#file_operation_background')
+                            await wait_until(lambda: not isinstance(app.screen, FileOperationProgressScreen), 'Background did not close modal')
+                            self.assertTrue(app._file_operation_busy)
+                            window = app._file_mini_window
+                            self.assertIsNotNone(window)
+                            self.assertIsNone(window.process.poll())
+                            app.set_active('right')
+                            self.assertEqual(app.active_side, 'right')
+                            window.commands.put('pause')
+                            await wait_until(app._file_operation_pause.is_set, 'Mini-window pause was not handled')
+                            window.commands.put('resume')
+                            await wait_until(lambda: not app._file_operation_pause.is_set(), 'Mini-window resume was not handled')
+                            window.commands.put('foreground')
+                            await wait_until(lambda: isinstance(app.screen, FileOperationProgressScreen), 'Foreground was not restored')
+                            await pilot.pause()
+                            await pilot.click('#file_operation_background')
+                            await wait_until(lambda: not isinstance(app.screen, FileOperationProgressScreen), 'Second Background failed')
+                            release.set()
+                            await wait_until(lambda: not app._file_operation_busy, 'Background transfer did not finish')
+                            self.assertIsNone(app._file_mini_window)
+                            self.assertEqual((out / source.name).read_bytes(), payload)
+                            self.assertEqual(source.exists(), operation == 'copy')
+                        finally:
+                            # Always unblock and join the real worker before
+                            # TemporaryDirectory removes files, including on failure.
+                            if app._file_operation_busy:
+                                app._file_operation_cancel.set()
+                                app._file_operation_pause.clear()
+                            release.set()
+                            await wait_until(lambda: not app._file_operation_busy, 'Transfer worker cleanup timed out')

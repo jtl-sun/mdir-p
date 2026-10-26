@@ -22,7 +22,9 @@ class FooterMouseTargetTests(unittest.IsolatedAsyncioTestCase):
             async with app.run_test(size=(180, 42)) as pilot:
                 footer = app.query_one(Footer)
                 for _ in range(20):
-                    if list(footer.query(FooterKey)):
+                    if list(footer.query(FooterKey)) and all(
+                        key.size.height > 0 for key in footer.query(FooterKey)
+                    ):
                         break
                     await pilot.pause(0.05)
 
