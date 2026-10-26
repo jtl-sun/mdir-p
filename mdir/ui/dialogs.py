@@ -275,7 +275,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
         self.query_one("#file_operation_cancel", Button).focus()
 
     @staticmethod
-    def _size(value: float) -> str:
+    def _format_bytes(value: float) -> str:
         for unit in ("B", "KB", "MB", "GB", "TB"):
             if abs(value) < 1024 or unit == "TB":
                 return f"{value:,.1f} {unit}" if unit != "B" else f"{value:,.0f} B"
@@ -302,10 +302,10 @@ class FileOperationProgressScreen(ModalScreen[None]):
             f"{int(state.eta_seconds // 60)}m {int(state.eta_seconds % 60)}s"
             if state.eta_seconds is not None else "--"
         )
-        total = self._size(state.total_bytes) if state.total_bytes is not None else "?"
+        total = self._format_bytes(state.total_bytes) if state.total_bytes is not None else "?"
         self.query_one("#file_operation_metrics", Static).update(
-            f"{self._size(state.bytes_done)} / {total}  |  "
-            f"{self._size(state.bytes_per_second)}/s  |  ETA: {remaining}"
+            f"{self._format_bytes(state.bytes_done)} / {total}  |  "
+            f"{self._format_bytes(state.bytes_per_second)}/s  |  ETA: {remaining}"
         )
         self.query_one("#file_operation_counts", Static).update(
             f"Files: {state.items_done:,} / "
@@ -326,11 +326,19 @@ class FileOperationProgressScreen(ModalScreen[None]):
             progress=(100 * completed / max(1, self.total))
         )
 
+    def _detach_progress_view(self) -> None:
+        # Textual's mounted flag can remain true after a screen is popped.
+        # Remove references so worker updates never target a dismissed view.
+        for attribute in ("_file_operation_screen", "_archive_progress_screen"):
+            if getattr(self.app, attribute, None) is self:
+                setattr(self.app, attribute, None)
+
     def request_cancel(self) -> None:
         if self.cancel_event.is_set():
             return
         self.cancel_event.set()
         self.pause_event.clear()
+        self._detach_progress_view()
         self.app.set_status("Cancellation requested; finishing the current OS call safely.")
         self.dismiss(None)
 
@@ -342,10 +350,15 @@ class FileOperationProgressScreen(ModalScreen[None]):
     @on(Button.Pressed, "#file_operation_background")
     def background_clicked(self, event: Button.Pressed) -> None:
         event.stop()
-        self.dismiss(None)
+        self.pause_event.clear()
+        show_window = getattr(self.app, "_show_background_window", None)
+        if show_window is not None:
+            show_window(self)
+        self._detach_progress_view()
         self.app.set_status(
             f"{self.operation} continues in background. Ctrl+Alt+P shows progress."
         )
+        self.dismiss(None)
 
     @on(Button.Pressed, "#file_operation_pause")
     def pause_clicked(self, event: Button.Pressed) -> None:

@@ -1,3 +1,19 @@
+## 2.26.35
+
+- Background now opens a compact independent desktop window instead of hiding progress completely.
+- Shows current filename, overall progress, transferred bytes, speed, ETA and item count.
+- Includes Pause/Resume, Cancel and Foreground. Closing the mini window restores the main progress dialog.
+- Keeps the mini window visible while mDIR remains available for navigation and other actions. Additional transfers retain the existing queue behavior.
+- Closes the mini window on completion, foreground restore or application exit; uses nonblocking coalesced progress delivery.
+
+## 2.26.34
+
+- Fixed progress metrics failing with `Size object is not callable` by avoiding Textual's internal `_size` attribute.
+- Background clears pause and detaches dismissed progress views; worker updates continue and Ctrl+Alt+P can reopen progress.
+- Windows overwrite backup cleanup and cross-volume Move source cleanup retry read-only files without bypassing ACL/locked-file errors.
+- Cross-volume Move stages a complete copy before publishing and deleting the source. A source cleanup failure retains the complete destination and reports an error instead of rolling it back.
+- Added real worker/UI regression tests for Copy and Move Background, read-only cleanup, and destination preservation.
+
 ## 2.26.33
 
 - Footer command buttons are now three rows tall, with one bottom safety row to reduce taskbar-preview interference during mouse use.

@@ -23,6 +23,7 @@ from .ui.dialogs import (
     ElevatedDeleteProgressScreen,
     FileOperationProgressScreen,
 )
+from .background_progress import BackgroundProgressWindow
 from .progress import OperationCancelled, ProgressSnapshot, ProgressTracker
 from .file_operations import (
     PERMANENT_DELETE_THRESHOLD_BYTES,
@@ -341,12 +342,54 @@ class BaseApp(AIShellApp):
 
         self.push_screen(BatchRenameScreen(items), rename_requested)
 
-    def action_show_progress(self) -> None:
+    def _close_background_window(self, kind):
+        window = getattr(self, f"_{kind}_mini_window", None)
+        if window is not None:
+            window.close()
+            setattr(self, f"_{kind}_mini_window", None)
+        timer = getattr(self, f"_{kind}_mini_timer", None)
+        if timer is not None:
+            timer.stop()
+            setattr(self, f"_{kind}_mini_timer", None)
+
+    def _show_background_window(self, screen):
+        kind = "archive" if getattr(self, "_archive_progress_screen", None) is screen else "file"
+        self._close_background_window(kind)
+        try:
+            window = BackgroundProgressWindow(screen.operation, screen.source, screen.destination)
+        except OSError as exc:
+            self.set_status(f"Background window unavailable: {exc}. Ctrl+Alt+P shows progress.")
+            return
+        setattr(self, f"_{kind}_mini_window", window)
+        state = getattr(self, "_archive_last_snapshot" if kind == "archive" else "_file_last_snapshot", None)
+        if state is not None:
+            window.update(state)
+        def poll():
+            if window.process.poll() is not None:
+                self._close_background_window(kind)
+                self.action_show_progress(kind)
+                return
+            while not window.commands.empty():
+                command = window.commands.get()
+                if command == "foreground":
+                    self.action_show_progress(kind)
+                    return
+                if command == "cancel":
+                    screen.cancel_event.set()
+                    screen.pause_event.clear()
+                elif command == "pause":
+                    screen.pause_event.set()
+                elif command == "resume":
+                    screen.pause_event.clear()
+        setattr(self, f"_{kind}_mini_timer", self.set_interval(0.1, poll))
+
+    def action_show_progress(self, kind=None) -> None:
         """Reopen the progress view while a worker continues in background."""
-        if self._archive_busy and self._archive_progress_config is not None:
+        if kind != "file" and self._archive_busy and self._archive_progress_config is not None:
             screen = self._archive_progress_screen
             if screen is not None and screen.is_mounted:
                 return
+            self._close_background_window("archive")
             config = self._archive_progress_config
             screen = FileOperationProgressScreen(
                 config[0], config[1], config[2], config[3],
@@ -362,6 +405,7 @@ class BaseApp(AIShellApp):
             screen = self._file_operation_screen
             if screen is not None and screen.is_mounted:
                 return
+            self._close_background_window("file")
             config = self._file_progress_config
             screen = FileOperationProgressScreen(
                 config[0], config[1], config[2], config[3],
@@ -377,6 +421,9 @@ class BaseApp(AIShellApp):
 
     def _update_archive_progress(self, state: ProgressSnapshot) -> None:
         self._archive_last_snapshot = state
+        window = getattr(self, "_archive_mini_window", None)
+        if window is not None:
+            window.update(state)
         screen = self._archive_progress_screen
         if screen is not None and screen.is_mounted:
             try:
@@ -394,6 +441,7 @@ class BaseApp(AIShellApp):
             )
 
     def _dismiss_archive_progress(self) -> None:
+        self._close_background_window("archive")
         screen = self._archive_progress_screen
         self._archive_progress_screen = None
         self._archive_progress_config = None
@@ -922,6 +970,9 @@ class BaseApp(AIShellApp):
 
     def _update_file_operation_snapshot(self, state: ProgressSnapshot) -> None:
         self._file_last_snapshot = state
+        window = getattr(self, "_file_mini_window", None)
+        if window is not None:
+            window.update(state)
         screen = self._file_operation_screen
         if screen is not None and screen.is_mounted:
             try:
@@ -953,6 +1004,7 @@ class BaseApp(AIShellApp):
         fatal_error: str | None,
         overwrite: bool = False,
     ) -> None:
+        self._close_background_window("file")
         screen = self._file_operation_screen
         self._file_operation_screen = None
         self._file_progress_config = None

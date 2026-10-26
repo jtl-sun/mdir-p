@@ -1180,6 +1180,8 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             self._schedule_preview_layout(0.12)
 
     def on_unmount(self) -> None:
+        self._close_background_window("file")
+        self._close_background_window("archive")
         if self._shortcut_keyboard is not None:
             self._shortcut_keyboard.configure(self._shortcut_epoch + 1, {})
             self._shortcut_keyboard.shutdown()

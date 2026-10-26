@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import tempfile
+import os
 import threading
 import time
 import unittest
@@ -202,9 +203,14 @@ class AdvancedFeatureTests(unittest.TestCase):
             target = destination / source.name
             target.write_text("old", encoding="utf-8")
 
+            def fail_source_move(src, dst):
+                if src == source:
+                    raise OSError("simulated move failure")
+                os.replace(src, dst)
+
             with patch(
-                "mdir.file_operations.shutil.move",
-                side_effect=OSError("simulated move failure"),
+                "mdir.file_operations._replace_path",
+                side_effect=fail_source_move,
             ):
                 result = run_file_operation(
                     "move", (source,), destination, overwrite=True

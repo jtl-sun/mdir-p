@@ -5,6 +5,7 @@ import ntpath
 import shutil
 import ctypes
 import errno
+import stat
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -112,12 +113,24 @@ def destination_conflicts(
 
 
 def _remove_existing_target(path: Path) -> None:
-    """Remove one explicitly approved overwrite target, including long trees."""
+    """Remove an approved path, retrying Windows read-only entries only."""
     fs_path = _windows_extended_path(path)
+
+    def remove_readonly(function, failed_path, exc_info):
+        exc = exc_info[1]
+        if (not _IS_WINDOWS or not isinstance(exc, PermissionError)
+                or os.stat(failed_path, follow_symlinks=False).st_mode & stat.S_IWRITE):
+            raise exc
+        os.chmod(failed_path, stat.S_IWRITE)
+        function(failed_path)
+
     if os.path.isdir(fs_path) and not os.path.islink(fs_path):
-        shutil.rmtree(fs_path)
+        shutil.rmtree(fs_path, onerror=remove_readonly)
     else:
-        os.unlink(fs_path)
+        try:
+            os.unlink(fs_path)
+        except PermissionError as exc:
+            remove_readonly(os.unlink, fs_path, (type(exc), exc, exc.__traceback__))
 
 
 def _temporary_sibling(path: Path, kind: str) -> Path:
@@ -249,13 +262,32 @@ def _move_with_rollback(source: Path, target: Path, tracker: ProgressTracker | N
     if _path_exists(target):
         backup = _temporary_sibling(target, "backup")
         _replace_path(target, backup)
+    published = False
     try:
-        shutil.move(
-            _windows_extended_path(source),
-            _windows_extended_path(target),
-            copy_function=lambda s, d: _copy_with_progress_and_retry(s, d, tracker),
-        )
-    except Exception:
+        try:
+            _replace_path(source, target)
+        except OSError as exc:
+            if exc.errno != errno.EXDEV and getattr(exc, "winerror", None) != 17:
+                raise
+            staging = _copy_to_staging(source, target, tracker)
+            try:
+                _replace_path(staging, target)
+            except Exception:
+                if _path_exists(staging):
+                    _remove_existing_target(staging)
+                raise
+            published = True
+            # Once source cleanup begins, retain the complete destination even
+            # if cleanup fails part way through a directory tree.
+            _remove_existing_target(source)
+        else:
+            published = True
+    except Exception as exc:
+        if published:
+            raise OSError(
+                f"Destination copy retained at {target}; source cleanup failed: {exc}"
+                + (f"; old target retained at {backup}" if backup is not None else "")
+            ) from exc
         try:
             if _path_exists(target):
                 _remove_existing_target(target)

@@ -1,3 +1,35 @@
+# mDIR-P 2.26.35
+
+Background now keeps a small, movable desktop progress window visible while the main mDIR interface remains usable. The window displays filename, percentage, bytes, speed, ETA and item count, with Pause/Resume, Cancel and Foreground buttons. The close button returns to foreground progress. Ctrl+Alt+P also restores foreground progress. Completion closes the mini window automatically.
+
+The mini window stays on top so it remains visible while navigating mDIR. Existing additional Copy/Move requests are queued, as before. This update does not add simultaneous transfer workers.
+
+Windows requires Python's standard Tkinter component (included in normal python.org installations). If the window cannot start, foreground progress is restored. No extra pip dependency is needed.
+
+Validation: 29 targeted regression tests passed on Windows, including actual Copy/Move workers, a live mini-window process, pause/resume/foreground commands, main pane switching and completion cleanup. The desktop window and Pause/Resume button were also inspected interactively using example progress data.
+
+Install: close mDIR, extract mDIR-P-2.26.35.zip, run INSTALL_MDIR.bat and restart. Verify 2.26.35 in the title.
+
+---
+
+# mDIR-P 2.26.34
+
+## Copy / Move Background and source cleanup
+
+- Progress byte counts, speed and ETA no longer fail due to a Textual internal name collision.
+- Background resumes a paused operation and closes its progress view. Ctrl+Alt+P reopens the running operation.
+- Dismissed progress screens are detached so later updates and completion do not target an obsolete screen.
+- Read-only files in an approved overwrite backup or moved source are made writable only when Windows rejects their removal. Locked files and ACL denials still report errors.
+- Same-volume Move uses rename. Cross-volume Move copies into staging, publishes the complete destination, then removes the source. If source cleanup fails, the complete destination is retained and the failure is reported.
+
+Close mDIR, extract this release to a new folder, run INSTALL_MDIR.bat, and restart mDIR. Check version 2.26.34 in the title.
+
+The supplied second screenshot says Copy (9 completed, 9 errors), so it does not establish that a Move was dispatched. Its backup-removal WinError 5 is consistent with read-only files. This release tests both Copy and Move paths; it does not delete old source or .~mb-* folders from prior operations.
+
+Validation: 33 targeted tests on Windows/Python 3.12/Textual 8.2.8, including real background Copy/Move workers. Cross-volume behavior is forced with EXDEV in tests; the user's E:/F: drives were not modified.
+
+---
+
 # mDIR-P 2.26.33
 
 ## More comfortable footer mouse controls
