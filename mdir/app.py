@@ -292,10 +292,18 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             )
         return self._native_preview
 
+    def _sync_skin_classes(self) -> None:
+        """Apply historic chrome only to panes using a retro skin."""
+        for pane in (self.left, self.right):
+            pane.set_class(self.theme == OLD_M_THEME_NAME, "skin-original")
+            pane.set_class(self.theme == NORTON_THEME.name, "skin-norton")
+
     def _watch_theme(self, theme_name: str) -> None:
         """Apply and persist theme colors across Textual and native Preview."""
         super()._watch_theme(theme_name)
         install_file_colors(self.current_theme)
+        if self.is_running:
+            self._sync_skin_classes()
         if getattr(self, "_theme_preference_ready", False):
             try:
                 save_theme_name(theme_name)
@@ -460,6 +468,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
 
     def on_mount(self) -> None:
         super().on_mount()
+        self._sync_skin_classes()
         self.screen_change_signal.subscribe(self, self._preview_screen_changed, immediate=True)
         self.screen_change_signal.subscribe(self, self._sync_shortcut_keyboard, immediate=True)
         self.watch(self.screen, 'focused', self._sync_shortcut_keyboard)
