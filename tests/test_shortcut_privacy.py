@@ -46,6 +46,17 @@ class ShortcutPrivacyTests(unittest.TestCase):
             loaded = load_shortcuts(destination)
             self.assertEqual(loaded[0].target, r"D:\\Private\\Work")
 
+    def test_empty_legacy_list_is_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            legacy = root / ".mdir-p-shortcuts.json"
+            destination = root / "Config" / "shortcuts.json"
+            legacy.write_text("[]", encoding="utf-8")
+            result = migrate_legacy_shortcut_config(destination, legacy)
+            self.assertEqual(result, destination)
+            self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), [])
+            self.assertTrue(legacy.exists())
+
     def test_environment_override_remains_supported(self):
         with tempfile.TemporaryDirectory() as directory:
             custom = Path(directory) / "my-links.json"
