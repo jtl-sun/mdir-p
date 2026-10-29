@@ -317,28 +317,48 @@ Header {{
 }}
 
 FilePane {{
+    border: solid $surface-lighten-2;
+    background: $background;
+}}
+
+FilePane.active {{
+    border: solid $primary;
+}}
+
+/* Keep the existing green path bar and built-in light theme untouched.
+   Retro-only overrides are deliberately scoped to skin classes on each pane. */
+FilePane.skin-original,
+FilePane.skin-norton {{
     border: solid $mdir-border;
     background: $mdir-list-background;
 }}
 
-FilePane.active {{
+FilePane.skin-original.active,
+FilePane.skin-norton.active {{
     border: solid $mdir-active-border;
 }}
 
-FilePane .pane_path {{
+FilePane.skin-original DirectoryPathInput.pane_path,
+FilePane.skin-original.active DirectoryPathInput.pane_path,
+FilePane.skin-original DirectoryPathInput.pane_path:focus,
+FilePane.skin-norton DirectoryPathInput.pane_path,
+FilePane.skin-norton.active DirectoryPathInput.pane_path,
+FilePane.skin-norton DirectoryPathInput.pane_path:focus {{
     background: $mdir-path-background;
     color: $mdir-path-foreground;
     border: none;
-    padding-left: 1;
 }}
 
-FilePane .pane_path:focus {{
+FilePane.skin-original .recent-folder-path-button,
+FilePane.skin-original.active .recent-folder-path-button,
+FilePane.skin-norton .recent-folder-path-button,
+FilePane.skin-norton.active .recent-folder-path-button {{
     background: $mdir-path-background;
     color: $mdir-path-foreground;
 }}
 
 FilePane DataTable {{
-    background: $mdir-list-background;
+    background: $background;
     color: $foreground;
     scrollbar-background: $background;
     scrollbar-color: $surface-lighten-2;
@@ -349,10 +369,28 @@ FilePane DataTable {{
 FilePane DataTable > .datatable--odd-row,
 FilePane DataTable > .datatable--even-row,
 FilePane DataTable > .datatable--fixed {{
+    background: $background;
+}}
+
+FilePane.skin-original DataTable,
+FilePane.skin-norton DataTable,
+FilePane.skin-original DataTable > .datatable--odd-row,
+FilePane.skin-original DataTable > .datatable--even-row,
+FilePane.skin-original DataTable > .datatable--fixed,
+FilePane.skin-norton DataTable > .datatable--odd-row,
+FilePane.skin-norton DataTable > .datatable--even-row,
+FilePane.skin-norton DataTable > .datatable--fixed {{
     background: $mdir-list-background;
 }}
 
 FilePane DataTable > .datatable--header {{
+    background: $surface-lighten-1;
+    color: $foreground;
+    text-style: bold;
+}}
+
+FilePane.skin-original DataTable > .datatable--header,
+FilePane.skin-norton DataTable > .datatable--header {{
     background: $mdir-header-background;
     color: $mdir-header-foreground;
     text-style: bold;
@@ -372,19 +410,6 @@ FilePane.active DataTable > .datatable--cursor {{
 
 FilePane DataTable > .datatable--hover {{
     background: $surface;
-}}
-
-FilePane DirectoryPathInput.pane_path,
-FilePane.active DirectoryPathInput.pane_path,
-FilePane DirectoryPathInput.pane_path:focus {{
-    background: $mdir-path-background;
-    color: $mdir-path-foreground;
-}}
-
-FilePane .recent-folder-path-button,
-FilePane.active .recent-folder-path-button {{
-    background: $mdir-path-background;
-    color: $mdir-path-foreground;
 }}
 
 FilePane .pane_footer {{
