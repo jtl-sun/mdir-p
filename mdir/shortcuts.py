@@ -12,6 +12,7 @@ from .advanced import advanced_data_dir
 MAX_SHORTCUTS = 16
 SHORTCUT_KINDS = {"folder", "file", "program", "web", "action", "command"}
 CONFIG_ENVIRONMENT_VARIABLE = "MDIR_P_SHORTCUTS"
+INSTALL_ROOT_ENVIRONMENT_VARIABLE = "MDIR_P_INSTALL_ROOT"
 LEGACY_CONFIG_PATH = Path.home() / ".mdir-p-shortcuts.json"
 CONFIG_DIRECTORY_NAME = "Config"
 CONFIG_FILENAME = "shortcuts.json"
@@ -38,36 +39,65 @@ DEFAULT_SHORTCUTS = (
 )
 
 
+def install_root() -> Path:
+    """Return the persistent mDIR installation root used by INSTALL_MDIR.bat."""
+    configured = os.environ.get(INSTALL_ROOT_ENVIRONMENT_VARIABLE, "").strip()
+    if configured:
+        return Path(os.path.expandvars(configured)).expanduser()
+    local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
+    if local_app_data:
+        return Path(local_app_data) / "mDIR"
+    # mDIR-P is Windows-first, but keep a deterministic fallback for tests and
+    # unusual shells that do not expose LOCALAPPDATA.
+    return Path.home() / "mDIR"
+
+
+def previous_private_config_path() -> Path:
+    """Return the 2.26.37 shortcut location for one-time migration."""
+    return advanced_data_dir("mDIR-P") / CONFIG_DIRECTORY_NAME / CONFIG_FILENAME
+
+
 def shortcut_config_path() -> Path:
-    """Return the per-user shortcut file, always outside the source tree."""
+    """Return the editable shortcut JSON inside the persistent install root."""
     configured = os.environ.get(CONFIG_ENVIRONMENT_VARIABLE, "").strip()
     if configured:
         return Path(os.path.expandvars(configured)).expanduser()
-    return advanced_data_dir("mDIR-P") / CONFIG_DIRECTORY_NAME / CONFIG_FILENAME
+    return install_root() / CONFIG_DIRECTORY_NAME / CONFIG_FILENAME
+
+
+def _migration_sources() -> tuple[Path, ...]:
+    """Older private locations, newest first."""
+    return (previous_private_config_path(), LEGACY_CONFIG_PATH)
 
 
 def migrate_legacy_shortcut_config(
     destination: Path | None = None,
     legacy_path: Path | None = None,
 ) -> Path | None:
-    """Copy a valid legacy shortcut JSON into the new private config location.
+    """Copy valid older shortcut JSON into the install-root Config folder.
 
-    The legacy file is intentionally kept as a backup. Migration never reads
-    from the project/release directory and never writes personal links there.
+    Existing source files are deliberately retained as backups. If an explicit
+    legacy_path is supplied (tests/advanced migration), only that source is
+    considered. Otherwise 2.26.37's LocalAppData location is checked first,
+    followed by the older home-directory JSON.
     """
     target = destination or shortcut_config_path()
-    source = legacy_path or LEGACY_CONFIG_PATH
-    if target.exists() or not source.exists():
-        return target if target.exists() else None
-    try:
-        values = json.loads(source.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, TypeError, ValueError):
-        return None
-    if not isinstance(values, list):
-        return None
-    parsed = parse_shortcuts(values)
-    save_shortcuts(parsed, target)
-    return target
+    if target.exists():
+        return target
+    sources = (legacy_path,) if legacy_path is not None else _migration_sources()
+    for source in sources:
+        if not source.exists():
+            continue
+        try:
+            values = json.loads(source.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if not isinstance(values, list):
+            continue
+        parsed = parse_shortcuts(values)
+        save_shortcuts(parsed, target)
+        return target
+    return None
 
 
 def _definition_from_value(value: object) -> ShortcutDefinition | None:
@@ -114,7 +144,7 @@ def load_shortcuts(path: Path | None = None) -> list[ShortcutDefinition]:
     """Load private user shortcuts, or use safe built-in defaults."""
     config_path = path or shortcut_config_path()
     if path is None and not os.environ.get(CONFIG_ENVIRONMENT_VARIABLE, "").strip():
-        migrate_legacy_shortcut_config(config_path, LEGACY_CONFIG_PATH)
+        migrate_legacy_shortcut_config(config_path)
     try:
         values = json.loads(config_path.read_text(encoding="utf-8"))
         if isinstance(values, list):
@@ -138,7 +168,7 @@ def ensure_shortcut_config(path: Path | None = None) -> Path:
     """Create an editable private shortcut file when one does not exist."""
     config_path = path or shortcut_config_path()
     if path is None and not os.environ.get(CONFIG_ENVIRONMENT_VARIABLE, "").strip():
-        migrated = migrate_legacy_shortcut_config(config_path, LEGACY_CONFIG_PATH)
+        migrated = migrate_legacy_shortcut_config(config_path)
         if migrated is not None:
             return migrated
     if config_path.exists():
