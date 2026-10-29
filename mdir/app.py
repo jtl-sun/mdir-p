@@ -403,7 +403,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             tooltip="Show or hide Hidden/System files",
         )
         yield Button('Th', id=f'{side}_thumbnail', classes='thumbnail-toggle',
-                     tooltip='Thumbnail / List for this pane (Alt+T)')
+                     tooltip='Thumbnail / List for this pane (Ctrl+Alt+T)')
         yield Static('', classes='selection-spacer')
         with Horizontal(classes='selection-actions'):
             for mode, symbol, description in (
@@ -1241,7 +1241,7 @@ def self_check() -> int:
     print(f"MDIR-P {VERSION} package self-check")
     print(f"Default theme: {THEME_NAME}")
     print("Preview starts disabled and uses bounded background rendering")
-    print('Thumbnails: Alt+T / Th, independent panes, one Tk loop, bounded workers')
+    print('Thumbnails: Ctrl+Alt+T / Th, independent panes, one Tk loop, bounded workers')
     print("F3/F4 accept bounded text files only")
     print("Large directories use cached metadata and batched row insertion")
     print("Copy, Move, and Delete use cancellable background workers")

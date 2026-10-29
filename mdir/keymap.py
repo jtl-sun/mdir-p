@@ -31,7 +31,9 @@ KEY_DEFINITIONS = (
     KeyDefinition("Last item", "thumbnail_navigate", "end", False),
     KeyDefinition("Page up", "thumbnail_navigate", "pageup", False),
     KeyDefinition("Page down", "thumbnail_navigate", "pagedown", False),
-    KeyDefinition("Thumbnail / List", "toggle_thumbnail", "alt+t", False),
+    KeyDefinition("Thumbnail / List", "toggle_thumbnail", "ctrl+alt+t", False),
+    *(KeyDefinition(f"Drive {letter}:", "quick_drive", f"alt+{letter.lower()}", False)
+      for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ" if os.name == "nt"),
     KeyDefinition("Open", "open_item", "enter", False),
     KeyDefinition("Parent", "parent", "backspace", False),
     KeyDefinition("Mark", "mark", "space", False),

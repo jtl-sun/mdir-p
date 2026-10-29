@@ -1,6 +1,10 @@
+## 2.26.45: Every Alt+letter switches that Windows drive
+
+All **26** shortcuts **Alt+A ... Alt+Z** now switch the ACTIVE Windows pane directly to the matching drive, provided that drive exists. This also registers the shortcuts with the native Windows keyboard dispatcher rather than only the terminal UI, so Windows Terminal cannot swallow some letters. **Alt+T** is now T: drive; the Thumbnail/List toggle moves to **Ctrl+Alt+T** (or the unchanged **Th** button). Existing settings, F9 Zip/Unzip, and Alt+F9 Drive menu are preserved. Ubuntu remains path/mount-based instead of drive-letter-based.
+
 ## 2.26.44: direct drive keys and smart F9 ZIP
 
-On Windows, **Alt+C**, **Alt+D**, **Alt+S** (and most other Alt+drive letters) open that drive's root directly in the **active** pane without changing the opposite pane. A missing drive reports an error without navigating. **Alt+T** remains reserved for Thumbnails. The drive selection dialog is still available on **Alt+F9** (or Alt+F1/Alt+F2 for the left/right pane).
+On Windows, **Alt+C**, **Alt+D**, **Alt+S** (and most other Alt+drive letters) open that drive's root directly in the **active** pane without changing the opposite pane. A missing drive reports an error without navigating. **Alt+T** changes to T: starting with v2.26.45; thumbnail switching uses **Ctrl+Alt+T**. The drive selection dialog is still available on **Alt+F9** (or Alt+F1/Alt+F2 for the left/right pane).
 
 **F9 Zip/Unzip** uses the built-in archive dialogs: selecting files or folders makes a ZIP in the opposite pane; selecting exactly one `.zip` extracts it into the opposite pane. Archive creation and extraction remain cancellable with progress and overwrite protection. `Alt+F5` and `Alt+F6` remain direct ZIP creation/extraction shortcuts. **RAR/7z/TAR extraction is not yet implemented**; F9 shows an explicit message instead of treating those archives as regular files. Your saved keymap is preserved and a previous Drive=F9 entry migrates automatically.
 
@@ -257,7 +261,7 @@ total size in advance, it does not display a fabricated percentage.
 | Key                    | Action                                      |
 | ---------------------- | ------------------------------------------- |
 | `Tab`                 | Switch file pane                            |
-| `Alt+T` / `Th`        | Thumbnail / List for the current pane        |
+| `Ctrl+Alt+T` / `Th`        | Thumbnail / List for the current pane        |
 | `Enter`                | Open a file or directory                    |
 | `Space`                | Mark an item                                |
 | `Shift+Up/Down`        | Extend or shrink the marked range           |
@@ -656,7 +660,7 @@ Hidden/System files in that button's pane; **Hi** hides them again. **Ctrl+H**
 affects the active pane only. Left/right settings are saved separately, including
 saved workspaces; old shared settings remain compatible on first load.
 
-Use **Alt+T** or the **Th** button above either pane. Both panes can show thumbnails
+Use **Ctrl+Alt+T** or the **Th** button above either pane. Both panes can show thumbnails
 at the same time. **Tab** switches panes; arrow keys stay inside the active pane
 (left/right move one tile, up/down move a row). **Space**, right-click, and
 Ctrl-click toggle the same marks used by the normal file list. Left-click selects;
@@ -668,7 +672,7 @@ per drag, even when you move back over it. Previously marked items are unmarked;
 unmarked items are marked. Hold near the top or bottom edge to scroll and
 continue selecting. Release the button to stop. The parent `..` is never marked.
 
-Use **− / +** for 96–240 pixel tiles and **List** or **Alt+T** to return only that
+Use **− / +** for 96–240 pixel tiles and **List** or **Ctrl+Alt+T** to return only that
 pane to its file list. Images show thumbnails; folders and other formats show
 labeled placeholders. Selection and marks survive view changes.
 

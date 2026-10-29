@@ -2235,7 +2235,7 @@ class MDir(App):
         Binding("alt+f1", "drive_left", "Left drive", show=False, id="mdir.drive_left"),
         Binding("alt+f2", "drive_right", "Right drive", show=False, id="mdir.drive_right"),
     ] + [
-        # Keep Alt+T for the existing Thumbnail/List toggle.
+        # All A-Z letters are reserved for active-pane Windows drive access.
         Binding(
             f"alt+{letter.lower()}",
             f"quick_drive('{letter}')",
@@ -2243,7 +2243,7 @@ class MDir(App):
             show=False,
             priority=True,
         )
-        for letter in "ABCDEFGHIJKLMNOPQRSUVWXYZ"
+        for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
         if os.name == "nt"
     ]
 

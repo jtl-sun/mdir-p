@@ -1,3 +1,10 @@
+# mDIR-P 2.26.45
+
+- All Alt+A through Alt+Z now switch the **active** pane to the corresponding available Windows drive (including T:).
+- Fix keyboard inconsistency: register these shortcuts in both Textual bindings and Windows native keyboard routing.
+- Move Thumbnail/List from Alt+T to Ctrl+Alt+T to avoid a conflict; Th button remains available.
+- Keep F9 Zip/Unzip, Alt+F9 drive picker, file management operations and personal settings.
+
 # mDIR-P 2.26.44
 
 - Alt+C/D/S and other non-reserved Alt+drive letters directly switch the active Windows pane to that drive's root; Alt+T remains reserved for thumbnails.

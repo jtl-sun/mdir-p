@@ -1,3 +1,8 @@
+## 2.26.45
+
+- Support all 26 Windows drive letters with Alt+A..Z through the native shortcut router and Textual key bindings.
+- Reserve Alt+T for T: drive; move thumbnail shortcut to Ctrl+Alt+T and update tests.
+
 ## 2.26.44
 
 - Quick Windows drive shortcuts on the active pane; keep Alt+T thumbnail binding.

@@ -151,11 +151,11 @@ class ThumbnailAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(predicate())
 
     async def enable_both(self):
-        await self.pilot.press('alt+t', 'tab', 'alt+t')
+        await self.pilot.press('ctrl+alt+t', 'tab', 'ctrl+alt+t')
         self.assertEqual(self.app.thumbnail_modes, {'left': True, 'right': True})
 
     async def test_tab_arrow_space_and_independent_close(self):
-        await self.pilot.press('alt+t')
+        await self.pilot.press('ctrl+alt+t')
         self.app._thumbnail_geometry['left'] = (4, 3)
         await self.pilot.press('down')
         self.assertEqual(self.app.left.table.cursor_row, 4)
@@ -166,11 +166,11 @@ class ThumbnailAppTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.app.active_side, 'right')
         self.assertEqual(self.app.right.table.cursor_row, 1)
         self.assertEqual(self.app.left.table.cursor_row, left_row)
-        await self.pilot.press('alt+t')
+        await self.pilot.press('ctrl+alt+t')
         self.assertEqual(self.app.thumbnail_modes, {'left': True, 'right': True})
-        await self.pilot.press('alt+t')
+        await self.pilot.press('ctrl+alt+t')
         self.assertEqual(self.app.thumbnail_modes, {'left': True, 'right': False})
-        await self.pilot.press('tab', 'alt+t')
+        await self.pilot.press('tab', 'ctrl+alt+t')
         self.assertTrue(self.app.left.marked)
         self.assertIsNone(self.app._thumbnail_timer)
 

@@ -16,7 +16,12 @@ def shortcut_routes(overrides):
     routes = {}
     for definition in KEY_DEFINITIONS:
         key = normalize_shortcut(overrides.get(definition.binding_id, definition.default_key))
-        params = (definition.default_key,) if definition.action == 'thumbnail_navigate' else ()
+        if definition.action == 'thumbnail_navigate':
+            params = (definition.default_key,)
+        elif definition.action == 'quick_drive':
+            params = (definition.default_key[-1].upper(),)
+        else:
+            params = ()
         routes[key] = (definition.action, params)
     return routes
 

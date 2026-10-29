@@ -52,6 +52,25 @@ class KeyboardRoutesTests(unittest.IsolatedAsyncioTestCase):
                 await self.pilot.press(key)
                 self.assertEqual(calls, [expected], (side, key))
 
+    async def test_all_alt_letter_drive_shortcuts_route_in_both_panes(self):
+        if os.name != "nt":
+            self.skipTest("Windows drive-letter routing")
+        routes = shortcut_routes({})
+        self.assertEqual(
+            {f"alt+{letter}" for letter in "abcdefghijklmnopqrstuvwxyz"},
+            {key for key in routes if key.startswith("alt+") and len(key) == 5},
+        )
+        for side in ("left", "right"):
+            self.app.set_active(side)
+            calls = []
+            self.app.action_quick_drive = lambda letter: calls.append((self.app.active_side, letter))
+            for letter in "abcdefghijklmnopqrstuvwxyz":
+                calls.clear()
+                await self.pilot.press(f"alt+{letter}")
+                self.assertEqual(calls, [(side, letter.upper())], letter)
+                self.assertEqual(routes[f"alt+{letter}"], ("quick_drive", (letter.upper(),)))
+        self.assertEqual(routes["ctrl+alt+t"], ("toggle_thumbnail", ()))
+
     async def test_every_editable_key_can_be_remapped_without_old_binding(self):
         definitions = [d for d in KEY_DEFINITIONS if d.editable]
         overrides = {d.binding_id: f'ctrl+alt+{"shift+" if i >= 24 else ""}f{i % 24 + 1}'
