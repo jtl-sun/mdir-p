@@ -1,4 +1,4 @@
-# mDIR-P 2.26.39
+# mDIR-P 2.26.40 (verified skin-switch release)\n\nThis release incorporates the final skin activation and regression fixes tested on the main branch. It supersedes v2.26.39, which was published from an intermediate commit. The original default green path bar and the built-in Light Theme are preserved; the retro-specific path and pane CSS activates only when the relevant skin is selected.
 
 ## mDir Original and Norton Commander skins
 
@@ -9,7 +9,7 @@
 
 Select **F10 -> Theme** and choose **old_M_tema** or **Norton Commander**. The original **mDir theme** remains the default for new installations. Personal link configuration is not included in releases.
 
-Install: close mDIR, extract `mDIR-P-2.26.39.zip`, run `INSTALL_MDIR.bat`, and restart.
+Install: close mDIR, extract `mDIR-P-2.26.40.zip`, run `INSTALL_MDIR.bat`, and restart.
 
 ---
 

@@ -1,4 +1,4 @@
-## 2.26.39
+## 2.26.40\n\n- Publish the complete and tested retro skin switch behavior, including per-pane skin classes.\n- Keep built-in light theme backgrounds and default mDir green directory path styling intact.\n- Supersede the prematurely published v2.26.39 release, without replacing its assets.\n\n## 2.26.39
 
 - Refine `old_M_tema` to reflect classic DOS Mdir file types, borders, and selection.
 - Add the distinct `Norton Commander` theme, including blue panes and cyan/yellow chrome.
