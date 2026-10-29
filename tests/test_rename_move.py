@@ -23,7 +23,7 @@ class RenameMoveTests(unittest.TestCase):
             source.write_text("keep")
             result = plan_rename_move("new.txt", [source], p)
             self.assertEqual(result.mode, "rename")
-            self.assertEqual(result.target, p / "new.txt")
+            self.assertEqual(result.target, (p / "new.txt").resolve(strict=False))
             self.assertEqual(source.read_text(), "keep")
 
     def test_default_move_and_explicit_new_name(self):
@@ -37,7 +37,7 @@ class RenameMoveTests(unittest.TestCase):
             source.write_text("data")
             planned = plan_rename_move(str(b), [source], a)
             self.assertEqual(planned.mode, "move")
-            self.assertEqual(planned.destination, b)
+            self.assertEqual(planned.destination, b.resolve(strict=False))
             self.assertIsNone(planned.new_name)
             planned = plan_rename_move(str(b / "new.txt"), [source], a)
             self.assertEqual(planned.new_name, "new.txt")

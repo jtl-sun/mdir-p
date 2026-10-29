@@ -815,7 +815,7 @@ class BaseApp(AIShellApp):
                 getattr(self.active, "metadata_by_path", None),
             )
             if new_name:
-                message += f"\\nSave as: {new_name}"
+                message += f"\nSave as: {new_name}"
 
             def confirmed(ok: bool) -> None:
                 if not ok:
