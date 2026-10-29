@@ -4,7 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mdir.core import MDirApp as LegacyApp
+from mdir.core import MDir as LegacyApp
 from mdir.ui.renmov import plan_rename_move
 
 
