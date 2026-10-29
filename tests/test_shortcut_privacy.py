@@ -5,8 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
+import mdir.shortcuts as shortcuts_module
 from mdir.shortcuts import (
     CONFIG_ENVIRONMENT_VARIABLE,
+    INSTALL_ROOT_ENVIRONMENT_VARIABLE,
     DEFAULT_SHORTCUTS,
     load_shortcuts,
     migrate_legacy_shortcut_config,
@@ -57,11 +59,80 @@ class ShortcutPrivacyTests(unittest.TestCase):
             self.assertEqual(json.loads(destination.read_text(encoding="utf-8")), [])
             self.assertTrue(legacy.exists())
 
+    def test_default_config_is_inside_install_root(self):
+        with tempfile.TemporaryDirectory() as directory:
+            local_app_data = Path(directory)
+            with patch.dict(
+                os.environ,
+                {
+                    "LOCALAPPDATA": str(local_app_data),
+                    CONFIG_ENVIRONMENT_VARIABLE: "",
+                    INSTALL_ROOT_ENVIRONMENT_VARIABLE: "",
+                },
+                clear=False,
+            ):
+                self.assertEqual(
+                    shortcut_config_path(),
+                    local_app_data / "mDIR" / "Config" / "shortcuts.json",
+                )
+
+    def test_22637_private_location_migrates_before_home_legacy(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            previous = root / "mDIR-P" / "Config" / "shortcuts.json"
+            legacy = root / ".mdir-p-shortcuts.json"
+            destination = root / "mDIR" / "Config" / "shortcuts.json"
+            previous.parent.mkdir(parents=True)
+            previous.write_text(
+                json.dumps([
+                    {
+                        "label": "Previous",
+                        "type": "folder",
+                        "target": r"E:\\Work",
+                        "args": [],
+                        "pane": "active",
+                    }
+                ]),
+                encoding="utf-8",
+            )
+            legacy.write_text(
+                json.dumps([
+                    {
+                        "label": "Older",
+                        "type": "folder",
+                        "target": r"D:\\Old",
+                        "args": [],
+                        "pane": "active",
+                    }
+                ]),
+                encoding="utf-8",
+            )
+            with patch.object(
+                shortcuts_module,
+                "previous_private_config_path",
+                return_value=previous,
+            ), patch.object(shortcuts_module, "LEGACY_CONFIG_PATH", legacy):
+                result = migrate_legacy_shortcut_config(destination)
+            self.assertEqual(result, destination)
+            loaded = load_shortcuts(destination)
+            self.assertEqual(loaded[0].label, "Previous")
+            self.assertTrue(previous.exists())
+            self.assertTrue(legacy.exists())
+
     def test_environment_override_remains_supported(self):
         with tempfile.TemporaryDirectory() as directory:
             custom = Path(directory) / "my-links.json"
             with patch.dict(os.environ, {CONFIG_ENVIRONMENT_VARIABLE: str(custom)}):
                 self.assertEqual(shortcut_config_path(), custom)
+
+    def test_installer_and_link_manager_expose_config_folder(self):
+        root = Path(__file__).resolve().parents[1]
+        installer = (root / "install_windows.ps1").read_text(encoding="utf-8")
+        manager = (root / "mdir" / "ui" / "shortcuts.py").read_text(encoding="utf-8")
+        self.assertIn('$ConfigRoot = Join-Path $InstallRoot "Config"', installer)
+        self.assertIn("ensure_shortcut_config", installer)
+        self.assertIn("Open Config Folder", manager)
+        self.assertIn("Config: {self.config_path}", manager)
 
     def test_private_shortcut_save_is_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
