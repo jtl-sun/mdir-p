@@ -61,11 +61,11 @@ def migrate_legacy_shortcut_config(
         return target if target.exists() else None
     try:
         values = json.loads(source.read_text(encoding="utf-8"))
-        parsed = parse_shortcuts(values)
     except (OSError, json.JSONDecodeError, TypeError, ValueError):
         return None
-    if not parsed:
+    if not isinstance(values, list):
         return None
+    parsed = parse_shortcuts(values)
     save_shortcuts(parsed, target)
     return target
 
