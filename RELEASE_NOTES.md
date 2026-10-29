@@ -1,3 +1,11 @@
+# mDIR-P 2.26.42
+
+- Hide Parent, Space Mark and F2 Rename from the function-key footer, keeping all three shortcuts functional.
+- F6 is now **RenMov**, a combined name/destination prompt for rename or move.
+- Default to opposite pane for moves; accept a filename for in-place rename or a complete path for move+rename.
+- Preserve overwrite warnings, prevent directory self-moves and reject missing parent directories.
+- Keep full-width equal-size footer cells, both DOS skins, settings and previews.
+
 # mDIR-P 2.26.41
 
 Active pane now stands out more clearly via a brighter cursor and cyan outline. Function-key buttons occupy equal widths across the full-width footer, with centered labels. Mouse targets retain their three-row height and safety padding; narrow windows scroll. Existing themes, keyboard shortcuts and file operations are preserved.

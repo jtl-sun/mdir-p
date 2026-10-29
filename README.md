@@ -1,3 +1,7 @@
+## 2.26.42 - F6 Rename/Move
+
+The full-width footer now starts at F3: Parent (Backspace), Mark (Space), and F2 Rename remain functional but are hidden from the footer. F6 **RenMov** opens one destination field. Type a bare new name to rename a single item in place, an existing directory to move selected items, or a full target filename to move and rename a single item. The default target is the opposite pane. An overwrite always requires explicit confirmation; directory self-moves are rejected.
+
 ## Version 2.26.41: active pane and full-width footer
 
 - Brighter selected-row highlight and cyan border identify the active working pane; inactive selection stays quieter but readable.

@@ -1,3 +1,8 @@
+## 2.26.42
+
+- Simplify footer and unify F6 rename/move across both panes.
+- Add guarded name/path resolution with collision protection and no auto-created directories.
+
 ## 2.26.41
 
 - Emphasize active file pane compared with inactive pane.

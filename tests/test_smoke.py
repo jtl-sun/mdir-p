@@ -1596,6 +1596,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.left.marked = {source}
                 app.action_move()
                 await pilot.pause()
+                self.assertIsInstance(app.screen, CompactPromptScreen)
+                await pilot.press("enter")  # Accept the opposite pane's folder.
+                await pilot.pause()
                 self.assertEqual(
                     app.screen.focused.id,
                     "confirm_yes",
@@ -1674,7 +1677,9 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.left.marked = {source}
                 app.action_move()
                 await pilot.pause()
-                await pilot.press("enter")
+                await pilot.press("enter")  # Confirm F6 destination input.
+                await pilot.pause()
+                await pilot.press("enter")  # Approve the move summary.
                 await pilot.pause()
                 self.assertIsInstance(app.screen, CompactConfirmScreen)
                 self.assertEqual(app.screen.dialog_title, "Overwrite warning")
