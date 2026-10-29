@@ -1,3 +1,12 @@
+## 2.26.37
+
+- Moved personal top-bar links to a private per-user file: `%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json`.
+- Existing `%USERPROFILE%\.mdir-p-shortcuts.json` is migrated automatically on first use; the legacy file is kept as a backup.
+- GitHub source and Release ZIPs continue to contain only portable built-in links. Personal shortcut files are explicitly ignored by Git.
+- The release packager uses `git archive HEAD`, so untracked local settings cannot be copied into a published ZIP.
+- Preserved the `MDIR_P_SHORTCUTS` environment override for users who intentionally keep their shortcut JSON elsewhere.
+- Added regression tests for portable defaults, private-config migration, environment override, and atomic shortcut saving.
+
 ## 2.26.36
 
 - Added `old_M_tema`, a retro theme inspired by the classic DOS Mdir III visual language while preserving the modern dual-pane layout, AI/File, Preview and search features.
