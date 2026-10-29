@@ -41,6 +41,7 @@ from mdir.keymap import (
     validate_keymap,
 )
 from mdir.ui.options import KeyManagerScreen, OptionsScreen
+from mdir.ui.prompt import CompactPromptScreen
 from mdir.ui.shortcuts import ShortcutManagerScreen
 from mdir import core as legacy
 from mdir.ui.batch_rename import (
