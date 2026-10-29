@@ -41,10 +41,14 @@ from .shortcuts import (
 )
 from .platform_support import open_with_default_app
 from .keymap import load_keymap, save_keymap
+from .theme_settings import load_theme_name, save_theme_name
 from .theme import (
     THEME_NAME,
     MDIR_THEME_CSS,
     MDIR_THEME,
+    OLD_M_THEME,
+    OLD_M_THEME_NAME,
+    MDIR_THEME_VARIABLE_DEFAULTS,
     install_file_colors,
 )
 from . import __version__
@@ -248,11 +252,29 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
         self._preview_suppressed_path: Optional[Path] = None
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
+        self._theme_preference_ready = False
         super().__init__()
         self.user_keymap = load_keymap()
         self.set_keymap(self.user_keymap)
         self.register_theme(MDIR_THEME)
-        self.theme = THEME_NAME
+        self.register_theme(OLD_M_THEME)
+        preferred_theme = load_theme_name(THEME_NAME)
+        self.theme = (
+            preferred_theme
+            if self.get_theme(preferred_theme) is not None
+            else THEME_NAME
+        )
+        self._theme_preference_ready = True
+        try:
+            save_theme_name(self.theme)
+        except OSError:
+            pass
+
+    def get_theme_variable_defaults(self) -> dict[str, str]:
+        """Provide mDIR-specific CSS variables for built-in and custom themes."""
+        defaults = dict(super().get_theme_variable_defaults())
+        defaults.update(MDIR_THEME_VARIABLE_DEFAULTS)
+        return defaults
 
     @property
     def native_preview(self) -> "NativePreviewController":
@@ -269,9 +291,14 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
         return self._native_preview
 
     def _watch_theme(self, theme_name: str) -> None:
-        """Apply theme colors to CSS, file cells, and native Preview."""
+        """Apply and persist theme colors across Textual and native Preview."""
         super()._watch_theme(theme_name)
         install_file_colors(self.current_theme)
+        if getattr(self, "_theme_preference_ready", False):
+            try:
+                save_theme_name(theme_name)
+            except OSError:
+                pass
         if self.is_running:
             native_preview = self._native_preview
             if native_preview is not None:
