@@ -1,3 +1,13 @@
+## 2.26.36
+
+- Added `old_M_tema`, a retro theme inspired by the classic DOS Mdir III visual language while preserving the modern dual-pane layout, AI/File, Preview and search features.
+- `old_M_tema` uses a black workspace, cyan/teal chrome, a strong red active cursor, bright folder/accent colors and classic extension cues: EXE green, COM cyan, BAT/CMD yellow; PowerShell scripts use magenta for quick recognition.
+- Registered the retro palette in the existing Textual Theme selector (F10 -> Theme); the current `mDir theme` remains the default.
+- Theme choice is now saved per user and restored on the next launch, so `old_M_tema` does not need to be reselected each time.
+- Added a theme-specific cursor variable so the retro cursor can change color without altering the default theme.
+- Added project direction documentation: mDIR-P remains on the `V2.xx.xx` version line as a respectful continuation/homage rather than adopting the historical Mdir III version identity.
+- Reaffirmed the product goals: DOS-era keyboard efficiency, Linux accessibility, Windows/PowerShell usability, and AI/File View/File Search as core modern features.
+
 ## 2.26.35
 
 - Background now opens a compact independent desktop window instead of hiding progress completely.

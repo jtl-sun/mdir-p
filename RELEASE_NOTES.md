@@ -1,3 +1,23 @@
+# mDIR-P 2.26.36
+
+## old_M_tema
+
+This release adds a retro `old_M_tema` to the existing Theme selector. It is inspired by the classic DOS Mdir III color language but keeps the current mDIR-P layout and all 2.26.35 behavior intact. The default theme is unchanged.
+
+- Black file workspace with cyan/teal interface bars.
+- Red active-row cursor for an unmistakable DOS-style focus point.
+- EXE green, COM cyan, BAT/CMD yellow, and PowerShell PS1 magenta.
+- AI/File, Preview, Search, dialogs and thumbnail chrome continue to follow the selected theme through the existing theme pipeline.
+- Select it with **F10 -> Theme -> old_M_tema**. The chosen theme is saved per user and restored on the next launch.
+
+## Version identity
+
+mDIR-P will continue in the **V2.xx.xx** series rather than moving to V3.x. This keeps the modern project visually and historically distinct from Choi Jung-han's classic Mdir III 3.x line while acknowledging its inspiration.
+
+Install: close mDIR, extract `mDIR-P-2.26.36.zip`, run `INSTALL_MDIR.bat`, and restart. Verify `2.26.36` in the title.
+
+---
+
 # mDIR-P 2.26.35
 
 Background now keeps a small, movable desktop progress window visible while the main mDIR interface remains usable. The window displays filename, percentage, bytes, speed, ETA and item count, with Pause/Resume, Cancel and Foreground buttons. The close button returns to foreground progress. Ctrl+Alt+P also restores foreground progress. Completion closes the mini window automatically.
