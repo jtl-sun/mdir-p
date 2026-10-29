@@ -1598,6 +1598,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 app.action_move()
                 await pilot.pause()
                 self.assertIsInstance(app.screen, CompactPromptScreen)
+                self.assertEqual(app.screen.initial, str(right_root / source.name))
                 await pilot.press("enter")  # Accept the opposite pane's folder.
                 await pilot.pause()
                 self.assertEqual(

@@ -1,3 +1,10 @@
+# mDIR-P 2.26.43
+
+- F6 RenMov pre-fills the original filename or folder name for one selected item, appended to the opposite pane's destination path.
+- Multiple selections pre-fill only the destination directory.
+- A single folder with an existing same-named target is treated as a collision, never silently nested one level deeper.
+- Existing F2, Space and Backspace shortcuts and overwrite confirmation remain unchanged.
+
 # mDIR-P 2.26.42
 
 - Hide Parent, Space Mark and F2 Rename from the function-key footer, keeping all three shortcuts functional.

@@ -5,7 +5,7 @@ import unittest
 from pathlib import Path
 
 from mdir.core import MDir as LegacyApp
-from mdir.ui.renmov import plan_rename_move
+from mdir.ui.renmov import default_rename_move_input, plan_rename_move
 
 
 class RenameMoveTests(unittest.TestCase):
@@ -15,6 +15,48 @@ class RenameMoveTests(unittest.TestCase):
             self.assertFalse(bindings[key].show)
         self.assertTrue(bindings["f6"].show)
         self.assertEqual(bindings["f6"].description, "RenMov")
+
+    def test_f6_default_for_one_or_many(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            src, dst = home / "source", home / "destination"
+            src.mkdir()
+            dst.mkdir()
+            one = src / "sample.design.pdf"
+            two = src / "other.pdf"
+            one.touch()
+            two.touch()
+            self.assertEqual(
+                default_rename_move_input([one], dst), str(dst / one.name)
+            )
+            self.assertEqual(
+                default_rename_move_input([one, two], dst), str(dst)
+            )
+            initial = default_rename_move_input([one], dst)
+            plan = plan_rename_move(
+                initial, [one], src, default_target=Path(initial)
+            )
+            self.assertEqual(plan.mode, "move")
+            self.assertEqual(plan.destination, dst.resolve(strict=False))
+            self.assertIsNone(plan.new_name)
+            changed = plan_rename_move(str(dst / "updated.pdf"), [one], src)
+            self.assertEqual(changed.new_name, "updated.pdf")
+
+    def test_existing_target_directory_is_not_nesting_destination(self):
+        with tempfile.TemporaryDirectory() as folder:
+            home = Path(folder)
+            src, dst = home / "src", home / "dst"
+            src.mkdir()
+            dst.mkdir()
+            one = src / "Samples"
+            one.mkdir()
+            (dst / "Samples").mkdir()
+            initial = default_rename_move_input([one], dst)
+            plan = plan_rename_move(
+                initial, [one], src, default_target=Path(initial)
+            )
+            self.assertEqual(plan.destination, dst.resolve(strict=False))
+            self.assertEqual(plan.target, (dst / "Samples").resolve(strict=False))
 
     def test_single_name_rename(self):
         with tempfile.TemporaryDirectory() as root:

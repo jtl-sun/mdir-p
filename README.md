@@ -1,3 +1,7 @@
+## 2.26.43 - F6 filename prefill
+
+For a single selected file or directory, F6 RenMov now displays the destination folder **and its original name**. Edit the name to move and rename at the same time, or leave it unchanged to move with the original name. For multiple selections only the destination directory is shown; each selected item retains its name. The destination still defaults to the opposite pane. Existing overwrite confirmations are preserved.
+
 ## 2.26.42 - F6 Rename/Move
 
 The full-width footer now starts at F3: Parent (Backspace), Mark (Space), and F2 Rename remain functional but are hidden from the footer. F6 **RenMov** opens one destination field. Type a bare new name to rename a single item in place, an existing directory to move selected items, or a full target filename to move and rename a single item. The default target is the opposite pane. An overwrite always requires explicit confirmation; directory self-moves are rejected.
