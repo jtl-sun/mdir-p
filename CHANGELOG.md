@@ -1,3 +1,8 @@
+## 2.26.41
+
+- Emphasize active file pane compared with inactive pane.
+- Equal-width screen-spanning footer with centered labels, preserving clicks and narrow-window scroll.
+
 ## 2.26.40\n\n- Publish the complete and tested retro skin switch behavior, including per-pane skin classes.\n- Keep built-in light theme backgrounds and default mDir green directory path styling intact.\n- Supersede the prematurely published v2.26.39 release, without replacing its assets.\n\n## 2.26.39
 
 - Refine `old_M_tema` to reflect classic DOS Mdir file types, borders, and selection.

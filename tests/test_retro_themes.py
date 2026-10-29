@@ -26,7 +26,7 @@ class RetroThemeTests(unittest.TestCase):
 
     def test_selected_row_colors_for_both_panes_and_default(self):
         expected = [
-            (MDIR_THEME, ("#247e91", "#ffffff"), ("#586d7c", "#ffffff")),
+            (MDIR_THEME, ("#159bb8", "#ffffff"), ("#364953", "#ffffff")),
             (OLD_M_THEME, ("#ff5a61", "#000000"), ("#99484d", "#ffffff")),
             (NORTON_THEME, ("#55ffff", "#000066"), ("#315fc2", "#ffffff")),
         ]

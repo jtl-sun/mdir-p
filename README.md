@@ -1,3 +1,10 @@
+## Version 2.26.41: active pane and full-width footer
+
+- Brighter selected-row highlight and cyan border identify the active working pane; inactive selection stays quieter but readable.
+- Evenly distribute and center footer function keys across the whole window; preserve 3-row click targets and bottom safety row.
+- Narrow terminals retain horizontal scrolling for long command bars.
+- Original mDir and Norton Commander skins remain available.
+
 # mDIR-P
 
 **A fast, free dual-pane file manager for Windows.** Classic MDIR speed,

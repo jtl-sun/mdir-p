@@ -1,3 +1,9 @@
+# mDIR-P 2.26.41
+
+Active pane now stands out more clearly via a brighter cursor and cyan outline. Function-key buttons occupy equal widths across the full-width footer, with centered labels. Mouse targets retain their three-row height and safety padding; narrow windows scroll. Existing themes, keyboard shortcuts and file operations are preserved.
+
+---
+
 # mDIR-P 2.26.40 (verified skin-switch release)\n\nThis release incorporates the final skin activation and regression fixes tested on the main branch. It supersedes v2.26.39, which was published from an intermediate commit. The original default green path bar and the built-in Light Theme are preserved; the retro-specific path and pane CSS activates only when the relevant skin is selected.
 
 ## mDir Original and Norton Commander skins

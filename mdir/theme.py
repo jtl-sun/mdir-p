@@ -17,18 +17,18 @@ NORTON_THEME_NAME = "Norton Commander"
 # Explicit colors keep selected filenames legible even when Rich Text supplies
 # an extension-specific foreground style over the table's CSS foreground.
 SELECTION_PALETTES = {
-    THEME_NAME: ((CURSOR_BACKGROUND, "#ffffff"), ("#586d7c", "#ffffff")),
+    THEME_NAME: ((CURSOR_BACKGROUND, "#ffffff"), ("#364953", "#ffffff")),
     OLD_M_THEME_NAME: (("#ff5a61", "#000000"), ("#99484d", "#ffffff")),
     NORTON_THEME_NAME: (("#55ffff", "#000066"), ("#315fc2", "#ffffff")),
 }
 MDIR_THEME_VARIABLE_DEFAULTS = {
     "mdir-cursor-background": CURSOR_BACKGROUND,
     "mdir-selection-foreground": "#ffffff",
-    "mdir-inactive-background": "#586d7c",
+    "mdir-inactive-background": "#364953",
     "mdir-inactive-foreground": "#ffffff",
     "mdir-list-background": "#202020",
-    "mdir-border": "#555555",
-    "mdir-active-border": "#7894a8",
+    "mdir-border": "#45494c",
+    "mdir-active-border": "#51cfe2",
     "mdir-path-background": "#353535",
     "mdir-path-foreground": "#f5f5f5",
     "mdir-header-background": "#353535",
@@ -78,11 +78,11 @@ MDIR_THEME = Theme(
         "block-hover-background": "#3a3a3a",
         "mdir-cursor-background": CURSOR_BACKGROUND,
         "mdir-selection-foreground": "#ffffff",
-        "mdir-inactive-background": "#586d7c",
+        "mdir-inactive-background": "#364953",
         "mdir-inactive-foreground": "#ffffff",
         "mdir-list-background": BACKGROUND,
-        "mdir-border": "#555555",
-        "mdir-active-border": ACCENT,
+        "mdir-border": "#45494c",
+        "mdir-active-border": "#51cfe2",
         "mdir-path-background": HEADER,
         "mdir-path-foreground": FOREGROUND,
         "mdir-header-background": HEADER,
@@ -317,12 +317,13 @@ Header {{
 }}
 
 FilePane {{
-    border: solid $surface-lighten-2;
+    border: solid $mdir-border;
     background: $background;
 }}
 
+/* Strongly highlight the working side, not the passive side. */
 FilePane.active {{
-    border: solid $primary;
+    border: solid $mdir-active-border;
 }}
 
 /* Keep the existing green path bar and built-in light theme untouched.
