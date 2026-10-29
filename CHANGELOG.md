@@ -1,3 +1,13 @@
+## 2.26.38
+
+- Moved the personal Link Manager JSON into the persistent mDIR installation folder: `%LOCALAPPDATA%\mDIR\Config\shortcuts.json`.
+- The Windows installer now creates `Config`, creates/migrates `shortcuts.json`, and prints both the Config folder and Link settings path when installation finishes.
+- Added the exact Config path and an **Open Config Folder** button to **Edit Links**, making backup/restore discoverable from inside mDIR.
+- Automatically migrates 2.26.37's `%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json` first, then the older `%USERPROFILE%\.mdir-p-shortcuts.json`, without overwriting an existing install-folder config.
+- Older config files are retained as backups.
+- GitHub/Release privacy rules remain unchanged: personal shortcut JSON is ignored and CI rejects tracked private settings; official ZIPs are still built from committed files only.
+- Preserved the `MDIR_P_SHORTCUTS` override for advanced users.
+
 ## 2.26.37
 
 - Moved personal top-bar links to a private per-user file: `%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json`.
