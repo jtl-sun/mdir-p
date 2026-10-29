@@ -488,11 +488,20 @@ Click **Edit Links** to open the built-in Link Manager. It supports:
 - Browsing for a file or folder
 - Saving changes directly to the top bar
 
-The Link Manager stores its settings in:
+The Link Manager stores personal settings outside the program and repository:
 
 ```text
-%USERPROFILE%\.mdir-p-shortcuts.json
+%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json
 ```
+
+On the first 2.26.37+ launch, an existing
+`%USERPROFILE%\.mdir-p-shortcuts.json` is validated and copied to the new
+location automatically. The legacy file is retained as a backup.
+
+Personal shortcut JSON is never required in the GitHub repository. Official
+Release ZIPs are produced with `git archive HEAD`, so only committed portable
+program files and built-in defaults are published; private local links remain
+on the user's PC.
 
 Up to 16 shortcut buttons are displayed. **Reload** remains available when the
 JSON file is changed with an external editor.

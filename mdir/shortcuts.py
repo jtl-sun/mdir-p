@@ -6,11 +6,15 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .advanced import advanced_data_dir
+
 
 MAX_SHORTCUTS = 16
 SHORTCUT_KINDS = {"folder", "file", "program", "web", "action", "command"}
 CONFIG_ENVIRONMENT_VARIABLE = "MDIR_P_SHORTCUTS"
-DEFAULT_CONFIG_PATH = Path.home() / ".mdir-p-shortcuts.json"
+LEGACY_CONFIG_PATH = Path.home() / ".mdir-p-shortcuts.json"
+CONFIG_DIRECTORY_NAME = "Config"
+CONFIG_FILENAME = "shortcuts.json"
 
 
 @dataclass(frozen=True)
@@ -35,10 +39,35 @@ DEFAULT_SHORTCUTS = (
 
 
 def shortcut_config_path() -> Path:
+    """Return the per-user shortcut file, always outside the source tree."""
     configured = os.environ.get(CONFIG_ENVIRONMENT_VARIABLE, "").strip()
     if configured:
         return Path(os.path.expandvars(configured)).expanduser()
-    return DEFAULT_CONFIG_PATH
+    return advanced_data_dir("mDIR-P") / CONFIG_DIRECTORY_NAME / CONFIG_FILENAME
+
+
+def migrate_legacy_shortcut_config(
+    destination: Path | None = None,
+    legacy_path: Path | None = None,
+) -> Path | None:
+    """Copy a valid legacy shortcut JSON into the new private config location.
+
+    The legacy file is intentionally kept as a backup. Migration never reads
+    from the project/release directory and never writes personal links there.
+    """
+    target = destination or shortcut_config_path()
+    source = legacy_path or LEGACY_CONFIG_PATH
+    if target.exists() or not source.exists():
+        return target if target.exists() else None
+    try:
+        values = json.loads(source.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(values, list):
+        return None
+    parsed = parse_shortcuts(values)
+    save_shortcuts(parsed, target)
+    return target
 
 
 def _definition_from_value(value: object) -> ShortcutDefinition | None:
@@ -82,8 +111,10 @@ def parse_shortcuts(values: object) -> list[ShortcutDefinition]:
 
 
 def load_shortcuts(path: Path | None = None) -> list[ShortcutDefinition]:
-    """Load user shortcuts, or use the safe built-in defaults."""
+    """Load private user shortcuts, or use safe built-in defaults."""
     config_path = path or shortcut_config_path()
+    if path is None and not os.environ.get(CONFIG_ENVIRONMENT_VARIABLE, "").strip():
+        migrate_legacy_shortcut_config(config_path, LEGACY_CONFIG_PATH)
     try:
         values = json.loads(config_path.read_text(encoding="utf-8"))
         if isinstance(values, list):
@@ -104,8 +135,12 @@ def _serializable(shortcuts: Iterable[ShortcutDefinition]) -> list[dict[str, obj
 
 
 def ensure_shortcut_config(path: Path | None = None) -> Path:
-    """Create an editable default shortcut file when one does not exist."""
+    """Create an editable private shortcut file when one does not exist."""
     config_path = path or shortcut_config_path()
+    if path is None and not os.environ.get(CONFIG_ENVIRONMENT_VARIABLE, "").strip():
+        migrated = migrate_legacy_shortcut_config(config_path, LEGACY_CONFIG_PATH)
+        if migrated is not None:
+            return migrated
     if config_path.exists():
         return config_path
     config_path.parent.mkdir(parents=True, exist_ok=True)

@@ -1,3 +1,27 @@
+# mDIR-P 2.26.37
+
+## Personal links stay personal
+
+mDIR-P now keeps the top shortcut bar configuration in a dedicated per-user location:
+
+`%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json`
+
+This file is outside the program source and outside the GitHub repository. Updating mDIR therefore does not require re-entering links, and another user who downloads the public Release receives only the portable built-in defaults.
+
+### Automatic migration
+
+If an existing `%USERPROFILE%\.mdir-p-shortcuts.json` is found and the new config does not yet exist, mDIR copies the validated links into the new location automatically. The old file is left in place as a backup.
+
+### Release privacy
+
+Personal shortcut/config filenames are explicitly ignored by Git. The official source ZIP is produced with `git archive HEAD`, which packages only committed files; local untracked JSON settings cannot enter the Release.
+
+The `MDIR_P_SHORTCUTS` environment variable remains available for advanced users who intentionally want a custom shortcut JSON location.
+
+Install: close mDIR, extract `mDIR-P-2.26.37.zip`, run `INSTALL_MDIR.bat`, and restart. Existing personal links should appear automatically.
+
+---
+
 # mDIR-P 2.26.36
 
 ## old_M_tema
