@@ -26,3 +26,9 @@ old_files/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# Personal mDIR-P settings: never commit or package user-specific links.
+.mdir-p-shortcuts.json
+shortcuts.local.json
+user-config/
+Config/shortcuts.json
