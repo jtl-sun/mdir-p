@@ -285,6 +285,9 @@ def install_file_colors(theme: Theme | None = None) -> None:
                 ".bat": "#ffff55",
                 ".cmd": "#ffff55",
                 ".ps1": "#ff55ff",
+                ".zip": "#ff55ff",
+                ".rar": "#ff55ff",
+                ".7z": "#ff55ff",
             }
         elif theme.name == NORTON_THEME_NAME:
             # Original NC uses a mainly cyan file list on royal blue.
