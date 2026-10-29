@@ -218,7 +218,7 @@ class ThumbnailAppTests(unittest.IsolatedAsyncioTestCase):
         app.left.marked.clear()
         app.left.toggle_mark_path(source)
         self.assertEqual(app.left.selected_items(), [source])
-        await self.pilot.press('f6', 'enter')
+        await self.pilot.press('f6', 'enter', 'enter')
         await self.wait_for(lambda: not source.exists() and destination.exists() and not app._file_operation_busy)
         self.assertEqual(destination.read_text(), 'file 3')
         self.assertTrue(all(app.thumbnail_modes.values()))
