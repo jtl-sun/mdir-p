@@ -16,7 +16,12 @@ from textual.widgets import Button, DataTable, Label, Select, Static
 
 from .inputs import ThinCursorInput as Input
 
-from ..shortcuts import MAX_SHORTCUTS, SHORTCUT_KINDS, ShortcutDefinition
+from ..shortcuts import (
+    MAX_SHORTCUTS,
+    SHORTCUT_KINDS,
+    ShortcutDefinition,
+    shortcut_config_path,
+)
 
 
 KIND_CHOICES = tuple((kind.title(), kind) for kind in sorted(SHORTCUT_KINDS))
@@ -145,11 +150,16 @@ class ShortcutManagerScreen(
         align-horizontal: right;
     }
 
-    #shortcut_manager_status {
+    #shortcut_manager_status,
+    #shortcut_config_path {
         height: 1;
         color: $text-muted;
         text-wrap: nowrap;
         overflow-x: auto;
+    }
+
+    #shortcut_config_path {
+        color: $accent;
     }
     """
 
@@ -157,9 +167,11 @@ class ShortcutManagerScreen(
         self,
         shortcuts: Sequence[ShortcutDefinition],
         current_path: Path,
+        config_path: Path | None = None,
     ) -> None:
         super().__init__()
         self.current_path = current_path
+        self.config_path = config_path or shortcut_config_path()
         self._drafts = [
             {
                 "label": shortcut.label,
@@ -233,8 +245,13 @@ class ShortcutManagerScreen(
                 "Select a row, edit its fields, then Save. Esc/X cancels all changes.",
                 id="shortcut_manager_status",
             )
+            yield Static(
+                f"Config: {self.config_path}",
+                id="shortcut_config_path",
+            )
 
             with Horizontal(id="shortcut_manager_actions"):
+                yield Button("Open Config Folder", id="shortcut_open_config")
                 yield Button("Save", id="shortcut_save", variant="success")
                 yield Button("Cancel", id="shortcut_cancel")
 
@@ -498,6 +515,20 @@ class ShortcutManagerScreen(
                 )
             )
         return validated
+
+    @on(Button.Pressed, "#shortcut_open_config")
+    def open_config_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        folder = self.config_path.parent
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(folder))
+        except OSError as exc:
+            self.app.notify(
+                f"Could not open Config folder: {exc}",
+                title="Config folder",
+                severity="error",
+            )
 
     @on(Button.Pressed, "#shortcut_save")
     def save_clicked(self, event: Button.Pressed) -> None:

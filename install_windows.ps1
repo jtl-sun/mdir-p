@@ -27,6 +27,7 @@ $InstallRoot = Join-Path $env:LOCALAPPDATA "mDIR"
 $VenvRoot = Join-Path $InstallRoot "venv"
 $VenvPython = Join-Path $VenvRoot "Scripts\python.exe"
 $BinRoot = Join-Path $InstallRoot "bin"
+$ConfigRoot = Join-Path $InstallRoot "Config"
 $IconSource = Join-Path $PSScriptRoot "mdir\assets\mdir.ico"
 $InstalledIcon = Join-Path $InstallRoot "mdir.ico"
 $VersionFile = Join-Path $PSScriptRoot "mdir\__init__.py"
@@ -42,6 +43,7 @@ $ExpectedVersion = $Matches[1]
 
 New-Item -ItemType Directory -Path $InstallRoot -Force | Out-Null
 New-Item -ItemType Directory -Path $BinRoot -Force | Out-Null
+New-Item -ItemType Directory -Path $ConfigRoot -Force | Out-Null
 
 if (-not (Test-Path -LiteralPath $VenvPython)) {
     Write-Host "Creating the private mDIR environment..."
@@ -56,6 +58,14 @@ Write-Host "Installing mDIR and preview support..."
 if ($LASTEXITCODE -ne 0) {
     throw "Could not install mDIR."
 }
+
+# Create or migrate the personal Link Manager JSON into the persistent
+# installation Config folder. Existing user data is never overwritten.
+$ShortcutConfig = & $VenvPython -P -c "from mdir.shortcuts import ensure_shortcut_config; print(ensure_shortcut_config())"
+if ($LASTEXITCODE -ne 0 -or -not $ShortcutConfig) {
+    throw "Could not create or migrate the personal shortcut configuration."
+}
+$ShortcutConfig = $ShortcutConfig.Trim()
 
 if (Test-Path -LiteralPath $IconSource) {
     Copy-Item -LiteralPath $IconSource -Destination $InstalledIcon -Force
@@ -127,6 +137,8 @@ if ($Version -ne $ExpectedVersion) {
 Write-Host ""
 Write-Host "mDIR $Version installed successfully." -ForegroundColor Green
 Write-Host "Desktop shortcut: $ShortcutPath"
+Write-Host "Config folder: $ConfigRoot"
+Write-Host "Link settings: $ShortcutConfig"
 if ($Wt -and (Test-Path -LiteralPath $TerminalFragment)) {
     Write-Host "Windows Terminal profile: mDIR (scrollbar hidden, padding 0)"
 }

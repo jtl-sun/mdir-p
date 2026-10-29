@@ -718,6 +718,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             ShortcutManagerScreen(
                 self.shortcuts,
                 self.active.current_path,
+                shortcut_config_path(),
             ),
             links_edited,
         )

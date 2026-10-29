@@ -1,3 +1,37 @@
+# mDIR-P 2.26.38
+
+## Config is now visible in the mDIR installation folder
+
+Personal top-bar links are now stored at:
+
+`%LOCALAPPDATA%\mDIR\Config\shortcuts.json`
+
+This is the same persistent mDIR installation root that contains the installed `venv`, `bin`, and icon, so the file is much easier to find and back up.
+
+### Link Manager improvements
+
+**Edit Links** now displays the exact JSON path and provides **Open Config Folder**. The Windows installer also prints the Config folder and Link settings path after a successful install.
+
+### Safe migration
+
+When the new file does not yet exist, mDIR checks the 2.26.37 location first:
+
+`%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json`
+
+and then the older:
+
+`%USERPROFILE%\.mdir-p-shortcuts.json`
+
+A valid shortcut list is copied into the install-root Config folder. Existing `%LOCALAPPDATA%\mDIR\Config\shortcuts.json` is never overwritten, and older files are left in place as backups.
+
+### GitHub privacy remains enforced
+
+Personal shortcut JSON is still excluded from Git and official Releases. CI rejects known private shortcut paths if they are accidentally tracked, and release ZIPs are built with `git archive HEAD`.
+
+Install: close mDIR, extract `mDIR-P-2.26.38.zip`, run `INSTALL_MDIR.bat`, and restart. After installation, **Edit Links -> Open Config Folder** opens the backup location directly.
+
+---
+
 # mDIR-P 2.26.37
 
 ## Personal links stay personal

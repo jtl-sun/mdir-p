@@ -488,15 +488,22 @@ Click **Edit Links** to open the built-in Link Manager. It supports:
 - Browsing for a file or folder
 - Saving changes directly to the top bar
 
-The Link Manager stores personal settings outside the program and repository:
+The Link Manager stores personal settings in the persistent mDIR installation
+folder, next to the installed `venv`, `bin`, and icon:
 
 ```text
-%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json
+%LOCALAPPDATA%\mDIR\Config\shortcuts.json
 ```
 
-On the first 2.26.37+ launch, an existing
-`%USERPROFILE%\.mdir-p-shortcuts.json` is validated and copied to the new
-location automatically. The legacy file is retained as a backup.
+The **Edit Links** window shows this exact path and includes **Open Config
+Folder**, so the JSON can be backed up without searching hidden Windows
+locations.
+
+On the first 2.26.38+ launch, mDIR checks the previous 2.26.37 location
+(`%LOCALAPPDATA%\mDIR-P\Config\shortcuts.json`) and then the older
+`%USERPROFILE%\.mdir-p-shortcuts.json`. A valid file is copied into the
+install-root Config folder only when the new file does not already exist. The
+older files are retained as backups.
 
 Personal shortcut JSON is never required in the GitHub repository. Official
 Release ZIPs are produced with `git archive HEAD`, so only committed portable
