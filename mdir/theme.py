@@ -12,7 +12,31 @@ from .selection_style import MARK_FOREGROUND, MARK_PREFIX, CURSOR_BACKGROUND
 
 THEME_NAME = "mDir theme"
 OLD_M_THEME_NAME = "old_M_tema"
-MDIR_THEME_VARIABLE_DEFAULTS = {"mdir-cursor-background": CURSOR_BACKGROUND}
+NORTON_THEME_NAME = "Norton Commander"
+
+# Explicit colors keep selected filenames legible even when Rich Text supplies
+# an extension-specific foreground style over the table's CSS foreground.
+SELECTION_PALETTES = {
+    THEME_NAME: ((CURSOR_BACKGROUND, "#ffffff"), ("#586d7c", "#ffffff")),
+    OLD_M_THEME_NAME: (("#ff5a61", "#000000"), ("#99484d", "#ffffff")),
+    NORTON_THEME_NAME: (("#55ffff", "#000066"), ("#315fc2", "#ffffff")),
+}
+MDIR_THEME_VARIABLE_DEFAULTS = {
+    "mdir-cursor-background": CURSOR_BACKGROUND,
+    "mdir-selection-foreground": "#ffffff",
+    "mdir-inactive-background": "#586d7c",
+    "mdir-inactive-foreground": "#ffffff",
+    "mdir-list-background": "#202020",
+    "mdir-border": "#555555",
+    "mdir-active-border": "#7894a8",
+    "mdir-path-background": "#353535",
+    "mdir-path-foreground": "#f5f5f5",
+    "mdir-header-background": "#353535",
+    "mdir-header-foreground": "#f5f5f5",
+    "mdir-toolbar-background": "#292929",
+    "mdir-toolbar-foreground": "#d8d8d8",
+}
+
 
 BACKGROUND = "#202020"
 SURFACE = "#292929"
@@ -53,6 +77,18 @@ MDIR_THEME = Theme(
         "footer-description-foreground": FOREGROUND,
         "block-hover-background": "#3a3a3a",
         "mdir-cursor-background": CURSOR_BACKGROUND,
+        "mdir-selection-foreground": "#ffffff",
+        "mdir-inactive-background": "#586d7c",
+        "mdir-inactive-foreground": "#ffffff",
+        "mdir-list-background": BACKGROUND,
+        "mdir-border": "#555555",
+        "mdir-active-border": ACCENT,
+        "mdir-path-background": HEADER,
+        "mdir-path-foreground": FOREGROUND,
+        "mdir-header-background": HEADER,
+        "mdir-header-foreground": FOREGROUND,
+        "mdir-toolbar-background": PANEL,
+        "mdir-toolbar-foreground": FOREGROUND,
     },
 )
 
@@ -63,28 +99,82 @@ MDIR_THEME = Theme(
 # that made the original M easy to read at a glance.
 OLD_M_THEME = Theme(
     name=OLD_M_THEME_NAME,
-    primary="#00a6a6",
-    secondary="#007f80",
+    primary="#00aaaa",
+    secondary="#008888",
     warning="#ffff55",
-    error="#ff5555",
+    error="#ff5a61",
     success="#55ff55",
-    accent="#55ffff",
-    foreground="#f2f2f2",
+    accent="#ff5a61",  # Original Mdir: directories are coral/red, not cyan.
+    foreground="#d5d5d5",
     background="#000000",
-    surface="#002f30",
-    panel="#006466",
-    boost="#00898b",
+    surface="#000000",
+    panel="#000000",
+    boost="#004949",
     dark=True,
     variables={
-        "footer-background": "#006466",
+        "footer-background": "#00a6a6",
         "footer-foreground": "#ffffff",
-        "footer-item-background": "#006466",
-        "footer-key-background": "#00a6a6",
-        "footer-key-foreground": "#ffff55",
-        "footer-description-background": "#006466",
+        "footer-item-background": "#00a6a6",
+        "footer-key-background": "#bdbdbd",
+        "footer-key-foreground": "#000000",
+        "footer-description-background": "#00a6a6",
         "footer-description-foreground": "#ffffff",
-        "block-hover-background": "#003f40",
-        "mdir-cursor-background": "#a80000",
+        "block-hover-background": "#272727",
+        "mdir-cursor-background": "#ff5a61",
+        "mdir-selection-foreground": "#000000",
+        "mdir-inactive-background": "#99484d",
+        "mdir-inactive-foreground": "#ffffff",
+        "mdir-list-background": "#000000",
+        "mdir-border": "#17c8c5",
+        "mdir-active-border": "#42ece9",
+        "mdir-path-background": "#bdbdbd",
+        "mdir-path-foreground": "#000000",
+        "mdir-header-background": "#000000",
+        "mdir-header-foreground": "#55ffff",
+        "mdir-toolbar-background": "#00a6a6",
+        "mdir-toolbar-foreground": "#000000",
+    },
+)
+
+
+# Classic Norton Commander is a distinct style: deep blue pane, cyan frame,
+# yellow captions, cyan text, with a turquoise cursor and dark letters.
+NORTON_THEME = Theme(
+    name=NORTON_THEME_NAME,
+    primary="#55ffff",
+    secondary="#00aaaa",
+    warning="#ffff55",
+    error="#ff7777",
+    success="#55ff55",
+    accent="#55ffff",
+    foreground="#c9ffff",
+    background="#000028",
+    surface="#0000aa",
+    panel="#0000aa",
+    boost="#1515c2",
+    dark=True,
+    variables={
+        "footer-background": "#00aaaa",
+        "footer-foreground": "#000000",
+        "footer-item-background": "#00aaaa",
+        "footer-key-background": "#000000",
+        "footer-key-foreground": "#ffff55",
+        "footer-description-background": "#00aaaa",
+        "footer-description-foreground": "#000000",
+        "block-hover-background": "#2525c9",
+        "mdir-cursor-background": "#55ffff",
+        "mdir-selection-foreground": "#000066",
+        "mdir-inactive-background": "#315fc2",
+        "mdir-inactive-foreground": "#ffffff",
+        "mdir-list-background": "#0000aa",
+        "mdir-border": "#55ffff",
+        "mdir-active-border": "#ffff55",
+        "mdir-path-background": "#00aaaa",
+        "mdir-path-foreground": "#000000",
+        "mdir-header-background": "#0000aa",
+        "mdir-header-foreground": "#ffff55",
+        "mdir-toolbar-background": "#00aaaa",
+        "mdir-toolbar-foreground": "#000000",
     },
 )
 
@@ -109,6 +199,14 @@ _current_executable = EXECUTABLE
 _current_marked = MARKED
 _current_theme_name = THEME_NAME
 _current_extension_colors: dict[str, str] = {}
+
+
+def selection_colors(*, active: bool) -> tuple[str, str]:
+    """Return selected-row background and foreground for both panes."""
+    focused, unfocused = SELECTION_PALETTES.get(
+        _current_theme_name, SELECTION_PALETTES[THEME_NAME]
+    )
+    return focused if active else unfocused
 
 
 def _file_color(path: Path) -> str:
@@ -188,6 +286,9 @@ def install_file_colors(theme: Theme | None = None) -> None:
                 ".cmd": "#ffff55",
                 ".ps1": "#ff55ff",
             }
+        elif theme.name == NORTON_THEME_NAME:
+            # Original NC uses a mainly cyan file list on royal blue.
+            _current_extension_colors = {}
         else:
             _current_extension_colors = {}
 
@@ -203,8 +304,8 @@ Screen {{
 }}
 
 Header {{
-    background: $panel;
-    color: $foreground;
+    background: $mdir-toolbar-background;
+    color: $mdir-toolbar-foreground;
 }}
 
 #panes,
@@ -213,28 +314,28 @@ Header {{
 }}
 
 FilePane {{
-    border: solid $surface-lighten-2;
-    background: $background;
+    border: solid $mdir-border;
+    background: $mdir-list-background;
 }}
 
 FilePane.active {{
-    border: solid $primary;
+    border: solid $mdir-active-border;
 }}
 
 FilePane .pane_path {{
-    background: $surface-lighten-1;
-    color: $foreground;
+    background: $mdir-path-background;
+    color: $mdir-path-foreground;
     border: none;
     padding-left: 1;
 }}
 
 FilePane .pane_path:focus {{
-    background: $primary;
-    color: $text-primary;
+    background: $mdir-path-background;
+    color: $mdir-path-foreground;
 }}
 
 FilePane DataTable {{
-    background: $background;
+    background: $mdir-list-background;
     color: $foreground;
     scrollbar-background: $background;
     scrollbar-color: $surface-lighten-2;
@@ -245,29 +346,42 @@ FilePane DataTable {{
 FilePane DataTable > .datatable--odd-row,
 FilePane DataTable > .datatable--even-row,
 FilePane DataTable > .datatable--fixed {{
-    background: $background;
+    background: $mdir-list-background;
 }}
 
 FilePane DataTable > .datatable--header {{
-    background: $surface-lighten-1;
-    color: $foreground;
+    background: $mdir-header-background;
+    color: $mdir-header-foreground;
     text-style: bold;
 }}
 
 FilePane DataTable > .datatable--cursor {{
-    background: $primary;
-    color: $text-primary;
+    background: $mdir-inactive-background;
+    color: $mdir-inactive-foreground;
     text-style: none;
 }}
 
 FilePane.active DataTable > .datatable--cursor {{
     background: $mdir-cursor-background;
-    color: white;
+    color: $mdir-selection-foreground;
     text-style: bold;
 }}
 
 FilePane DataTable > .datatable--hover {{
     background: $surface;
+}}
+
+FilePane DirectoryPathInput.pane_path,
+FilePane.active DirectoryPathInput.pane_path,
+FilePane DirectoryPathInput.pane_path:focus {{
+    background: $mdir-path-background;
+    color: $mdir-path-foreground;
+}}
+
+FilePane .recent-folder-path-button,
+FilePane.active .recent-folder-path-button {{
+    background: $mdir-path-background;
+    color: $mdir-path-foreground;
 }}
 
 FilePane .pane_footer {{

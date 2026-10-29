@@ -48,6 +48,7 @@ from .theme import (
     MDIR_THEME,
     OLD_M_THEME,
     OLD_M_THEME_NAME,
+    NORTON_THEME,
     MDIR_THEME_VARIABLE_DEFAULTS,
     install_file_colors,
 )
@@ -258,6 +259,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
         self.set_keymap(self.user_keymap)
         self.register_theme(MDIR_THEME)
         self.register_theme(OLD_M_THEME)
+        self.register_theme(NORTON_THEME)
         preferred_theme = load_theme_name(THEME_NAME)
         self.theme = (
             preferred_theme

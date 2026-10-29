@@ -3,6 +3,7 @@ from __future__ import annotations
 from time import monotonic
 from typing import Optional
 from rich.style import Style
+from rich.segment import Segment
 
 from textual import events
 from textual.binding import Binding
@@ -29,8 +30,25 @@ class SlowRenameDataTable(legacy.MDirDataTable):
     def _render_cell(self, row_index, column_index, base_style, width, cursor=False, hover=False):
         # Preserve the marked background under the mouse; the cursor still
         # uses the brighter CSS highlight. Cell metadata remains unchanged.
-        return super()._render_cell(row_index, column_index, base_style, width,
-                                    cursor=cursor, hover=hover and not self._is_marked_row(row_index))
+        rendered = super()._render_cell(
+            row_index, column_index, base_style, width,
+            cursor=cursor, hover=hover and not self._is_marked_row(row_index),
+        )
+        if not cursor:
+            return rendered
+        # CSS alone does not override the Rich per-extension Text foreground.
+        # Recolor the COMPLETE selected row (including <DIR>, dates, spaces)
+        # while retaining rich segment mouse metadata and any link styling.
+        from ..theme import selection_colors
+        pane = self._pane()
+        active = bool(pane is not None and pane.has_class("active"))
+        background, foreground = selection_colors(active=active)
+        selection_style = Style(color=foreground, bgcolor=background)
+        return [
+            [Segment(segment.text, (segment.style or Style()) + selection_style,
+                     segment.control) for segment in line]
+            for line in rendered
+        ]
 
     BINDINGS = [
         binding

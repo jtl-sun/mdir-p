@@ -38,7 +38,9 @@ As a matter of project identity and respect for the classic Mdir lineage, mDIR-P
 ### Themes
 
 - **mDir theme** - the current modern default.
-- **old_M_tema** - a DOS-Mdir-inspired black/cyan retro palette with classic extension color cues. Select it from **F10 -> Theme**; the choice is remembered across launches.
+- **old_M_tema** - restored original DOS Mdir: black lists, coral directories and cursor, yellow BAT, cyan COM, green EXE, magenta archives, cyan borders.
+- **Norton Commander** - classic royal-blue dual panels, bright cyan frames and selection, yellow headers, and cyan filenames.
+- **mDir theme** - unchanged modern default. All themes use readable selection text in both panes. Select via **F10 -> Theme**; the choice is remembered across launches.
 
 ## Highlights
 

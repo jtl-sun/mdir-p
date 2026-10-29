@@ -1,3 +1,10 @@
+## 2.26.39
+
+- Refine `old_M_tema` to reflect classic DOS Mdir file types, borders, and selection.
+- Add the distinct `Norton Commander` theme, including blue panes and cyan/yellow chrome.
+- Fix dark or low-contrast selected text across both panes, including rich-colored filenames.
+- Preserve default theme, themes persistence, metadata, file operations and personal configuration.
+
 ## 2.26.38
 
 - Moved the personal Link Manager JSON into the persistent mDIR installation folder: `%LOCALAPPDATA%\mDIR\Config\shortcuts.json`.

@@ -1,3 +1,18 @@
+# mDIR-P 2.26.39
+
+## mDir Original and Norton Commander skins
+
+- **old_M_tema** now closely follows the original DOS Mdir: pure black file areas, coral/red directory names, red highlight with black text, BAT yellow, COM cyan, EXE green, ZIP magenta, gray path bar, and cyan borders/footer.
+- **Norton Commander** is a new selectable skin with royal-blue dual panes, cyan frames, yellow headers, bright cyan selection with dark text, and classic teal function-key hints.
+- Fixed the left/inactive-pane selection readability problem across *all* themes. Selected filename, extension, size and date segments now receive consistent, high-contrast foreground/background colors, even if their filenames have extension-specific Rich markup.
+- Reuses existing mDIR-P functionality, keyboard mappings, options, persisted theme preference, file operations and personal shortcuts. No separate font or program is required.
+
+Select **F10 -> Theme** and choose **old_M_tema** or **Norton Commander**. The original **mDir theme** remains the default for new installations. Personal link configuration is not included in releases.
+
+Install: close mDIR, extract `mDIR-P-2.26.39.zip`, run `INSTALL_MDIR.bat`, and restart.
+
+---
+
 # mDIR-P 2.26.38
 
 ## Config is now visible in the mDIR installation folder
