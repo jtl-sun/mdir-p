@@ -29,6 +29,17 @@ MDIR-P is a tribute to **Choi Jung Han**, the developer of the legendary
 DOS-era file manager **MDIR**. His work inspired generations of users to
 manage files quickly and efficiently from the keyboard.
 
+## Project direction
+
+mDIR-P is a modern dual-pane file manager built around the speed and directness many users remember from DOS-era file managers. The project aims to make file work comfortable for Linux users while also remaining natural in Windows and PowerShell environments. Its modern pillars are **AI/File**, **File View / Preview**, and **File Search**.
+
+As a matter of project identity and respect for the classic Mdir lineage, mDIR-P stays on the **V2.xx.xx** version series and does not adopt a V3.x version number.
+
+### Themes
+
+- **mDir theme** - the current modern default.
+- **old_M_tema** - a DOS-Mdir-inspired black/cyan retro palette with classic extension color cues. Select it from **F10 -> Theme**; the choice is remembered across launches.
+
 ## Highlights
 
 - Fast dual-pane file management inspired by MDIR and Total Commander
