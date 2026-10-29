@@ -1,3 +1,9 @@
+## 2.26.44: direct drive keys and smart F9 ZIP
+
+On Windows, **Alt+C**, **Alt+D**, **Alt+S** (and most other Alt+drive letters) open that drive's root directly in the **active** pane without changing the opposite pane. A missing drive reports an error without navigating. **Alt+T** remains reserved for Thumbnails. The drive selection dialog is still available on **Alt+F9** (or Alt+F1/Alt+F2 for the left/right pane).
+
+**F9 Zip/Unzip** uses the built-in archive dialogs: selecting files or folders makes a ZIP in the opposite pane; selecting exactly one `.zip` extracts it into the opposite pane. Archive creation and extraction remain cancellable with progress and overwrite protection. `Alt+F5` and `Alt+F6` remain direct ZIP creation/extraction shortcuts. **RAR/7z/TAR extraction is not yet implemented**; F9 shows an explicit message instead of treating those archives as regular files. Your saved keymap is preserved and a previous Drive=F9 entry migrates automatically.
+
 ## 2.26.43 - F6 filename prefill
 
 For a single selected file or directory, F6 RenMov now displays the destination folder **and its original name**. Edit the name to move and rename at the same time, or leave it unchanged to move with the original name. For multiple selections only the destination directory is shown; each selected item retains its name. The destination still defaults to the opposite pane. Existing overwrite confirmations are preserved.

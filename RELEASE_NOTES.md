@@ -1,3 +1,12 @@
+# mDIR-P 2.26.44
+
+- Alt+C/D/S and other non-reserved Alt+drive letters directly switch the active Windows pane to that drive's root; Alt+T remains reserved for thumbnails.
+- F9 now shows **Zip/Unzip** and automatically chooses compression for selected files/folders or extraction for a single selected ZIP.
+- Create ZIP and Extract ZIP reuse existing safe progress/cancel/overwrite dialogs; destination defaults to the opposite pane.
+- Existing Drive picker moves to Alt+F9. Alt+F1/F2 pane pickers, Alt+F5/Alt+F6 archive shortcuts remain.
+- Previous saved Drive=F9 custom keymaps migrate while retaining unrelated remappings.
+- ZIP-only built-in archive support; unsupported RAR/7z/TAR extraction reports a clear message.
+
 # mDIR-P 2.26.43
 
 - F6 RenMov pre-fills the original filename or folder name for one selected item, appended to the opposite pane's destination path.

@@ -1,3 +1,9 @@
+## 2.26.44
+
+- Quick Windows drive shortcuts on the active pane; keep Alt+T thumbnail binding.
+- F9 Zip/Unzip routes to the existing secure ZIP engine and archive dialogs.
+- Preserve old drive-selection paths under Alt+F9/Alt+F1/Alt+F2 and migrate stored keymaps.
+
 ## 2.26.43
 
 - Pre-fill F6 with target path and original name for single selections, directory only for multiple selections.
