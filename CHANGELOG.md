@@ -1,3 +1,8 @@
+## 2.26.46
+
+- Active mDir pane deep black, inactive pane charcoal; no more inverse brightness.
+- Ctrl+T Thumbnail/List on Windows, preserving Alt+T as a direct drive shortcut.
+
 ## 2.26.45
 
 - Support all 26 Windows drive letters with Alt+A..Z through the native shortcut router and Textual key bindings.

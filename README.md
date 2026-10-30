@@ -1,3 +1,9 @@
+## 2.26.46 - Darker active pane and Ctrl+T Thumbnail/List
+
+The default **mDir theme** now renders the **active file pane in deep black (#191919)** and the **inactive pane in softer charcoal (#292929)**. Both file lists, row backgrounds, and pane information areas follow focus on Tab/mouse click. Active border and highlighted selection remain high-contrast. Retro Original, Norton Commander, and alternate light skins retain their colors.
+
+**Ctrl+T** now toggles **Thumbnail / List** in the active pane on Windows; the Th button still works. **Alt+T** continues to select the T: drive. This replaces the cumbersome Ctrl+Alt+T thumbnail combination.
+
 ## 2.26.45: Every Alt+letter switches that Windows drive
 
 All **26** shortcuts **Alt+A ... Alt+Z** now switch the ACTIVE Windows pane directly to the matching drive, provided that drive exists. This also registers the shortcuts with the native Windows keyboard dispatcher rather than only the terminal UI, so Windows Terminal cannot swallow some letters. **Alt+T** is now T: drive; the Thumbnail/List toggle moves to **Ctrl+Alt+T** (or the unchanged **Th** button). Existing settings, F9 Zip/Unzip, and Alt+F9 Drive menu are preserved. Ubuntu remains path/mount-based instead of drive-letter-based.

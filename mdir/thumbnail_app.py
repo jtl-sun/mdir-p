@@ -10,7 +10,7 @@ from .thumbnail_native import PaneState, ThumbnailEvent, ThumbnailManager
 
 
 THUMBNAIL_BINDINGS = [
-    Binding('ctrl+alt+t', 'toggle_thumbnail', 'Thumbnails', show=False, priority=True),
+    Binding('ctrl+t', 'toggle_thumbnail', 'Thumbnails', show=False, priority=True),
     *[Binding(key, f"thumbnail_navigate('{key}')", '', show=False, priority=True)
       for key in ('left', 'right', 'up', 'down', 'home', 'end', 'pageup', 'pagedown')],
 ]
@@ -57,7 +57,7 @@ class ThumbnailAppMixin:
         self.set_active(side)
         self._sync_thumbnails()
         enabled = ' + '.join(side for side, enabled in self.thumbnail_modes.items() if enabled)
-        self.set_status(f'Thumbnail ({enabled}): Tab pane | Arrow navigate | Space/right-drag mark | F5 Copy | F6 Move | Ctrl+Alt+T List' if enabled else 'File list restored.')
+        self.set_status(f'Thumbnail ({enabled}): Tab pane | Arrow navigate | Space/right-drag mark | F5 Copy | F6 Move | Ctrl+T List' if enabled else 'File list restored.')
 
     def _thumbnail_revision(self, pane):
         return (str(pane.current_path), pane._listing_generation,

@@ -69,7 +69,7 @@ class KeyboardRoutesTests(unittest.IsolatedAsyncioTestCase):
                 await self.pilot.press(f"alt+{letter}")
                 self.assertEqual(calls, [(side, letter.upper())], letter)
                 self.assertEqual(routes[f"alt+{letter}"], ("quick_drive", (letter.upper(),)))
-        self.assertEqual(routes["ctrl+alt+t"], ("toggle_thumbnail", ()))
+        self.assertEqual(routes["ctrl+t"], ("toggle_thumbnail", ()))
 
     async def test_every_editable_key_can_be_remapped_without_old_binding(self):
         definitions = [d for d in KEY_DEFINITIONS if d.editable]

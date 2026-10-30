@@ -1,3 +1,11 @@
+# mDIR-P 2.26.46
+
+- Fix inverted active/inactive pane brightness in the standard dark mDir theme: active #191919, inactive #292929.
+- Apply the difference to the full file-list surface, focused DataTable rows, information area, and footer strip; active focus border and selected-row contrast stay intact.
+- Scope new colors to the mDir dark theme so DOS Original/Norton and other themes remain unchanged.
+- Move Thumbnail/List shortcut to Ctrl+T (from Ctrl+Alt+T); Alt+T remains T: drive.
+- Preserve user settings, file operations and all Alt+A-Z drive shortcuts.
+
 # mDIR-P 2.26.45
 
 - All Alt+A through Alt+Z now switch the **active** pane to the corresponding available Windows drive (including T:).
