@@ -17,6 +17,7 @@ class RetroThemeTests(unittest.TestCase):
         install_file_colors(MDIR_THEME)
 
     def test_distinct_retro_palettes(self):
+        self.assertEqual(OLD_M_THEME_NAME, "Old-MDIR")
         self.assertEqual(OLD_M_THEME.name, OLD_M_THEME_NAME)
         self.assertEqual(OLD_M_THEME.background, "#000000")
         self.assertEqual(OLD_M_THEME.accent, "#ff5a61")

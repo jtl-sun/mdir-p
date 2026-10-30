@@ -1,3 +1,9 @@
+## 2.26.47 - Old-MDIR theme name and clearer active panes
+
+The DOS mDir theme formerly shown as `old_M_tema` is now **Old-MDIR**. Existing saved theme choices automatically migrate on the next launch, so your theme preference is preserved.
+
+Across the standard mDir, **Old-MDIR**, Norton Commander, and Textual Light skins, the active pane retains its vivid native colors, clear selected row and strong border, while the passive pane has softer text, a more muted border, and a distinguishable list background. Switching with Tab or mouse changes the visual emphasis immediately. The classic themes retain their signature coral/teal and blue/cyan palettes.
+
 ## 2.26.46 - Darker active pane and Ctrl+T Thumbnail/List
 
 The default **mDir theme** now renders the **active file pane in deep black (#191919)** and the **inactive pane in softer charcoal (#292929)**. Both file lists, row backgrounds, and pane information areas follow focus on Tab/mouse click. Active border and highlighted selection remain high-contrast. Retro Original, Norton Commander, and alternate light skins retain their colors.

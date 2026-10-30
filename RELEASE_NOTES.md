@@ -1,3 +1,10 @@
+# mDIR-P 2.26.47
+
+- Rename the historical `old_M_tema` display theme to **Old-MDIR**, including persisted-setting backward compatibility.
+- Distinguish working and passive panes consistently in Old-MDIR, Norton Commander and Textual Light: dimmer passive text and backgrounds, contrasting active selection and borders.
+- Retain modern mDir active #191919/inactive #292929 backgrounds, vintage color palettes and existing file operations.
+- Preserve Ctrl+T thumbnail shortcut, Alt+A-Z drive switching and personal configuration.
+
 # mDIR-P 2.26.46
 
 - Fix inverted active/inactive pane brightness in the standard dark mDir theme: active #191919, inactive #292929.

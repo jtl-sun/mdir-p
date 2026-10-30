@@ -9,7 +9,7 @@ class OldMThemeStructureTests(unittest.TestCase):
     def test_retro_theme_registered_and_default_preserved(self):
         theme = (ROOT / "mdir" / "theme.py").read_text(encoding="utf-8")
         app = (ROOT / "mdir" / "app.py").read_text(encoding="utf-8")
-        self.assertIn('OLD_M_THEME_NAME = "old_M_tema"', theme)
+        self.assertIn('OLD_M_THEME_NAME = "Old-MDIR"', theme)
         self.assertIn('name=OLD_M_THEME_NAME', theme)
         self.assertIn('self.register_theme(OLD_M_THEME)', app)
         self.assertIn('def get_theme_variable_defaults', app)
@@ -27,7 +27,7 @@ class OldMThemeStructureTests(unittest.TestCase):
         match = re.search(r'__version__ = "([^"]+)"', version_text)
         self.assertIsNotNone(match)
         self.assertTrue(match.group(1).startswith("2."))
-        self.assertEqual(match.group(1), "2.26.46")
+        self.assertEqual(match.group(1), "2.26.47")
 
 
 if __name__ == "__main__":

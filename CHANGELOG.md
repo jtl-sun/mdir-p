@@ -1,3 +1,9 @@
+## 2.26.47
+
+- Rename old_M_tema to Old-MDIR and transparently migrate saved preference.
+- Make active panes vivid and inactive panes muted across modern/retro/light themes.
+- Cover theme focus colors and name migration with regression tests.
+
 ## 2.26.46
 
 - Active mDir pane deep black, inactive pane charcoal; no more inverse brightness.

@@ -298,6 +298,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             pane.set_class(self.theme == THEME_NAME, "skin-modern")
             pane.set_class(self.theme == OLD_M_THEME_NAME, "skin-original")
             pane.set_class(self.theme == NORTON_THEME.name, "skin-norton")
+            pane.set_class(self.theme == "textual-light", "skin-light")
 
     def _watch_theme(self, theme_name: str) -> None:
         """Apply and persist theme colors across Textual and native Preview."""
