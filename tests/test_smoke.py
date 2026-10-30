@@ -2637,8 +2637,18 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                     self.assertIn(root / "note.txt", app.left.entries)
                     self.assertEqual(
                         app.left.styles.background.hex,
-                        "#202020",
+                        "#191919",
                     )
+                    self.assertEqual(app.right.styles.background.hex, "#292929")
+
+                    app.set_active("right")
+                    await pilot.pause()
+                    self.assertEqual(app.right.styles.background.hex, "#191919")
+                    self.assertEqual(app.left.styles.background.hex, "#292929")
+
+                    app.set_active("left")
+                    await pilot.pause()
+                    self.assertEqual(app.left.styles.background.hex, "#191919")
 
                     app.theme = "textual-light"
                     await pilot.pause()
