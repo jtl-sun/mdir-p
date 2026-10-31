@@ -1,3 +1,11 @@
+## 2.26.49
+
+- Match the other classic skins by making Norton Commander's active pane
+  dark navy and its inactive pane royal blue; retain the bright cyan active cursor.
+- Reapply the final selected theme's skin and file colors after the Theme picker
+  redraws. Ignore stale callbacks from rapid consecutive theme changes.
+- Add headless regression tests for repeated theme changes and left/right focus.
+
 ## 2.26.48
 
 - Add an ordered 24-theme palette with Basic first.
