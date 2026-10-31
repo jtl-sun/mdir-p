@@ -1,3 +1,10 @@
+# mDIR-P 2.26.49
+
+- Correct the **Norton Commander** active-pane contrast: active working pane is darker navy while the inactive pane stays classic royal blue; cyan active selection remains unchanged.
+- Stabilize repeated rapid theme changes so stale redraws do not restore an earlier Basic or Old-MDIR appearance.
+- Keep the requested 24-theme order and default **mDir theme (basic)**, with legacy theme names and saved user preferences preserved.
+- Add regression coverage for theme cycling and left/right pane activation.
+
 # mDIR-P 2.26.48
 
 - Rename the standard theme to **mDir theme (basic)** and make it the default for new installations/missing settings.
