@@ -1,3 +1,12 @@
+## 2.26.49 - Stable theme switching and Norton focus
+
+**Norton Commander** now follows the same active-panel direction as Basic and
+Old-MDIR: the active pane is darker navy, the inactive pane classic royal blue,
+and the active selection remains bright cyan. Switching between custom and
+built-in themes rapidly now reapplies the last selected skin and filename colors
+after the Theme picker redraws. The exact 24-theme order and Basic default from
+2.26.48 remain unchanged.
+
 ## 2.26.48 - Theme ordering and the new Basic default
 
 The first option and new-installation default is **mDir theme (basic)**, followed by **Old-MDIR**, **Norton Commander**, and then the 21 built-in themes in the requested order (ansi-dark through tokyo-night). The standard **F10 > Theme** search palette retains fuzzy filtering while displaying themes in that exact order when opened.
@@ -80,10 +89,12 @@ As a matter of project identity and respect for the classic Mdir lineage, mDIR-P
 
 ### Themes
 
-- **mDir theme** - the current modern default.
-- **old_M_tema** - restored original DOS Mdir: black lists, coral directories and cursor, yellow BAT, cyan COM, green EXE, magenta archives, cyan borders.
-- **Norton Commander** - classic royal-blue dual panels, bright cyan frames and selection, yellow headers, and cyan filenames.
-- **mDir theme** - unchanged modern default. All themes use readable selection text in both panes. Select via **F10 -> Theme**; the choice is remembered across launches.
+- **mDir theme (basic)** - default modern dark skin with a darker active file pane.
+- **Old-MDIR** - original DOS-inspired mDir styling: dark working pane, coral directories and cursor, and distinctive extension colors.
+- **Norton Commander** - classic blue/cyan/yellow palette with a darker active pane and a bright cyan cursor.
+- **21 built-in themes** - ordered from ansi-dark through tokyo-night.
+
+Select a theme with **F10 > Theme**. The exact 24-theme list is ordered as above, and your chosen theme is saved across launches; existing user settings are preserved.
 
 ## Highlights
 

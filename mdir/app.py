@@ -256,6 +256,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
         self.shortcuts = load_shortcuts()
         self.shortcut_project = Path(__file__).resolve().parent.parent
         self._theme_preference_ready = False
+        self._theme_change_generation = 0
         super().__init__()
         self.user_keymap = load_keymap()
         self.set_keymap(self.user_keymap)
@@ -326,7 +327,28 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             native_preview = self._native_preview
             if native_preview is not None:
                 native_preview.update_theme()
-            self.call_after_refresh(self._refresh_themed_file_rows)
+            # The palette closes on a later frame.  A pending redraw for an
+            # earlier selection must never overwrite the final chosen skin.
+            self._theme_change_generation += 1
+            self.call_after_refresh(
+                self._finalize_theme_change,
+                theme_name,
+                self._theme_change_generation,
+            )
+
+    def _finalize_theme_change(self, expected_name: str, generation: int) -> None:
+        """Reassert the latest skin after the palette and CSS have redrawn."""
+        if (
+            generation != self._theme_change_generation
+            or self.theme != expected_name
+        ):
+            return
+        self._sync_skin_classes()
+        install_file_colors(self.current_theme)
+        self._refresh_themed_file_rows()
+        for pane in (self.left, self.right):
+            pane.refresh()
+            pane.table.refresh()
 
     def _refresh_themed_file_rows(self) -> None:
         """Rebuild cached cells without another filesystem scan."""

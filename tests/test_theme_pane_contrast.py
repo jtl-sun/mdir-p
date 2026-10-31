@@ -15,7 +15,7 @@ class PaneContrastTests(unittest.TestCase):
         for skin, dim, vivid in (
             ("skin-modern", "#292929", "#191919"),
             ("skin-original", "#202020", "#000000"),
-            ("skin-norton", "#171752", "#0000aa"),
+            ("skin-norton", "#0000aa", "#171752"),
             ("skin-light", "#f0f0f0", "#e0e0e0"),
         ):
             with self.subTest(skin=skin):

@@ -412,7 +412,7 @@ FilePane.skin-modern.active .pane_footer {{
 
 
 /* Strong active/quiet passive distinction in every classic skin.  The
-   non-active pane is deliberately desaturated while remaining legible. */
+   active pane is darker, and the passive pane remains legible. */
 FilePane.skin-original,
 FilePane.skin-original DataTable,
 FilePane.skin-original DataTable:focus,
@@ -450,7 +450,7 @@ FilePane.skin-norton DataTable > .datatable--even-row,
 FilePane.skin-norton DataTable > .datatable--fixed,
 FilePane.skin-norton .pane_info,
 FilePane.skin-norton .pane_footer {{
-    background: #171752;
+    background: #0000aa;
 }}
 
 FilePane.skin-norton.active,
@@ -461,7 +461,7 @@ FilePane.skin-norton.active DataTable > .datatable--even-row,
 FilePane.skin-norton.active DataTable > .datatable--fixed,
 FilePane.skin-norton.active .pane_info,
 FilePane.skin-norton.active .pane_footer {{
-    background: #0000aa;
+    background: #171752;
 }}
 
 FilePane.skin-norton {{
