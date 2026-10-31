@@ -1,3 +1,10 @@
+# mDIR-P 2.26.48
+
+- Rename the standard theme to **mDir theme (basic)** and make it the default for new installations/missing settings.
+- Present all 24 themes in the requested non-alphabetical order in the existing searchable F10 > Theme palette.
+- Preserve existing theme preference and migrate historical names automatically.
+- Retain active/inactive pane contrast, thumbnail shortcuts and file-manager functions.
+
 # mDIR-P 2.26.47
 
 - Rename the historical `old_M_tema` display theme to **Old-MDIR**, including persisted-setting backward compatibility.

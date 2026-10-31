@@ -24,7 +24,11 @@ def load_theme_name(default: str, path: Path | None = None) -> str:
         if isinstance(name, str) and name.strip():
             # Existing users saved the previous retro theme ID in theme.json.
             # Map it forward without overwriting or deleting their settings.
-            return "Old-MDIR" if name.strip() == "old_M_tema" else name.strip()
+            aliases = {
+                "old_M_tema": "Old-MDIR",
+                "mDir theme": "mDir theme (basic)",
+            }
+            return aliases.get(name.strip(), name.strip())
     return default
 
 

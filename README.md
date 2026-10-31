@@ -1,3 +1,9 @@
+## 2.26.48 - Theme ordering and the new Basic default
+
+The first option and new-installation default is **mDir theme (basic)**, followed by **Old-MDIR**, **Norton Commander**, and then the 21 built-in themes in the requested order (ansi-dark through tokyo-night). The standard **F10 > Theme** search palette retains fuzzy filtering while displaying themes in that exact order when opened.
+
+Existing saved theme choices remain in effect. Older saved names `mDir theme` and `old_M_tema` automatically map to `mDir theme (basic)` and `Old-MDIR`, without deleting your settings.
+
 ## 2.26.47 - Old-MDIR theme name and clearer active panes
 
 The DOS mDir theme formerly shown as `old_M_tema` is now **Old-MDIR**. Existing saved theme choices automatically migrate on the next launch, so your theme preference is preserved.

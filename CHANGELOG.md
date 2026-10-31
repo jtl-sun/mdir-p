@@ -1,3 +1,8 @@
+## 2.26.48
+
+- Add an ordered 24-theme palette with Basic first.
+- Set mDir theme (basic) as the fallback default while preserving stored choices and legacy aliases.
+
 ## 2.26.47
 
 - Rename old_M_tema to Old-MDIR and transparently migrate saved preference.

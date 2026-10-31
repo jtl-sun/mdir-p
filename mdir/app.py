@@ -42,6 +42,8 @@ from .shortcuts import (
 from .platform_support import open_with_default_app
 from .keymap import load_keymap, save_keymap
 from .theme_settings import load_theme_name, save_theme_name
+from textual.command import CommandPalette
+from .theme_order import OrderedThemeProvider
 from .theme import (
     THEME_NAME,
     MDIR_THEME_CSS,
@@ -299,6 +301,15 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
             pane.set_class(self.theme == OLD_M_THEME_NAME, "skin-original")
             pane.set_class(self.theme == NORTON_THEME.name, "skin-norton")
             pane.set_class(self.theme == "textual-light", "skin-light")
+
+    def search_themes(self) -> None:
+        """Open the requested 24-theme list in its defined order."""
+        self.push_screen(
+            CommandPalette(
+                providers=[OrderedThemeProvider],
+                placeholder="Search for themes…",
+            ),
+        )
 
     def _watch_theme(self, theme_name: str) -> None:
         """Apply and persist theme colors across Textual and native Preview."""
