@@ -30,7 +30,7 @@ class OldMThemeStructureTests(unittest.TestCase):
         # Do not pin this check to a patch release: ensure the package and
         # leading changelog entry agree while staying on the v2 series.
         changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
-        current = re.search(r"^## (2\\.\\d+\\.\\d+)", changelog, re.MULTILINE)
+        current = re.search(r"^## (2\.\d+\.\d+)", changelog, re.MULTILINE)
         self.assertIsNotNone(current)
         self.assertEqual(match.group(1), current.group(1))
 
