@@ -52,6 +52,7 @@ from .advanced import (
     safe_sync_directories,
 )
 from .ui.advanced import AdvancedResult, AdvancedResultsScreen
+from .ui.duplicate_review import DuplicateReviewScreen
 from .ui.batch_rename import (
     BatchRenameScreen,
     RenamePair,
@@ -244,6 +245,7 @@ class BaseApp(AIShellApp):
         self._macro_recording_name: str | None = None
         self._macro_recording_actions: list[MacroAction] = []
         self._file_index_path = data_dir / "mindex.sqlite3"
+        self._duplicate_review_path = data_dir / "duplicate_reviews.json"
         super().__init__()
 
 
@@ -1481,7 +1483,35 @@ class BaseApp(AIShellApp):
         except Exception as exc:
             self.call_from_thread(self.set_status, f"mIndex failed: {exc}")
 
+    def _show_duplicate_review(
+        self,
+        root: Path,
+        rows: list[tuple[str, Path, int]],
+        exact_groups: int,
+        similar_groups: int,
+        source_side: str,
+    ) -> None:
+        """Open the read-only duplicate list and persist manual decisions only."""
+        def selected(path: Path | None) -> None:
+            if path is not None:
+                reveal = getattr(self, "_reveal_search_result", None)
+                if callable(reveal):
+                    reveal(path, source_side)
+            else:
+                self.set_active(source_side)
+
+        try:
+            review = DuplicateReviewScreen(
+                root, rows, exact_groups, similar_groups, self._duplicate_review_path
+            )
+        except (ValueError, OSError) as exc:
+            # Never overwrite a malformed or inaccessible user review file.
+            self.set_status(f"Duplicate review manifest not loaded: {exc}")
+            return
+        self.push_screen(review, selected)
+
     def action_find_duplicates(self) -> None:
+        """Find candidate duplicates; do not change the discovered files."""
         selected = self.active.selected_path()
         root = selected if selected and selected.is_dir() else self.active.current_path
         source_side = self.active_side
@@ -1494,9 +1524,11 @@ class BaseApp(AIShellApp):
 
         self.push_screen(
             self.CONFIRM_SCREEN(
-                f"Find exact duplicate files below?\n\n{root}\n\n"
-                "This only reads files and never deletes them.",
-                title="Duplicate finder",
+                f"Find duplicate files below?\\n\\n{root}\\n\\n"
+                "File contents are compared by SHA-256. The results let you "
+                "mark intentional copies, add notes and export full paths. "
+                "Nothing is deleted or moved.",
+                title="Safe Duplicate Review",
             ),
             confirmed,
         )
@@ -1512,34 +1544,34 @@ class BaseApp(AIShellApp):
                 ),
             )
             similar_groups = find_similar_images(root)
-            rows = [
-                AdvancedResult(
-                    f"Group {group_number}",
-                    path.name,
-                    str(path.parent),
-                    legacy.human_size(path.stat().st_size),
-                    path,
-                )
-                for group_number, group in enumerate(groups, start=1)
-                for path in group
-            ]
-            rows.extend(
-                AdvancedResult(
-                    f"Similar {group_number}",
-                    path.name,
-                    str(path.parent),
-                    "visual dHash",
-                    path,
-                )
-                for group_number, group in enumerate(similar_groups, start=1)
-                for path in group
-            )
+            rows: list[tuple[str, Path, int]] = []
+            for index, group in enumerate(
+                sorted(groups, key=lambda paths: min(str(p).casefold() for p in paths)),
+                start=1,
+            ):
+                for path in sorted(group, key=lambda p: str(p).casefold()):
+                    try:
+                        size = path.stat().st_size
+                    except OSError:
+                        continue
+                    rows.append((f"Exact {index}", path, size))
+            for index, group in enumerate(
+                sorted(similar_groups, key=lambda paths: min(str(p).casefold() for p in paths)),
+                start=1,
+            ):
+                for path in sorted(group, key=lambda p: str(p).casefold()):
+                    try:
+                        size = path.stat().st_size
+                    except OSError:
+                        continue
+                    rows.append((f"Similar {index}", path, size))
+
             self.call_from_thread(
-                self._show_advanced_results,
-                "Exact duplicate files",
-                f"{len(groups):,} exact and {len(similar_groups):,} similar group(s), "
-                f"{len(rows):,} rows. No files were changed.",
+                self._show_duplicate_review,
+                root,
                 rows,
+                len(groups),
+                len(similar_groups),
                 source_side,
             )
         except Exception as exc:
