@@ -53,6 +53,7 @@ from .advanced import (
 )
 from .ui.advanced import AdvancedResult, AdvancedResultsScreen
 from .ui.duplicate_review import DuplicateReviewScreen
+from .ui.duplicate_scan import DuplicateScanProgressScreen
 from .ui.batch_rename import (
     BatchRenameScreen,
     RenamePair,
@@ -246,6 +247,8 @@ class BaseApp(AIShellApp):
         self._macro_recording_actions: list[MacroAction] = []
         self._file_index_path = data_dir / "mindex.sqlite3"
         self._duplicate_review_path = data_dir / "duplicate_reviews.json"
+        self._duplicate_scan_cancel: Event | None = None
+        self._duplicate_scan_screen: DuplicateScanProgressScreen | None = None
         super().__init__()
 
 
@@ -1525,6 +1528,11 @@ class BaseApp(AIShellApp):
         def confirmed(ok: bool) -> None:
             if not ok:
                 return
+            self._duplicate_scan_cancel = Event()
+            self._duplicate_scan_screen = DuplicateScanProgressScreen(
+                root, self._duplicate_scan_cancel
+            )
+            self.push_screen(self._duplicate_scan_screen)
             self.set_status(f"Duplicate search: scanning recursively from {root} ...")
             self._run_duplicate_search(root, source_side)
 
@@ -1539,21 +1547,81 @@ class BaseApp(AIShellApp):
             confirmed,
         )
 
+    def _update_duplicate_scan_progress(self, count: int, phase: str) -> None:
+        """Update the dedicated progress dialog on Textual's UI thread."""
+        screen = self._duplicate_scan_screen
+        if screen is not None:
+            screen.update_progress(count, phase)
+        self.set_status(f"Duplicate search: {phase}")
+
+    def _close_duplicate_scan_progress(self) -> None:
+        screen = self._duplicate_scan_screen
+        self._duplicate_scan_screen = None
+        self._duplicate_scan_cancel = None
+        if screen is not None and screen.is_mounted:
+            screen.dismiss(None)
+
+    def _abort_duplicate_scan(self, message: str) -> None:
+        self._close_duplicate_scan_progress()
+        self.set_status(message)
+        if "failed" in message.lower():
+            self.notify(message, severity="error", timeout=10)
+
+    def _present_duplicate_scan_results(
+        self,
+        root: Path,
+        rows: list[tuple[str, Path, int]],
+        exact_groups: int,
+        similar_groups: int,
+        source_side: str,
+        scan_warnings: list[str],
+        scan_stats: dict[str, int],
+    ) -> None:
+        """Replace progress with a result window, including zero-match scans."""
+        self._close_duplicate_scan_progress()
+        self._show_duplicate_review(
+            root, rows, exact_groups, similar_groups, source_side,
+            scan_warnings, scan_stats,
+        )
+        self.set_status(
+            f"Duplicate search complete: {exact_groups:,} exact groups, "
+            f"{similar_groups:,} similar-image groups. Review results window opened."
+        )
+
     @work(thread=True, exclusive=True, group="mdir-duplicates", exit_on_error=False)
     def _run_duplicate_search(self, root: Path, source_side: str) -> None:
+        cancel_event = self._duplicate_scan_cancel
         try:
             scan_warnings: list[str] = []
             scan_stats: dict[str, int] = {}
             groups = find_exact_duplicates(
                 root,
+                cancel_event=cancel_event,
                 scan_errors=scan_warnings,
                 scan_stats=scan_stats,
                 progress=lambda count, phase: self.call_from_thread(
-                    self.set_status,
-                    f"Duplicate search: {count:,} files - {phase}",
+                    self._update_duplicate_scan_progress, count, phase
                 ),
             )
-            similar_groups = find_similar_images(root)
+            if cancel_event is not None and cancel_event.is_set():
+                self.call_from_thread(
+                    self._abort_duplicate_scan,
+                    "Duplicate search cancelled. No files were changed.",
+                )
+                return
+            self.call_from_thread(
+                self._update_duplicate_scan_progress,
+                scan_stats.get("files_hashed", 0),
+                "SHA-256 done. Comparing visually similar images (up to 5,000). "
+                "Results window opens after this step.",
+            )
+            similar_groups = find_similar_images(root, cancel_event=cancel_event)
+            if cancel_event is not None and cancel_event.is_set():
+                self.call_from_thread(
+                    self._abort_duplicate_scan,
+                    "Duplicate search cancelled. No files were changed.",
+                )
+                return
             rows: list[tuple[str, Path, int]] = []
             for index, group in enumerate(
                 sorted(groups, key=lambda paths: min(str(p).casefold() for p in paths)),
@@ -1575,9 +1643,14 @@ class BaseApp(AIShellApp):
                     except OSError:
                         continue
                     rows.append((f"Similar {index}", path, size))
-
+            if cancel_event is not None and cancel_event.is_set():
+                self.call_from_thread(
+                    self._abort_duplicate_scan,
+                    "Duplicate search cancelled. No files were changed.",
+                )
+                return
             self.call_from_thread(
-                self._show_duplicate_review,
+                self._present_duplicate_scan_results,
                 root,
                 rows,
                 len(groups),
@@ -1587,7 +1660,9 @@ class BaseApp(AIShellApp):
                 scan_stats,
             )
         except Exception as exc:
-            self.call_from_thread(self.set_status, f"Duplicate search failed: {exc}")
+            self.call_from_thread(
+                self._abort_duplicate_scan, f"Duplicate search failed: {exc}"
+            )
 
     def action_compare_folders(self) -> None:
         left, right, source_side = (
