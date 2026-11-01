@@ -1,3 +1,11 @@
+## 2.26.55
+
+- Add **Background** to Ctrl+Shift+D Duplicate Search progress, allowing normal dual-pane navigation, copying, sorting and other file management while SHA-256 scanning continues on its worker thread.
+- Show persistent compact **DUP SCAN SHA-256 35.5% (625/1,763)** in the main status bar, using the real verified/total hash candidates; refresh it as progress changes or other status messages appear.
+- Before total candidate count is known, show file-discovery count with **total unknown** instead of inventing a percentage; optional similar-image scanning also reports its stage without claiming an inaccurate overall percent.
+- Press **Ctrl+Alt+D** to reopen in-progress duplicate scan and use Cancel Scan, or to review finished background search results. Completed scans never unexpectedly interrupt other ongoing work.
+- Preserve the existing recursive search root, duplicate review decisions, Windows Recycle Bin safeguards and CSV exports. No automatic deletion.
+
 ## 2.26.54
 
 - Add **Delete Selected** directly to Ctrl+Shift+D Duplicate Review. Click a row, compare its full original path, then confirm exactly one file to send to the Windows Recycle Bin.
