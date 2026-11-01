@@ -386,6 +386,9 @@ class BaseApp(AIShellApp):
 
     def action_show_progress(self, kind=None) -> None:
         """Reopen the progress view while a worker continues in background."""
+        redraw = getattr(self, "_refresh_post_progress_view", None)
+        if callable(redraw):
+            self.call_after_refresh(redraw)
         if kind != "file" and self._archive_busy and self._archive_progress_config is not None:
             screen = self._archive_progress_screen
             if screen is not None and screen.is_mounted:
@@ -433,7 +436,8 @@ class BaseApp(AIShellApp):
                 # A presentation failure must never abort or roll back a
                 # filesystem transaction running in the worker.
                 self.set_status(f"Progress display unavailable: {exc}")
-        elif self._archive_busy:
+        elif self._archive_busy and window is None:
+            # Native mini-window already shows progress; avoid duplicate redraws.
             self.set_status(
                 f"{state.operation.title()} running: "
                 f"{state.overall_percent:.0f}% - {state.current_name}"
@@ -1050,7 +1054,8 @@ class BaseApp(AIShellApp):
                 # A presentation failure must never abort or roll back a
                 # filesystem transaction running in the worker.
                 self.set_status(f"Progress display unavailable: {exc}")
-        elif self._file_operation_busy:
+        elif self._file_operation_busy and window is None:
+            # Native mini-window already shows progress; avoid duplicate redraws.
             self.set_status(
                 f"{state.operation.title()} running: "
                 f"{state.overall_percent:.0f}% - {state.current_name}"
@@ -1083,6 +1088,9 @@ class BaseApp(AIShellApp):
         self._file_operation_busy = False
         if screen is not None and screen.is_mounted:
             screen.dismiss(None)
+        redraw = getattr(self, "_refresh_post_progress_view", None)
+        if callable(redraw):
+            self.call_after_refresh(redraw)
 
         source = self.left if source_side == "left" else self.right
         target = self.right if source_side == "left" else self.left

@@ -1,3 +1,10 @@
+## 2.26.50
+
+- Reduce redraw artifacts during large background Copy/Move/ZIP operations: when the independent Windows progress window is open, avoid duplicating each progress update on the terminal status line.
+- Repaint both visible file panes after focus returns or the foreground progress dialog closes, without rebuilding directory listings.
+- Abort stale automatic directory refreshes when navigation or a bulk operation supersedes a scan, to avoid inserting obsolete rows during transfers.
+- Add regression tests for modal/window transitions and stale large-folder rendering. The 20,000-entry performance threshold is not a file-count limit, but 100,000+ entries require user-machine benchmarks.
+
 ## 2.26.49
 
 - Match the other classic skins by making Norton Commander's active pane
