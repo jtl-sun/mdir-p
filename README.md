@@ -1,3 +1,9 @@
+## 2.26.57 - Display artifacts after popup and auto-refresh
+
+If lines or old cells remain after a popup or a large directory automatic refresh, press **Ctrl+Alt+R** on the main file manager to repaint both cached panes (no files are rescanned, moved, or deleted). This version holds automatic directory list rebuilds while a translucent modal covers the panes, then resumes polling and performs layout-aware repaints on modal return.
+
+Windows Terminal or graphics drivers may still exhibit rendering artifacts independently of mDIR. As a separate reversible Windows Terminal diagnostic, enabling the documented root-level `experimental.rendering.forceFullRepaint` setting can distinguish dirty-region rendering issues from application layout bugs; use only if needed, and revert if it has no effect.
+
 ## 2.26.56 - Duplicate multi-select visibility and safe deletion diagnostics
 
 The **Mark** column in Duplicate Review now displays **✓ MARK** in green for selected files and a muted dash for unselected files. **Click a row / Mark Row / Space** marks the row; **Shift+Up/Down** extends marks. The review footer indicates **Marked**, **Eligible to recycle**, and **Protected/unavailable**. Marking every copy in one group makes that group **ineligible** until at least one copy is unmarked. If a duplicate file has been moved, deleted, or become inaccessible since scanning, re-scan the folder.
