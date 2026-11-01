@@ -1,3 +1,11 @@
+## 2.26.56
+
+- Fix confusing and sometimes invisible duplicate multiselection markers. The first column now uses a rich, explicitly colored **✓ MARK** versus a muted dash rather than bracket strings that can be misinterpreted by terminal markup.
+- Fix marking selected table rows and the **Mark Row** button when mouse focus changes, while retaining Space and Shift+Up/Down support.
+- Show **Marked / Eligible to recycle / Protected or unavailable** totals and distinguish missing/inaccessible surviving copies.
+- Fix batch-delete messages disappearing when the table selection changes. Blocking reasons, failed Windows Recycle Bin operations, and partial failures now remain visible with warning/error notifications.
+- Preserve Windows Recycle Bin-only behavior, manual confirmation, saved pre-cleanup CSV and the requirement to keep at least one unmarked matching file in every exact duplicate group.
+
 ## 2.26.55
 
 - In Duplicate Review, mark **multiple exact duplicate files** by clicking rows, pressing Space, or extending the mark with Shift+Up/Down. Marks persist across the 150-row pages.
