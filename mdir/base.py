@@ -1525,7 +1525,10 @@ class BaseApp(AIShellApp):
 
     def action_find_duplicates(self) -> None:
         """Find candidate duplicates; do not change the discovered files."""
-        if self._duplicate_scan_cancel is not None or self._duplicate_scan_ready is not None:
+        if (
+            getattr(self, "_duplicate_scan_cancel", None) is not None
+            or getattr(self, "_duplicate_scan_ready", None) is not None
+        ):
             self.action_show_duplicate_progress()
             return
         # Duplicate Search always means the currently OPEN folder tree.
