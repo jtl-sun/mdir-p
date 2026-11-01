@@ -44,6 +44,7 @@ class BackgroundStatusTests(unittest.TestCase):
             _duplicate_scan_badge="DUP SCAN SHA-256 35.5% (625/1,763)",
             _duplicate_scan_timer=None,
             set_interval=Mock(return_value=timer),
+            _duplicate_scan_tick=Mock(),
             set_status=Mock(),
         )
         BaseApp._background_duplicate_scan(host, screen)
