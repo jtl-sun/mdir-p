@@ -1567,7 +1567,11 @@ class BaseApp(AIShellApp):
     def set_status(self, text: str) -> None:
         """Keep a concise background duplicate percentage visible during navigation."""
         badge = getattr(self, "_duplicate_scan_badge", "")
-        if getattr(self, "_duplicate_scan_background", False) and badge:
+        if getattr(self, "_duplicate_scan_ready", None) is not None:
+            badge = "DUP SCAN COMPLETE [Ctrl+Alt+D: Results]"
+        elif not getattr(self, "_duplicate_scan_background", False):
+            badge = ""
+        if badge:
             text = f"{badge} | {text}" if text else badge
         super().set_status(text)
 
