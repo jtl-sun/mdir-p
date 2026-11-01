@@ -181,10 +181,24 @@ class LargeDirectoryFilePane(EditablePathFilePane):
         generation: int | None = None,
     ) -> bool:
         """Render an automatic refresh without monopolizing the UI loop."""
+        # A scan may finish after navigation or while a bulk transfer starts.
+        # Never clear newer file rows with obsolete scan results.
+        if generation is not None and generation != self._listing_generation:
+            return False
+        if (
+            getattr(self.app, "_file_operation_busy", False)
+            or getattr(self.app, "_archive_busy", False)
+        ):
+            return False
         rows, target_row = self._prepare_cached_rows(keep_name)
         total_rows = len(rows)
 
         for offset in range(0, total_rows, AUTO_REFRESH_ROW_BATCH_SIZE):
+            if (
+                getattr(self.app, "_file_operation_busy", False)
+                or getattr(self.app, "_archive_busy", False)
+            ):
+                return False
             if generation is not None and generation != self._listing_generation:
                 return False
             end = min(offset + AUTO_REFRESH_ROW_BATCH_SIZE, total_rows)
@@ -741,10 +755,24 @@ class FastFileManagerApp(EditablePathApp):
         for pane in (self.left, self.right):
             pane.table.cancel_pointer_interaction()
 
+    def _refresh_post_progress_view(self) -> None:
+        """Repaint visible cells after native window and modal transitions.
+
+        The large file tables are already cached: no filesystem scan or
+        expensive row reconstruction is required to clear stale terminal cells.
+        """
+        if not self.is_running or len(self.screen_stack) != 1:
+            return
+        for pane in (self.left, self.right):
+            pane.table.refresh(repaint=True)
+            pane.refresh(repaint=True)
+        self.screen.refresh(repaint=True)
+
     def on_app_focus(self, event: events.AppFocus) -> None:
-        """Resume polling and do one asynchronous catch-up check after returning."""
+        """Repaint after native overlays and resume filesystem polling."""
         self._background_poll_suspended = False
         self._last_drive_poll = 0.0
+        self.call_after_refresh(self._refresh_post_progress_view)
         self._poll_directory_changes()
         self.auto_detect_drives()
 
@@ -912,6 +940,10 @@ class FastFileManagerApp(EditablePathApp):
     async def _install_background_directory_refresh_inner(self, results) -> None:
         """Install results that still belong to the displayed directories."""
 
+        if getattr(self, "_file_operation_busy", False) or getattr(
+            self, "_archive_busy", False
+        ):
+            return
         refreshed: list[str] = []
         errors: list[str] = []
         for (
@@ -924,6 +956,10 @@ class FastFileManagerApp(EditablePathApp):
             entries,
             error,
         ) in results:
+            if getattr(self, "_file_operation_busy", False) or getattr(
+                self, "_archive_busy", False
+            ):
+                return
             pane = self.left if side == "left" else self.right
             if (
                 pane.current_path != observed_path
