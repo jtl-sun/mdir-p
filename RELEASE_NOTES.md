@@ -1,5 +1,12 @@
 # mDIR-P 2.26.55
 
+**Multi-select and Delete Marked in Duplicate Review**
+
+- Mark any number of byte-identical result rows with **click** or **Space**, or extend with **Shift+Up/Down**. Keep marks across pages; **Clear Marks** resets the selection.
+- Click **Delete Marked (N)** to review the eligible count, number of excluded items and original paths. Only after a separate confirmation are up to 100 marked exact duplicates per batch individually reverified and moved to the Windows Recycle Bin.
+- You must leave at least one **unmarked** file in every exact group. If all copies are marked, none of that group is processed until you unmark one. Existing KEEP decisions, changed files and similar images are excluded.
+- Every batch creates a pre-cleanup CSV of all original paths; the result screen reports successes/failures and has **Stop Cleanup** to stop after the currently processed file. No permanent-delete fallback.
+
 **Background Duplicate Scan with progress percentage**
 
 1. Open a folder or drive root such as `G:\\`, press **Ctrl+Shift+D** and confirm recursive scanning.
