@@ -1,3 +1,11 @@
+## 2.26.57
+
+- Fix intermittent stale lines, broken dialog outlines, and misaligned dual-pane rows on Windows Terminal when a modal screen is opened/closed while large directory listings auto-refresh.
+- Defer **automatic background directory table rebuilding** while a modal is active. When the modal closes, immediately check for pending directory updates and repaint both cached panes with a fresh layout.
+- Add a second single-shot repaint after the dialog transition. This is not a continuous redraw timer and does not rescan files just to repaint.
+- Add **Ctrl+Alt+R — Redraw screen** to repair any terminal cell artifacts manually without losing selection, scrolling, or triggering a full directory rescan.
+- Preserve original themes, copy/move/delete operations, and background SHA-256 scanning behavior.
+
 ## 2.26.56
 
 - Fix confusing and sometimes invisible duplicate multiselection markers. The first column now uses a rich, explicitly colored **✓ MARK** versus a muted dash rather than bracket strings that can be misinterpreted by terminal markup.
