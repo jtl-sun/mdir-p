@@ -29,7 +29,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         background: $surface; padding: 1 2;
     }
     #duplicate_title { height: 1; color: $foreground; text-style: bold; }
-    #duplicate_summary { height: 2; color: $foreground; }
+    #duplicate_summary { height: 3; color: $foreground; }
+    #duplicate_warnings { height: 2; color: $warning; text-overflow: ellipsis; }
     #duplicate_table { height: 1fr; min-height: 4; }
     #duplicate_page, #duplicate_feedback { height: 1; color: $text-muted; }
     #duplicate_actions_primary, #duplicate_actions_secondary {
@@ -48,6 +49,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         exact_groups: int,
         similar_groups: int,
         store_path: Path,
+        scan_warnings: list[str] | None = None,
+        scan_stats: dict[str, int] | None = None,
     ) -> None:
         super().__init__()
         self.root = root
@@ -55,16 +58,30 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.exact_groups = exact_groups
         self.similar_groups = similar_groups
         self.store = DuplicateReviewStore(store_path)
+        self.scan_warnings = list(scan_warnings or ())
+        self.scan_stats = dict(scan_stats or {})
         self.page = 0
 
     def compose(self) -> ComposeResult:
         with Vertical(id="duplicate_dialog"):
             yield Label("Duplicate Review — NO AUTOMATIC DELETION", id="duplicate_title")
             yield Static(
-                f"{self.exact_groups:,} exact groups; {self.similar_groups:,} visually similar "
-                f"image groups (NOT exact). {len(self.results):,} files. "
-                "Keep = intentional copy; Candidate = label only.",
+                f"Recursive scope: {self.root} (root + all accessible subfolders)\\n"
+                f"Scanned {self.scan_stats.get('files_scanned', 0):,} files; "
+                f"SHA-256 hashed {self.scan_stats.get('files_hashed', 0):,}. "
+                f"{self.exact_groups:,} exact groups; {self.similar_groups:,} similar "
+                f"image groups (max 5,000 images). {len(self.results):,} rows.\\n"
+                "Keep = intentional copy; Candidate = label only. No automatic deletion.",
                 id="duplicate_summary",
+            )
+            yield Static(
+                (
+                    f"INCOMPLETE: {len(self.scan_warnings):,} inaccessible file/folder(s) "
+                    f"were skipped. First: {self.scan_warnings[0]}"
+                    if self.scan_warnings
+                    else "Scan finished with no reported filesystem access errors."
+                ),
+                id="duplicate_warnings",
             )
             yield DataTable(
                 id="duplicate_table", cursor_type="row", zebra_stripes=False
