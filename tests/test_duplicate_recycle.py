@@ -183,10 +183,18 @@ class DuplicateRecycleScreenTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.click("#confirm_yes")
                     for _ in range(80):
                         await pilot.pause(0.05)
-                        if len(screen.results) == 1:
+                        if not screen.results and screen._recycle_count == 1:
                             break
-                    self.assertEqual(len(screen.results), 1)
-                    self.assertEqual(screen.results[0][1], b)
+                    self.assertEqual(len(screen.results), 0)
+                    self.assertEqual(screen.exact_groups, 0)
+                    self.assertEqual(screen._resolved_groups, 1)
+                    self.assertIn(
+                        "RESULTS REFRESHED", screen._operation_message,
+                    )
+                    self.assertIn(
+                        "RECYCLED: 1 file(s)",
+                        str(screen.query_one("#duplicate_result_notice").render()),
+                    )
                     self.assertEqual(len(app.screen_stack), 2)
                     self.assertTrue(b.exists())
                     self.assertTrue(simulated_bin.exists())

@@ -18,6 +18,7 @@ from ..duplicate_cleanup import (
     recycle_selected_exact_duplicate,
     plan_marked_exact_duplicates,
     recycle_marked_exact_duplicates,
+    refreshed_duplicate_review,
 )
 from .dialogs import CompactConfirmScreen
 from .prompt import CompactPromptScreen
@@ -43,6 +44,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         background: $surface; padding: 1 2;
     }
     #duplicate_title { height: 1; color: $foreground; text-style: bold; }
+    #duplicate_result_notice { height: 2; color: $success; text-style: bold; }
     #duplicate_summary { height: 3; color: $foreground; }
     #duplicate_warnings { height: 2; color: $warning; text-overflow: ellipsis; }
     #duplicate_table { height: 1fr; min-height: 4; }
@@ -82,20 +84,56 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._marked: set[tuple[str, Path]] = set()
         self._batch_stop = Event()
         self._operation_message = ""
+        self._recycle_count = 0
+        self._resolved_groups = 0
+
+    def _summary_text(self) -> str:
+        return (
+            f"Recursive scope: {self.root} (root + all accessible subfolders)\n"
+            f"Original scan: {self.scan_stats.get('files_scanned', 0):,} files; "
+            f"SHA-256 hashed {self.scan_stats.get('files_hashed', 0):,}. "
+            f"Current matches: {self.exact_groups:,} exact groups, "
+            f"{self.similar_groups:,} similar image groups; "
+            f"{len(self.results):,} duplicate rows.\n"
+            "Results update immediately after recycling. "
+            "Keep is protected. Click or Space to mark for bulk cleanup."
+        )
+
+    def _refresh_after_recycle(
+        self, recycled: list[tuple[str, Path, int]],
+    ) -> tuple[int, int]:
+        """Update duplicate results and selection without a full-drive rescan."""
+        row_position = self.query_one("#duplicate_table", DataTable).cursor_row
+        self.results, resolved, hidden = refreshed_duplicate_review(
+            self.results, recycled
+        )
+        self._recycle_count += len(recycled)
+        self._resolved_groups += resolved
+        groups = {name for name, _, _ in self.results}
+        self.exact_groups = sum(name.startswith("Exact ") for name in groups)
+        self.similar_groups = sum(name.startswith("Similar ") for name in groups)
+        remaining = {(group, path) for group, path, _ in self.results}
+        self._marked.intersection_update(remaining)
+        self.page = min(
+            self.page, max(0, (len(self.results) - 1) // self.PAGE_SIZE)
+        )
+        self.query_one("#duplicate_summary", Static).update(self._summary_text())
+        self._show_page(select_row=row_position)
+        self.query_one("#duplicate_result_notice", Static).update(
+            f"RECYCLED: {self._recycle_count:,} file(s) this session | "
+            f"Resolved groups: {self._resolved_groups:,}\n"
+            f"RESULTS REFRESHED: {self.exact_groups:,} exact groups, "
+            f"{len(self.results):,} rows remain. {hidden:,} old rows removed."
+        )
+        self.refresh(layout=True, repaint=True)
+        return resolved, hidden
 
     def compose(self) -> ComposeResult:
         with Vertical(id="duplicate_dialog"):
             yield Label("Duplicate Review — CONFIRMED RECYCLE BIN ONLY", id="duplicate_title")
-            yield Static(
-                f"Recursive scope: {self.root} (root + all accessible subfolders)\n"
-                f"Scanned {self.scan_stats.get('files_scanned', 0):,} files; "
-                f"SHA-256 hashed {self.scan_stats.get('files_hashed', 0):,}. "
-                f"{self.exact_groups:,} exact groups; {self.similar_groups:,} similar "
-                f"image groups (max 5,000 images). {len(self.results):,} rows.\n"
-                "Keep is protected. Click rows or press Space to mark; "
-                "Shift+Up/Down marks a range. No automatic deletion.",
-                id="duplicate_summary",
-            )
+            yield Static("Ready — no files recycled in this review.", id="duplicate_result_notice")
+            yield Static(self._summary_text(), id="duplicate_summary")
+
             yield Static(
                 (
                     f"INCOMPLETE: {len(self.scan_warnings):,} inaccessible file/folder(s) "
@@ -386,20 +424,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     ) -> None:
         self._recycling = False
         self._batch_running = False
-        row_position = self.query_one("#duplicate_table", DataTable).cursor_row
-        for row in succeeded:
-            try:
-                self.results.remove(row)
-            except ValueError:
-                pass
-            self._marked.discard((row[0], row[1]))
-        self.page = min(
-            self.page, max(0, (len(self.results) - 1) // self.PAGE_SIZE)
-        )
-        self._show_page(select_row=row_position)
+        resolved, _hidden = self._refresh_after_recycle(succeeded)
         self._feedback(
             f"BULK RECYCLE COMPLETE: {len(succeeded):,} moved to Recycle Bin, "
             f"{len(failures):,} failed or unprocessed.\n"
+            f"RESULTS REFRESHED: {resolved:,} groups resolved; "
+            f"{len(self.results):,} rows remain.\n"
             f"Full original-path CSV: {report}\n"
             + (f"First issue: {failures[0]}" if failures else
                "Each group retained a verified copy.")
@@ -527,18 +557,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self, chosen: tuple[str, Path, int], survivor: Path
     ) -> None:
         self._recycling = False
-        selected_row = self.query_one("#duplicate_table", DataTable).cursor_row
-        try:
-            self.results.remove(chosen)
-        except ValueError:
-            pass
-        self._marked.discard((chosen[0], chosen[1]))
-        max_page = max(0, (len(self.results) - 1) // self.PAGE_SIZE)
-        self.page = min(self.page, max_page)
-        self._show_page(select_row=selected_row)
+        resolved, _hidden = self._refresh_after_recycle([chosen])
         self._feedback(
-            f"Moved to Recycle Bin: {chosen[1]}\n"
-            f"Remaining verified copy: {survivor} | "
+            f"RECYCLED and RESULTS REFRESHED: {chosen[1]}\n"
+            f"Resolved groups: {resolved:,}; "
+            f"{len(self.results):,} rows remain. "
+            f"Verified survivor: {survivor}\n"
             f"Pre-cleanup CSV: {self._predelete_report}"
         )
 

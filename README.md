@@ -1,3 +1,9 @@
+## 2.26.58 - Automatic refresh after confirmed duplicate recycling
+
+When files have been moved to the Windows Recycle Bin, the **Duplicate Review** result list refreshes automatically. It removes successfully recycled entries and also hides the sole surviving file of a now-resolved duplicate group. **The survivor remains in its original folder** and is not removed. Current duplicate group count, remaining rows, marked selections, and page counters are recalculated; the top banner reports **RECYCLED N / RESULTS REFRESHED**, so you can distinguish successful deletion from merely marking candidates.
+
+This is a fast update against the original scan snapshot: the app checks availability of already listed paths rather than running the entire SHA-256 search again. To discover newly added duplicates on the drive, start a new scan with Ctrl+Shift+D after closing the review. Failed recycle operations preserve files and display errors, and the full pre-cleanup CSV remains available in `%LOCALAPPDATA%\\mDIR-P\\reports`.
+
 ## 2.26.57 - Display artifacts after popup and auto-refresh
 
 If lines or old cells remain after a popup or a large directory automatic refresh, press **Ctrl+Alt+R** on the main file manager to repaint both cached panes (no files are rescanned, moved, or deleted). This version holds automatic directory list rebuilds while a translucent modal covers the panes, then resumes polling and performs layout-aware repaints on modal return.
