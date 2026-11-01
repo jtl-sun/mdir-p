@@ -1,5 +1,11 @@
 ## 2.26.57
 
+- Fix marked duplicate batch UX: **Recycle All Marked (N)** clearly processes ALL marked files on one approval, instead of confusing batch selection with single-file Delete Selected.
+- Remove arbitrary 100-file per-batch limit; keep per-file SHA-256 safety checks and a stop control for long batches.
+- Require **every** marked item to be eligible up front; refuse batch if even one marked file is protected/missing, or its group has no explicitly unmarked survivor.
+- A compact confirmation clearly says **Recycle ALL N**, and completion reports success, failure/unprocessed counts and path to the pre-cleanup CSV.
+- Add an end-to-end GUI regression test that selects 17 duplicate copies and verifies all 17 are recycled while all original files remain; additionally check that batches exceeding 100 files can be approved.
+
 - Fix intermittent stale lines, broken dialog outlines, and misaligned dual-pane rows on Windows Terminal when a modal screen is opened/closed while large directory listings auto-refresh.
 - Defer **automatic background directory table rebuilding** while a modal is active. When the modal closes, immediately check for pending directory updates and repaint both cached panes with a fresh layout.
 - Add a second single-shot repaint after the dialog transition. This is not a continuous redraw timer and does not rescan files just to repaint.
