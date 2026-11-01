@@ -59,6 +59,9 @@ def recycle_selected_exact_duplicate(
     Returns the surviving matching file path on success.
     """
     group, path, scanned_size = selected
+    items = list(rows)
+    if selected not in items:
+        raise ValueError("Selected file is not in the reviewed duplicate results.")
     if not group.startswith("Exact "):
         raise ValueError("Only byte-identical Exact groups support deletion.")
     if path == root or path == root.parent:
@@ -68,7 +71,7 @@ def recycle_selected_exact_duplicate(
         raise ValueError("KEEP or changed files are protected. Review them first.")
     peers = [
         candidate
-        for candidate_group, candidate, candidate_size in rows
+        for candidate_group, candidate, candidate_size in items
         if candidate_group == group and candidate != path
         and candidate_size == scanned_size
     ]
