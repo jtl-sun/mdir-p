@@ -1,3 +1,11 @@
+## 2.26.53
+
+- Show a dedicated **Duplicate Search — IN PROGRESS** dialog for Ctrl+Shift+D rather than only a rapidly changing footer status message.
+- Explain that the **Duplicate Review** result window opens automatically after SHA-256 matching and the optional similar-image phase finish, even when there are no duplicates.
+- Display the number of equal-size candidate files and current SHA-256 progress (verified/total) so lengthy full-drive scans no longer appear to be stuck.
+- Add a **Cancel Scan** button and Escape cancellation. Cancellation cooperatively stops recursive enumeration and per-block file hashing; no partial result set is treated as a completed scan.
+- Continue preserving the existing safe Keep/Review/Candidate and CSV export workflow without deleting, moving, or linking any file.
+
 ## 2.26.52
 
 - Fix Ctrl+Shift+D Duplicate Review starting at the highlighted subfolder instead of the currently open directory (e.g. G:\\). The selected item no longer changes the search scope.
