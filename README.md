@@ -1,3 +1,9 @@
+## 2.26.52 - Recursive Duplicate Review searches the current folder
+
+**Ctrl+Shift+D** always searches the **current open directory** plus all accessible subfolders, regardless of the selected row. For example, at `G:\\`, a highlighted `G:\\Audiobooks` folder no longer restricts the scan: all of `G:\\` is examined. To search only Audiobooks, enter `G:\\Audiobooks` first and then start Duplicate Review.
+
+The confirmation and results indicate the chosen search root. Exact duplicates are found by matching content (SHA-256), not filename; files directly in the root and inside nested folders are compared together. Large drives may take a long time to hash; status messages distinguish scanning from hashing. Inaccessible directories and unreadable files produce visible **INCOMPLETE** warnings, rather than silently claiming the drive was fully checked. Symlink/reparse directory traversal is not followed to avoid loops; visually similar image detection separately examines up to 5,000 images. No file is deleted or moved by this feature.
+
 ## 2.26.51 - Safe duplicate review
 
 Open **Ctrl+Shift+D** on a selected folder (or the current pane's folder) to review duplicates recursively. The exact duplicate finder hashes equal-sized files with SHA-256; any **Similar** image group is a perceptual resemblance, **not** verified identical content. Files with different names can be exact duplicates, and two files with the same name can have different content.

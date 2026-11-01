@@ -1490,6 +1490,8 @@ class BaseApp(AIShellApp):
         exact_groups: int,
         similar_groups: int,
         source_side: str,
+        scan_warnings: list[str],
+        scan_stats: dict[str, int],
     ) -> None:
         """Open the read-only duplicate list and persist manual decisions only."""
         def selected(path: Path | None) -> None:
@@ -1502,7 +1504,9 @@ class BaseApp(AIShellApp):
 
         try:
             review = DuplicateReviewScreen(
-                root, rows, exact_groups, similar_groups, self._duplicate_review_path
+                root, rows, exact_groups, similar_groups, self._duplicate_review_path,
+                scan_warnings=scan_warnings,
+                scan_stats=scan_stats,
             )
         except (ValueError, OSError) as exc:
             # Never overwrite a malformed or inaccessible user review file.
@@ -1512,19 +1516,21 @@ class BaseApp(AIShellApp):
 
     def action_find_duplicates(self) -> None:
         """Find candidate duplicates; do not change the discovered files."""
-        selected = self.active.selected_path()
-        root = selected if selected and selected.is_dir() else self.active.current_path
+        # Duplicate Search always means the currently OPEN folder tree.
+        # A highlighted directory is only the cursor position, never the scan
+        # root (otherwise G:\ with a subfolder selected scans the subfolder).
+        root = self.active.current_path
         source_side = self.active_side
 
         def confirmed(ok: bool) -> None:
             if not ok:
                 return
-            self.set_status(f"Duplicate search: scanning {root} ...")
+            self.set_status(f"Duplicate search: scanning recursively from {root} ...")
             self._run_duplicate_search(root, source_side)
 
         self.push_screen(
             self.CONFIRM_SCREEN(
-                f"Find duplicate files below?\\n\\n{root}\\n\\n"
+                f"Search this folder AND ALL subfolders?\n\n{root}\n\n"
                 "File contents are compared by SHA-256. The results let you "
                 "mark intentional copies, add notes and export full paths. "
                 "Nothing is deleted or moved.",
@@ -1536,11 +1542,15 @@ class BaseApp(AIShellApp):
     @work(thread=True, exclusive=True, group="mdir-duplicates", exit_on_error=False)
     def _run_duplicate_search(self, root: Path, source_side: str) -> None:
         try:
+            scan_warnings: list[str] = []
+            scan_stats: dict[str, int] = {}
             groups = find_exact_duplicates(
                 root,
-                progress=lambda count, path: self.call_from_thread(
+                scan_errors=scan_warnings,
+                scan_stats=scan_stats,
+                progress=lambda count, phase: self.call_from_thread(
                     self.set_status,
-                    f"Duplicate search: scanned {count:,} files [{path}]",
+                    f"Duplicate search: {count:,} files - {phase}",
                 ),
             )
             similar_groups = find_similar_images(root)
@@ -1573,6 +1583,8 @@ class BaseApp(AIShellApp):
                 len(groups),
                 len(similar_groups),
                 source_side,
+                scan_warnings,
+                scan_stats,
             )
         except Exception as exc:
             self.call_from_thread(self.set_status, f"Duplicate search failed: {exc}")
