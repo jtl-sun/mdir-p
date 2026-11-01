@@ -1,5 +1,14 @@
 # mDIR-P 2.26.57
 
+**Bulk recycle all marked exact duplicates in one confirmation**
+
+- In Duplicate Review, mark the copies you want to remove (click, Space, or Mark Row). Leave at least one UNMARKED surviving copy in each exact group.
+- The action is clearly labeled **Recycle All Marked (N)**. Click it once, review a compact summary, then approve **Recycle All N** to process the entire eligible selection in sequence. It is **not limited to the first 100 files**.
+- Before starting, if even one selected file is protected, inaccessible or would leave a group without an unmarked copy, the batch is BLOCKED with an explanation; no unexpected partial selection is silently ignored.
+- Save a timestamped full-path pre-cleanup CSV before recycling. Each selected file is re-verified with SHA-256 against a surviving copy and moved individually to the Windows Recycle Bin. Never permanently delete or silently choose the last copy.
+- Display explicit **BULK RECYCLE COMPLETE: N moved, M failed/unprocessed** feedback and a notification. The result list stays open and successful rows disappear. **Stop Cleanup** lets you interrupt processing between files.
+- Windows Recycle Bin support varies by drive type, configuration and permissions. If recycling fails, the original file remains and an error is shown.
+
 **Windows Terminal display repair**
 
 Windows Terminal may occasionally leave fragments of popup borders and stale file rows visible when a progress dialog or Workspace popup appears over a large file list. This release avoids drawing 500-row automatic folder updates behind translucent modals, restores deferred updates on return, and forces a layout-aware repaint after dialogs close.
