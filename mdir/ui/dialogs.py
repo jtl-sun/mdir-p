@@ -333,6 +333,11 @@ class FileOperationProgressScreen(ModalScreen[None]):
             if getattr(self.app, attribute, None) is self:
                 setattr(self.app, attribute, None)
 
+    def _repaint_after_close(self) -> None:
+        redraw = getattr(self.app, "_refresh_post_progress_view", None)
+        if callable(redraw):
+            self.app.call_after_refresh(redraw)
+
     def request_cancel(self) -> None:
         if self.cancel_event.is_set():
             return
@@ -341,6 +346,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
         self._detach_progress_view()
         self.app.set_status("Cancellation requested; finishing the current OS call safely.")
         self.dismiss(None)
+        self._repaint_after_close()
 
     @on(Button.Pressed, "#file_operation_cancel")
     def cancel_clicked(self, event: Button.Pressed) -> None:
@@ -359,6 +365,7 @@ class FileOperationProgressScreen(ModalScreen[None]):
             f"{self.operation} continues in background. Ctrl+Alt+P shows progress."
         )
         self.dismiss(None)
+        self._repaint_after_close()
 
     @on(Button.Pressed, "#file_operation_pause")
     def pause_clicked(self, event: Button.Pressed) -> None:
