@@ -138,6 +138,7 @@ class BatchReviewUITests(unittest.IsolatedAsyncioTestCase):
                 await pilot.click("#duplicate_next")
                 await pilot.pause()
                 screen.query_one("#duplicate_table", DataTable).focus()
+                await pilot.pause()  # Allow Textual focus event to settle.
                 screen.action_toggle_mark()
                 await pilot.pause()
                 self.assertEqual(len(screen._marked), 2)
