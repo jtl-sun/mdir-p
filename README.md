@@ -1,3 +1,16 @@
+## 2.26.55 - Mark multiple duplicates and recycle safely
+
+In **Duplicate Review**, click a file row or press **Space** to mark/unmark it; **Shift+Up/Down** extends marks. The **Mark** column shows `[x]` for marked files and marks are retained across pages. Select **Delete Marked (N)** to review the batch before confirmation. Up to **100** marked exact duplicates can be recycled per confirmation, with SHA-256 re-verification, an audit CSV created before deletion, per-file status and **Stop Cleanup**.
+
+mDIR will not choose which original to keep: if you mark *all* copies in any duplicate group, that group is excluded until at least one copy is unmarked. `Keep` files, changed files, and visually similar images are never batch-recycled. The Windows Recycle Bin is the only destination; there is no automatic or permanent deletion. The existing **Delete Selected** button is still available for single-file operations.
+
+
+After **Ctrl+Shift+D**, press **Background** in the duplicate scan dialog to continue managing your files in both panes. A short **DUP SCAN** message stays at the beginning of the main bottom status line; when another action updates status, duplicate progress remains visible as its prefix. The indicator updates periodically while scanning is in background.
+
+SHA-256 percent is **verified candidate files / total same-size candidates**; it is phase-specific rather than a made-up overall percent. The initial recursive folder scan and optional similar-image scan cannot display a reliable percentage until their totals are known, so they show their phase and discovered count instead. Progress may take longer on very large individual files even if the verified-file count has not changed.
+
+**Ctrl+Alt+D** reopens an active duplicate scan, including **Cancel Scan**. If background scanning has finished, Ctrl+Alt+D opens the complete **Duplicate Review** results without automatically interrupting your current task. A scan kept in foreground opens results automatically as before. Existing Keep/Review/Candidate labels, pre-cleanup reports, and single-file Recycle Bin protections are preserved.
+
 ## 2.26.54 - Delete an individually selected exact duplicate in Duplicate Review
 
 In the Ctrl+Shift+D **Duplicate Review** list, highlight a row. Its complete original path and the number of remaining listed copies are shown below the table. **Delete Selected** is available only for an **Exact** SHA-256 group with another existing listed copy, excluding **Keep** files and files changed since review. Clicking the button opens a **second confirmation** identifying the full selected path and a copy that will remain.

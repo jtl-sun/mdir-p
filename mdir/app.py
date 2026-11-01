@@ -219,6 +219,14 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
     """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
         Binding(
+            "ctrl+alt+d",
+            "show_duplicate_progress",
+            "Duplicate progress/results",
+            show=False,
+            priority=True,
+            id="mdir.duplicate-progress",
+        ),
+        Binding(
             "ctrl+f3",
             "toggle_preview",
             "Preview",
