@@ -81,7 +81,7 @@ class DuplicateScanProgressScreen(ModalScreen[None]):
                 id="duplicate_scan_phase",
             )
             yield Static(
-                "Foreground mode opens Duplicate Review automatically at completion.\n"
+                "In foreground, Duplicate Review opens automatically at completion.\n"
                 "Background mode lets you work in mDIR. Ctrl+Alt+D reopens "
                 "progress or completed results. No files are changed.",
                 id="duplicate_scan_help",
