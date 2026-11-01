@@ -1,3 +1,15 @@
+# mDIR-P 2.26.55
+
+**Background Duplicate Scan with progress percentage**
+
+1. Open a folder or drive root such as `G:\\`, press **Ctrl+Shift+D** and confirm recursive scanning.
+2. In **Duplicate Search — IN PROGRESS**, select **Background**. The modal closes but scanning continues; mDIR's dual-pane file manager stays usable.
+3. A compact indicator on mDIR's bottom status line reports the search stage. While scanning the directory structure, the total is not yet known, so it shows the count discovered without a misleading percentage. During SHA-256 hashing it shows a real progress percentage and verified/total candidates (e.g. **DUP SCAN SHA-256 35.5% (625/1,763)**).
+4. Press **Ctrl+Alt+D** whenever you want to reopen the scan dialog and use **Cancel Scan**, or reopen the results after completion.
+5. When a background search completes, mDIR displays **Duplicate search COMPLETE ... Ctrl+Alt+D opens results** and a nonblocking notification. It does not interrupt your active file-management task with a modal. Foreground scans still open Duplicate Review automatically.
+
+Scans are read-only. Only the separately confirmed **Delete Selected** command in Duplicate Review can recycle a reviewed exact duplicate. Review labels and CSV records remain unchanged.
+
 # mDIR-P 2.26.54
 
 **Duplicate Review — Delete Selected (Windows Recycle Bin)**
