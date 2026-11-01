@@ -77,6 +77,19 @@ class BackgroundRefreshModalGuardTests(unittest.TestCase):
         )
         self.assertFalse(host._directory_refresh_running)
 
+    def test_directory_poll_does_not_access_absent_panes(self):
+        host = SimpleNamespace(
+            screen_stack=[object()],
+            _background_polling_paused=Mock(return_value=False),
+            _directory_poll_running=False,
+            query=Mock(return_value=[]),
+            _read_directory_tokens_in_background=Mock(),
+        )
+        # No mounted file panes (during startup/teardown): return safely.
+        FastFileManagerApp._poll_directory_changes(host)
+        self.assertFalse(host._directory_poll_running)
+        host._read_directory_tokens_in_background.assert_not_called()
+
     def test_pending_directory_results_are_discarded_under_modal(self):
         host = SimpleNamespace(
             _file_operation_busy=False,
