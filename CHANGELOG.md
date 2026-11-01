@@ -1,3 +1,11 @@
+## 2.26.52
+
+- Fix Ctrl+Shift+D Duplicate Review starting at the highlighted subfolder instead of the currently open directory (e.g. G:\\). The selected item no longer changes the search scope.
+- Recursively examine the active folder itself and every accessible descendant folder with exact SHA-256 duplicate detection, including hidden folders.
+- Show the confirmed search root, total files scanned/hashed, and explicit incomplete-scan warnings for inaccessible subfolders or unreadable files rather than implying no duplicates exist.
+- Keep all duplicate actions read-only with persistent Keep/Review/Candidate notes; no automatic deletion.
+- Add regression tests for Windows drive-root selection, deep-directory matches, and unreadable paths.
+
 ## 2.26.51
 
 - Upgrade Ctrl+Shift+D duplicate search to a non-destructive paginated review screen (150 records per page), suitable for large result lists.
