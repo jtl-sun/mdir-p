@@ -1512,19 +1512,21 @@ class BaseApp(AIShellApp):
 
     def action_find_duplicates(self) -> None:
         """Find candidate duplicates; do not change the discovered files."""
-        selected = self.active.selected_path()
-        root = selected if selected and selected.is_dir() else self.active.current_path
+        # Duplicate Search always means the currently OPEN folder tree.
+        # A highlighted directory is only the cursor position, never the scan
+        # root (otherwise G:\ with a subfolder selected scans the subfolder).
+        root = self.active.current_path
         source_side = self.active_side
 
         def confirmed(ok: bool) -> None:
             if not ok:
                 return
-            self.set_status(f"Duplicate search: scanning {root} ...")
+            self.set_status(f"Duplicate search: scanning recursively from {root} ...")
             self._run_duplicate_search(root, source_side)
 
         self.push_screen(
             self.CONFIRM_SCREEN(
-                f"Find duplicate files below?\\n\\n{root}\\n\\n"
+                f"Search this folder AND ALL subfolders?\n\n{root}\n\n"
                 "File contents are compared by SHA-256. The results let you "
                 "mark intentional copies, add notes and export full paths. "
                 "Nothing is deleted or moved.",
