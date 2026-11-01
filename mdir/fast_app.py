@@ -788,6 +788,10 @@ class FastFileManagerApp(EditablePathApp):
         # stale by the time the modal closes. Resume polling on screen return.
         if len(self.screen_stack) != 1:
             return
+        # Startup, shutdown and isolated test screens may not yet contain
+        # the file panes. A pending repaint must never poll missing widgets.
+        if not len(self.query("#left")) or not len(self.query("#right")):
+            return
         # Cancelling a Textual thread worker cannot interrupt a Windows
         # filesystem call that is already blocked on a sleeping/disconnected
         # drive. Never start a replacement while the previous poll is alive.
