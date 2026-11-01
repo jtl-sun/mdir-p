@@ -53,7 +53,7 @@ from .advanced import (
 )
 from .ui.advanced import AdvancedResult, AdvancedResultsScreen
 from .ui.duplicate_review import DuplicateReviewScreen
-from .ui.duplicate_scan import DuplicateScanProgressScreen
+from .ui.duplicate_scan import DuplicateScanProgressScreen, duplicate_scan_status
 from .ui.batch_rename import (
     BatchRenameScreen,
     RenamePair,
@@ -249,6 +249,12 @@ class BaseApp(AIShellApp):
         self._duplicate_review_path = data_dir / "duplicate_reviews.json"
         self._duplicate_scan_cancel: Event | None = None
         self._duplicate_scan_screen: DuplicateScanProgressScreen | None = None
+        self._duplicate_scan_background = False
+        self._duplicate_scan_badge = ""
+        self._duplicate_scan_description = "Starting recursive file scan..."
+        self._duplicate_scan_count = 0
+        self._duplicate_scan_timer = None
+        self._duplicate_scan_ready = None
         super().__init__()
 
 
@@ -1519,6 +1525,9 @@ class BaseApp(AIShellApp):
 
     def action_find_duplicates(self) -> None:
         """Find candidate duplicates; do not change the discovered files."""
+        if self._duplicate_scan_cancel is not None or self._duplicate_scan_ready is not None:
+            self.action_show_duplicate_progress()
+            return
         # Duplicate Search always means the currently OPEN folder tree.
         # A highlighted directory is only the cursor position, never the scan
         # root (otherwise G:\ with a subfolder selected scans the subfolder).
@@ -1529,6 +1538,11 @@ class BaseApp(AIShellApp):
             if not ok:
                 return
             self._duplicate_scan_cancel = Event()
+            self._duplicate_scan_root = root
+            self._duplicate_scan_background = False
+            self._duplicate_scan_badge = ""
+            self._duplicate_scan_description = "Starting recursive file scan..."
+            self._duplicate_scan_count = 0
             self._duplicate_scan_screen = DuplicateScanProgressScreen(
                 root, self._duplicate_scan_cancel
             )
@@ -1547,17 +1561,79 @@ class BaseApp(AIShellApp):
             confirmed,
         )
 
+    def set_status(self, text: str) -> None:
+        """Keep a concise background duplicate percentage visible during navigation."""
+        badge = getattr(self, "_duplicate_scan_badge", "")
+        if getattr(self, "_duplicate_scan_background", False) and badge:
+            text = f"{badge} | {text}" if text else badge
+        super().set_status(text)
+
+    def _duplicate_scan_tick(self) -> None:
+        if self._duplicate_scan_background and self._duplicate_scan_cancel is not None:
+            self.set_status("")
+
+    def _background_duplicate_scan(self, screen: DuplicateScanProgressScreen) -> None:
+        """Dismiss only the progress modal; the worker keeps running."""
+        if screen is not self._duplicate_scan_screen or self._duplicate_scan_cancel is None:
+            return
+        self._duplicate_scan_background = True
+        self._duplicate_scan_screen = None
+        if screen.is_mounted:
+            screen.dismiss(None)
+        if self._duplicate_scan_timer is None:
+            self._duplicate_scan_timer = self.set_interval(2.0, self._duplicate_scan_tick)
+        self.set_status("Background search running. Ctrl+Alt+D shows progress.")
+
+    def action_show_duplicate_progress(self) -> None:
+        """Ctrl+Alt+D returns to live progress or opens completed results."""
+        ready = self._duplicate_scan_ready
+        if ready is not None:
+            self._duplicate_scan_ready = None
+            self._show_duplicate_review(*ready)
+            return
+        cancel_event = self._duplicate_scan_cancel
+        if cancel_event is None:
+            self.set_status("No background duplicate scan or saved results.")
+            return
+        screen = self._duplicate_scan_screen
+        if screen is not None and screen.is_mounted:
+            return
+        self._duplicate_scan_background = False
+        if self._duplicate_scan_timer is not None:
+            self._duplicate_scan_timer.stop()
+            self._duplicate_scan_timer = None
+        screen = DuplicateScanProgressScreen(
+            getattr(self, "_duplicate_scan_root", self.active.current_path),
+            cancel_event,
+        )
+        screen.update_progress(
+            self._duplicate_scan_count, self._duplicate_scan_description
+        )
+        self._duplicate_scan_screen = screen
+        self.push_screen(screen)
+
     def _update_duplicate_scan_progress(self, count: int, phase: str) -> None:
-        """Update the dedicated progress dialog on Textual's UI thread."""
+        """Update live progress and footer while preserving file-manager access."""
+        self._duplicate_scan_count = count
+        self._duplicate_scan_description = phase
+        self._duplicate_scan_badge = duplicate_scan_status(phase, count)
         screen = self._duplicate_scan_screen
         if screen is not None:
             screen.update_progress(count, phase)
-        self.set_status(f"Duplicate search: {phase}")
+        if self._duplicate_scan_background:
+            self.set_status("")
+        else:
+            self.set_status(f"Duplicate search: {phase}")
 
     def _close_duplicate_scan_progress(self) -> None:
         screen = self._duplicate_scan_screen
         self._duplicate_scan_screen = None
         self._duplicate_scan_cancel = None
+        self._duplicate_scan_background = False
+        self._duplicate_scan_badge = ""
+        if self._duplicate_scan_timer is not None:
+            self._duplicate_scan_timer.stop()
+            self._duplicate_scan_timer = None
         if screen is not None and screen.is_mounted:
             screen.dismiss(None)
 
@@ -1577,16 +1653,33 @@ class BaseApp(AIShellApp):
         scan_warnings: list[str],
         scan_stats: dict[str, int],
     ) -> None:
-        """Replace progress with a result window, including zero-match scans."""
+        """Show immediate results when foregrounded, or defer while in background."""
+        was_background = getattr(self, "_duplicate_scan_background", False)
         self._close_duplicate_scan_progress()
-        self._show_duplicate_review(
-            root, rows, exact_groups, similar_groups, source_side,
-            scan_warnings, scan_stats,
-        )
-        self.set_status(
-            f"Duplicate search complete: {exact_groups:,} exact groups, "
-            f"{similar_groups:,} similar-image groups. Review results window opened."
-        )
+        if was_background:
+            self._duplicate_scan_ready = (
+                root, rows, exact_groups, similar_groups,
+                source_side, scan_warnings, scan_stats,
+            )
+            self.set_status(
+                f"Duplicate search COMPLETE: {exact_groups:,} exact groups; "
+                f"{similar_groups:,} similar groups. Ctrl+Alt+D opens results."
+            )
+            notify = getattr(self, "notify", None)
+            if callable(notify):
+                notify(
+                    "Duplicate search complete. Ctrl+Alt+D opens results.",
+                    timeout=8,
+                )
+        else:
+            self._show_duplicate_review(
+                root, rows, exact_groups, similar_groups, source_side,
+                scan_warnings, scan_stats,
+            )
+            self.set_status(
+                f"Duplicate search complete: {exact_groups:,} exact groups, "
+                f"{similar_groups:,} similar-image groups. Review results window opened."
+            )
 
     @work(thread=True, exclusive=True, group="mdir-duplicates", exit_on_error=False)
     def _run_duplicate_search(self, root: Path, source_side: str) -> None:
