@@ -151,5 +151,52 @@ class DuplicateRecycleScreenTests(unittest.IsolatedAsyncioTestCase):
                 await pilot.pause()
 
 
+    async def test_confirmed_recycle_updates_rows_and_saves_precleanup_csv(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            a, b = root / "A.mp3", root / "B.mp3"
+            a.write_bytes(b"same")
+            b.write_bytes(b"same")
+            screen = DuplicateReviewScreen(
+                root, [("Exact 1", a, 4), ("Exact 1", b, 4)], 1, 0,
+                root / "review.json",
+            )
+            app = App()
+            simulated_bin = root / "recycled-A.mp3"
+
+            def safe_fake_recycle(_root, _rows, _selected, _store):
+                self.assertEqual(_selected[1], a)
+                a.rename(simulated_bin)
+                return b
+
+            with patch(
+                "mdir.ui.duplicate_review.recycle_selected_exact_duplicate",
+                side_effect=safe_fake_recycle,
+            ):
+                async with app.run_test(size=(135, 45)) as pilot:
+                    app.push_screen(screen)
+                    await pilot.pause()
+                    await pilot.click("#duplicate_delete")
+                    await pilot.pause()
+                    self.assertFalse(simulated_bin.exists())
+                    self.assertEqual(len(app.screen_stack), 3)
+                    await pilot.click("#confirm_yes")
+                    for _ in range(80):
+                        await pilot.pause(0.05)
+                        if len(screen.results) == 1:
+                            break
+                    self.assertEqual(len(screen.results), 1)
+                    self.assertEqual(screen.results[0][1], b)
+                    self.assertEqual(len(app.screen_stack), 2)
+                    self.assertTrue(b.exists())
+                    self.assertTrue(simulated_bin.exists())
+                    self.assertEqual(len(list((root / "reports").glob(
+                        "duplicate-precleanup-*.csv"
+                    ))), 1)
+                    self.assertTrue(screen.query_one("#duplicate_delete").disabled)
+                    screen.dismiss(None)
+                    await pilot.pause()
+
+
 if __name__ == "__main__":
     unittest.main()
