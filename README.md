@@ -1,3 +1,9 @@
+## 2.26.56 - Duplicate multi-select visibility and safe deletion diagnostics
+
+The **Mark** column in Duplicate Review now displays **✓ MARK** in green for selected files and a muted dash for unselected files. **Click a row / Mark Row / Space** marks the row; **Shift+Up/Down** extends marks. The review footer indicates **Marked**, **Eligible to recycle**, and **Protected/unavailable**. Marking every copy in one group makes that group **ineligible** until at least one copy is unmarked. If a duplicate file has been moved, deleted, or become inaccessible since scanning, re-scan the folder.
+
+**Delete Marked (N)** operates only on eligible **Exact** SHA-256 matches, with a separate confirmation, a pre-cleanup CSV, and one-file-at-a-time Windows Recycle Bin operations. Blocking conditions and Recycle Bin errors are shown persistently rather than silently discarded by cursor movements. If Windows refuses to recycle from a drive, the error is shown and mDIR does **not** permanently delete the file. Keep records and original paths are preserved.
+
 ## 2.26.55 - Mark multiple duplicates and recycle safely
 
 In **Duplicate Review**, click a file row or press **Space** to mark/unmark it; **Shift+Up/Down** extends marks. The **Mark** column shows `[x]` for marked files and marks are retained across pages. Select **Delete Marked (N)** to review the batch before confirmation. Up to **100** marked exact duplicates can be recycled per confirmation, with SHA-256 re-verification, an audit CSV created before deletion, per-file status and **Stop Cleanup**.

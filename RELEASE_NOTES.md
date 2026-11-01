@@ -1,3 +1,14 @@
+# mDIR-P 2.26.56
+
+**Duplicate Review — clearer multiselection and cleanup errors**
+
+- In **Duplicate Review**, click a row, use **Mark Row**, or press **Space** while the list is focused. A selected item is clearly marked **✓ MARK**; other rows show a dash. Selection persists when paging.
+- The bottom of the review window now distinguishes **Marked**, **Eligible to recycle**, and **Protected/unavailable** counts.
+- Select the files to remove while leaving at least one **unmarked** identical copy in each group; click **Delete Marked (N)**, inspect the original paths and excluded-file count, and explicitly confirm.
+- If every copy of a group is marked, the group is blocked. A clear **Deletion blocked** warning remains visible even after moving the cursor. When a surviving file has disappeared or is inaccessible, deletion is also blocked until reverified.
+- Failed Recycle Bin operations are reported in a warning rather than silently appearing to do nothing. No automatic or permanent deletion; existing KEEP protection and a pre-cleanup CSV are retained.
+- This release does not bypass Windows drive permissions or guarantee Recycle Bin support for removable/network volumes. Verify one unimportant duplicate before cleaning a large library.
+
 # mDIR-P 2.26.55
 
 **Multi-select and Delete Marked in Duplicate Review**
