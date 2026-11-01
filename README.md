@@ -1,4 +1,9 @@
-## 2.26.55 - Background duplicate search and honest progress percentages
+## 2.26.55 - Mark multiple duplicates and recycle safely
+
+In **Duplicate Review**, click a file row or press **Space** to mark/unmark it; **Shift+Up/Down** extends marks. The **Mark** column shows `[x]` for marked files and marks are retained across pages. Select **Delete Marked (N)** to review the batch before confirmation. Up to **100** marked exact duplicates can be recycled per confirmation, with SHA-256 re-verification, an audit CSV created before deletion, per-file status and **Stop Cleanup**.
+
+mDIR will not choose which original to keep: if you mark *all* copies in any duplicate group, that group is excluded until at least one copy is unmarked. `Keep` files, changed files, and visually similar images are never batch-recycled. The Windows Recycle Bin is the only destination; there is no automatic or permanent deletion. The existing **Delete Selected** button is still available for single-file operations.
+
 
 After **Ctrl+Shift+D**, press **Background** in the duplicate scan dialog to continue managing your files in both panes. A short **DUP SCAN** message stays at the beginning of the main bottom status line; when another action updates status, duplicate progress remains visible as its prefix. The indicator updates periodically while scanning is in background.
 
