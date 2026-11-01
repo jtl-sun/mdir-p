@@ -200,6 +200,170 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             "Delete sends this file to Windows Recycle Bin after verification."
         )
 
+    def _toggle_marked_row(self, row: tuple[str, Path, int] | None) -> bool:
+        """Mark one exact duplicate for a later explicitly confirmed batch."""
+        if self._recycling or row is None:
+            return False
+        group, path, _size = row
+        key = (group, path)
+        if key in self._marked:
+            self._marked.remove(key)
+            return True
+        decision = self.store.get(path)
+        if not group.startswith("Exact "):
+            self._feedback("Similar images are not byte-identical. Cannot mark for deletion.")
+            return False
+        if decision.status == "keep" or decision.changed:
+            self._feedback("KEEP or changed files are protected. Review first.")
+            return False
+        if not path.is_file() or path.is_symlink():
+            self._feedback(f"File is missing or a symlink: {path}")
+            return False
+        self._marked.add(key)
+        return True
+
+    def action_toggle_mark(self) -> None:
+        if self.focused is not self.query_one("#duplicate_table", DataTable) and (
+            self.focused is not self.query_one("#duplicate_mark", Button)
+        ):
+            # Space is reserved for the result list, not other buttons.
+            return
+        table = self.query_one("#duplicate_table", DataTable)
+        row = table.cursor_row
+        if self._toggle_marked_row(self._selected()):
+            self._show_page(select_row=row)
+
+    def _mark_direction(self, step: int) -> None:
+        table = self.query_one("#duplicate_table", DataTable)
+        if self.focused is not table or self._recycling or not table.row_count:
+            return
+        current = table.cursor_row
+        dest = max(0, min(current + step, table.row_count - 1))
+        selected = self._selected()
+        if selected is not None and (selected[0], selected[1]) not in self._marked:
+            self._toggle_marked_row(selected)
+        index = self.page * self.PAGE_SIZE + dest
+        if index < len(self.results):
+            next_row = self.results[index]
+            if (next_row[0], next_row[1]) not in self._marked:
+                self._toggle_marked_row(next_row)
+        self._show_page(select_row=dest)
+
+    def action_mark_up(self) -> None:
+        self._mark_direction(-1)
+
+    def action_mark_down(self) -> None:
+        self._mark_direction(1)
+
+    def _confirm_recycle_marked(self) -> None:
+        if self._recycling or not self._marked:
+            return
+        safe, skipped = plan_marked_exact_duplicates(
+            self.results, self._marked, self.store
+        )
+        if not safe:
+            self._feedback(
+                f"Nothing can be recycled: {skipped[0] if skipped else 'No safe rows.'}"
+            )
+            return
+        if len(safe) > self.MAX_BATCH:
+            self._feedback(
+                f"Marked {len(safe):,} eligible files. Maximum is "
+                f"{self.MAX_BATCH} per confirmation; unmark some first."
+            )
+            return
+        total_bytes = sum(row[2] for row in safe)
+        paths = "\n".join(str(row[1]) for row in safe[:8])
+        more = f"\n... plus {len(safe) - 8} more marked paths" if len(safe) > 8 else ""
+        warning = (
+            f"\n{len(skipped)} selected files will NOT be recycled. "
+            f"First: {skipped[0]}"
+            if skipped else ""
+        )
+        message = (
+            f"Recycle {len(safe):,} MARKED EXACT files ({total_bytes:,} bytes)?\n"
+            "Each group MUST retain at least one UNMARKED file.\n"
+            "Selected files (first 8; all paths saved to CSV):\n"
+            f"{paths}{more}{warning}\n"
+            "Each file is reverified with SHA-256 before recycling.\n"
+            "Windows Recycle Bin only. Links to old paths may break.\n"
+            "Do you want to continue?"
+        )
+        def confirmed(ok: bool) -> None:
+            if not ok:
+                return
+            self._batch_stop.clear()
+            self._recycling = True
+            self._show_selected_details()
+            self._feedback(f"Recycling 0/{len(safe):,} marked files ...")
+            self._run_recycle_marked(tuple(safe))
+
+        self.app.push_screen(
+            CompactConfirmScreen(
+                message, title="Recycle Marked Exact Duplicates?",
+                yes_label="Recycle Marked", cancel_label="Cancel",
+            ),
+            confirmed,
+        )
+
+    def _batch_progress(self, done: int, total: int, path: Path) -> None:
+        self._feedback(
+            f"Recycling marked duplicates: {done:,}/{total:,} "
+            f"({100 * done / total:.1f}%)\nLast processed: {path}"
+        )
+
+    @work(
+        thread=True, exclusive=True, group="duplicate-marked-recycle",
+        exit_on_error=False,
+    )
+    def _run_recycle_marked(self, chosen: tuple[tuple[str, Path, int], ...]) -> None:
+        try:
+            report = self.store.path.parent / "reports" / (
+                "duplicate-precleanup-batch-"
+                + datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+                + ".csv"
+            )
+            export_duplicate_report(report, self.results, self.store)
+            self._predelete_report = report
+            succeeded, failed = recycle_marked_exact_duplicates(
+                self.root, self.results, chosen, self.store,
+                cancel_event=self._batch_stop,
+                on_progress=lambda index, total, path: self.app.call_from_thread(
+                    self._batch_progress, index, total, path
+                ),
+            )
+        except (OSError, ValueError) as exc:
+            self.app.call_from_thread(self._recycle_failed, str(exc))
+            return
+        self.app.call_from_thread(
+            self._batch_completed, succeeded, failed, report,
+        )
+
+    def _batch_completed(
+        self,
+        succeeded: list[tuple[str, Path, int]],
+        failures: list[str],
+        report: Path,
+    ) -> None:
+        self._recycling = False
+        row_position = self.query_one("#duplicate_table", DataTable).cursor_row
+        for row in succeeded:
+            try:
+                self.results.remove(row)
+            except ValueError:
+                pass
+            self._marked.discard((row[0], row[1]))
+        self.page = min(
+            self.page, max(0, (len(self.results) - 1) // self.PAGE_SIZE)
+        )
+        self._show_page(select_row=row_position)
+        self._feedback(
+            f"Batch complete: {len(succeeded):,} recycled, "
+            f"{len(failures):,} not recycled. CSV: {report}\n"
+            + (f"First issue: {failures[0]}" if failures else
+               "Remaining original copies were protected.")
+        )
+
     def _label_selected(self, label: str, note: str | None = None) -> None:
         if self._recycling:
             self._feedback("A selected duplicate is being recycled; finish first.")
@@ -325,7 +489,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     def button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         button_id = event.button.id
-        if self._recycling:
+        if self._recycling and button_id != "duplicate_stop_cleanup":
             self._feedback("Recycling is still in progress; review controls are locked.")
             return
         if button_id in {"duplicate_keep", "duplicate_candidate", "duplicate_review"}:
