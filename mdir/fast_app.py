@@ -766,7 +766,10 @@ class FastFileManagerApp(EditablePathApp):
         for pane in (self.left, self.right):
             pane.table.refresh(repaint=True)
             pane.refresh(repaint=True)
-        self.screen.refresh(repaint=True)
+        # Recalculate geometry as well as repainting cached cells.  After a
+        # modal overlay/resize the terminal may retain stale border fragments
+        # if only the previous cell rectangles are invalidated.
+        self.screen.refresh(layout=True, repaint=True)
 
     def on_app_focus(self, event: events.AppFocus) -> None:
         """Repaint after native overlays and resume filesystem polling."""
@@ -779,6 +782,15 @@ class FastFileManagerApp(EditablePathApp):
     def _poll_directory_changes(self) -> None:
         """Check both directory timestamps without blocking the UI thread."""
         if self._background_polling_paused():
+            return
+        # A translucent modal sits above both panes. Never begin an automatic
+        # 500-row batch redraw behind it: the saved compositor regions can be
+        # stale by the time the modal closes. Resume polling on screen return.
+        if len(self.screen_stack) != 1:
+            return
+        # Startup, shutdown and isolated test screens may not yet contain
+        # the file panes. A pending repaint must never poll missing widgets.
+        if not len(self.query("#left")) or not len(self.query("#right")):
             return
         # Cancelling a Textual thread worker cannot interrupt a Windows
         # filesystem call that is already blocked on a sleeping/disconnected
@@ -840,6 +852,8 @@ class FastFileManagerApp(EditablePathApp):
         if getattr(self, "_file_operation_busy", False) or getattr(
             self, "_archive_busy", False
         ):
+            return
+        if len(self.screen_stack) != 1:
             return
         if self._directory_refresh_running:
             return
@@ -918,7 +932,9 @@ class FastFileManagerApp(EditablePathApp):
         """Install background scan results only when their pane is unchanged."""
         if getattr(self, "_file_operation_busy", False) or getattr(
             self, "_archive_busy", False
-        ):
+        ) or len(self.screen_stack) != 1:
+            # Pending scan snapshots have not been applied, so the next poll
+            # will detect any changed directory again after the modal closes.
             self._directory_refresh_running = False
             return
 
@@ -942,7 +958,7 @@ class FastFileManagerApp(EditablePathApp):
 
         if getattr(self, "_file_operation_busy", False) or getattr(
             self, "_archive_busy", False
-        ):
+        ) or len(self.screen_stack) != 1:
             return
         refreshed: list[str] = []
         errors: list[str] = []

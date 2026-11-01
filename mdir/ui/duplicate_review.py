@@ -31,7 +31,6 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     """
 
     PAGE_SIZE = 150
-    MAX_BATCH = 100
     BINDINGS = [
         Binding("space", "toggle_mark", "Mark file", show=False, priority=True),
         Binding("shift+up", "mark_up", "Extend marks up", show=False, priority=True),
@@ -121,7 +120,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             with Horizontal(id="duplicate_actions_secondary"):
                 yield Button("Mark Row", id="duplicate_mark")
                 yield Button("Clear Marks", id="duplicate_clear_marks")
-                yield Button("Delete Marked", id="duplicate_delete_marked", variant="error")
+                yield Button("Recycle Marked", id="duplicate_delete_marked", variant="error")
                 yield Button("Stop Cleanup", id="duplicate_stop_cleanup")
                 yield Button("Prev", id="duplicate_prev")
                 yield Button("Next", id="duplicate_next")
@@ -183,7 +182,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         button = self.query_one("#duplicate_delete", Button)
         batch_button = self.query_one("#duplicate_delete_marked", Button)
         batch_button.disabled = self._recycling or not self._marked
-        batch_button.label = f"Delete Marked ({len(self._marked):,})"
+        batch_button.label = f"Recycle All Marked ({len(self._marked):,})"
         self.query_one("#duplicate_mark", Button).disabled = self._recycling or chosen is None
         self.query_one("#duplicate_clear_marks", Button).disabled = (
             self._recycling or not self._marked
@@ -303,20 +302,22 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self._feedback(message)
             self.app.notify(message, severity="warning", timeout=10)
             return
-        if len(safe) > self.MAX_BATCH:
+        blocked_count = len(self._marked) - len(safe)
+        if blocked_count:
             message = (
-                f"Marked {len(safe):,} eligible files. Maximum is "
-                f"{self.MAX_BATCH} per confirmation; unmark some first."
+                f"Batch not started: {blocked_count:,} of {len(self._marked):,} "
+                f"marked files cannot be safely recycled. "
+                f"{skipped[0] if skipped else 'Unmark protected or unavailable files.'}"
             )
             self._feedback(message)
-            self.app.notify(message, severity="warning", timeout=10)
+            self.app.notify(message, severity="warning", timeout=12)
             return
         total_bytes = sum(row[2] for row in safe)
-        blocked_count = len(self._marked) - len(safe)
         exact_group_count = len({row[0] for row in safe})
         message = (
-            f"Recycle {len(safe):,} exact duplicate file(s) "
-            f"({total_bytes:,} bytes) from {exact_group_count:,} group(s)?\n"
+            f"BULK RECYCLE ALL {len(safe):,} MARKED files?\n"
+            f"Exact copies: {len(safe):,}; size: {total_bytes:,} bytes; "
+            f"groups: {exact_group_count:,}.\n"
             f"First selected file: {safe[0][1].name}\n"
             f"Original path: {safe[0][1]}\n"
             f"Other eligible files: {len(safe) - 1:,}; "
@@ -324,7 +325,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             "At least one unmarked copy remains in each group.\n"
             "All original paths will be saved to a CSV before recycling.\n"
             "Each file is SHA-256 reverified. Links may break.\n"
-            "Proceed with Windows Recycle Bin only?"
+            "Confirm: move ALL marked files to the Windows Recycle Bin?"
         )
         def confirmed(ok: bool) -> None:
             if not ok:
@@ -339,7 +340,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.app.push_screen(
             CompactConfirmScreen(
                 message, title="Recycle Marked Exact Duplicates?",
-                yes_label="Recycle Marked", cancel_label="Cancel",
+                yes_label=f"Recycle All {len(safe):,}", cancel_label="Cancel",
             ),
             confirmed,
         )
@@ -397,10 +398,17 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         )
         self._show_page(select_row=row_position)
         self._feedback(
-            f"Batch complete: {len(succeeded):,} recycled, "
-            f"{len(failures):,} not recycled. CSV: {report}\n"
+            f"BULK RECYCLE COMPLETE: {len(succeeded):,} moved to Recycle Bin, "
+            f"{len(failures):,} failed or unprocessed.\n"
+            f"Full original-path CSV: {report}\n"
             + (f"First issue: {failures[0]}" if failures else
-               "Remaining original copies were protected.")
+               "Each group retained a verified copy.")
+        )
+        self.app.notify(
+            f"Bulk recycle: {len(succeeded):,} succeeded; "
+            f"{len(failures):,} failed or unprocessed.",
+            severity="warning" if failures else "information",
+            timeout=12,
         )
         if failures:
             self.app.notify(

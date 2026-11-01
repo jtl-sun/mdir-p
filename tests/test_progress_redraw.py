@@ -29,7 +29,7 @@ class OverlayRedrawTests(unittest.TestCase):
         right.table.refresh.assert_called_once_with(repaint=True)
         left.refresh.assert_called_once_with(repaint=True)
         right.refresh.assert_called_once_with(repaint=True)
-        screen.refresh.assert_called_once_with(repaint=True)
+        screen.refresh.assert_called_once_with(layout=True, repaint=True)
 
     def test_redraw_does_not_repaint_beneath_an_open_modal(self):
         left, right = self.fake_pane(), self.fake_pane()
