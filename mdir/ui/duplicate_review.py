@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from threading import Event
+from textual.binding import Binding
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -11,7 +13,11 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Label, Static
 
 from ..duplicate_review import DuplicateReviewStore, export_duplicate_report
-from ..duplicate_cleanup import recycle_selected_exact_duplicate
+from ..duplicate_cleanup import (
+    recycle_selected_exact_duplicate,
+    plan_marked_exact_duplicates,
+    recycle_marked_exact_duplicates,
+)
 from .dialogs import CompactConfirmScreen
 from .prompt import CompactPromptScreen
 
@@ -24,6 +30,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     """
 
     PAGE_SIZE = 150
+    MAX_BATCH = 100
+    BINDINGS = [
+        Binding("space", "toggle_mark", "Mark file", show=False, priority=True),
+        Binding("shift+up", "mark_up", "Extend marks up", show=False, priority=True),
+        Binding("shift+down", "mark_down", "Extend marks down", show=False, priority=True),
+    ]
     CSS = """
     DuplicateReviewScreen { align: center middle; background: #00000088; }
     #duplicate_dialog {
@@ -66,6 +78,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.page = 0
         self._recycling = False
         self._predelete_report: Path | None = None
+        self._marked: set[tuple[str, Path]] = set()
+        self._batch_stop = Event()
 
     def compose(self) -> ComposeResult:
         with Vertical(id="duplicate_dialog"):
@@ -76,7 +90,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 f"SHA-256 hashed {self.scan_stats.get('files_hashed', 0):,}. "
                 f"{self.exact_groups:,} exact groups; {self.similar_groups:,} similar "
                 f"image groups (max 5,000 images). {len(self.results):,} rows.\n"
-                "Keep = protected; Candidate = label only; Delete Selected needs confirmation.",
+                "Keep is protected. Click rows or press Space to mark; "
+                "Shift+Up/Down marks a range. No automatic deletion.",
                 id="duplicate_summary",
             )
             yield Static(
@@ -101,6 +116,10 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 yield Button("Location", id="duplicate_location")
                 yield Button("Delete Selected", id="duplicate_delete", variant="error")
             with Horizontal(id="duplicate_actions_secondary"):
+                yield Button("Mark Row", id="duplicate_mark")
+                yield Button("Clear Marks", id="duplicate_clear_marks")
+                yield Button("Delete Marked", id="duplicate_delete_marked", variant="error")
+                yield Button("Stop Cleanup", id="duplicate_stop_cleanup")
                 yield Button("Prev", id="duplicate_prev")
                 yield Button("Next", id="duplicate_next")
                 yield Button("Export CSV", id="duplicate_export")
@@ -108,7 +127,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#duplicate_table", DataTable)
-        table.add_columns("Group", "Status", "File name", "Original folder", "Bytes", "Note")
+        table.add_columns("Mark", "Group", "Status", "File name", "Original folder", "Bytes", "Note")
         self._show_page()
         if self.results:
             table.focus()
@@ -123,12 +142,14 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             decision = self.store.get(path)
             status = ("REVIEW*" if decision.changed else decision.status.upper())
             table.add_row(
+                "[x]" if (group, path) in self._marked else "[ ]",
                 group, status, path.name, str(path.parent),
                 f"{size:,}", decision.note[:55],
             )
         self.query_one("#duplicate_page", Static).update(
             f"Showing {start + 1 if self.results else 0:,}–{end:,} of "
-            f"{len(self.results):,} | Page {self.page + 1:,} / "
+            f"{len(self.results):,} | Marked: {len(self._marked):,} | "
+            f"Page {self.page + 1:,} / "
             f"{max(1, (len(self.results) + self.PAGE_SIZE - 1) // self.PAGE_SIZE):,}"
         )
         self.query_one("#duplicate_prev", Button).disabled = self.page == 0
@@ -151,6 +172,14 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     def _show_selected_details(self) -> None:
         chosen = self._selected()
         button = self.query_one("#duplicate_delete", Button)
+        batch_button = self.query_one("#duplicate_delete_marked", Button)
+        batch_button.disabled = self._recycling or not self._marked
+        batch_button.label = f"Delete Marked ({len(self._marked):,})"
+        self.query_one("#duplicate_mark", Button).disabled = self._recycling or chosen is None
+        self.query_one("#duplicate_clear_marks", Button).disabled = (
+            self._recycling or not self._marked
+        )
+        self.query_one("#duplicate_stop_cleanup", Button).disabled = not self._recycling
         button.disabled = self._recycling or chosen is None
         if chosen is None:
             return
@@ -167,7 +196,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         )
         self._feedback(
             f"Selected: {group} | {path}\n"
-            f"Other listed copies: {other_copies} | "
+            f"Marked: {len(self._marked):,} | Other listed copies: {other_copies} | "
             "Delete sends this file to Windows Recycle Bin after verification."
         )
 
@@ -305,6 +334,18 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self._edit_note()
         elif button_id == "duplicate_delete":
             self._confirm_recycle_selected()
+        elif button_id == "duplicate_mark":
+            self.action_toggle_mark()
+        elif button_id == "duplicate_clear_marks":
+            self._marked.clear()
+            self._show_page(
+                select_row=self.query_one("#duplicate_table", DataTable).cursor_row
+            )
+        elif button_id == "duplicate_delete_marked":
+            self._confirm_recycle_marked()
+        elif button_id == "duplicate_stop_cleanup":
+            self._batch_stop.set()
+            self._feedback("Stop requested: finishing the current file safely.")
         elif button_id == "duplicate_location":
             chosen = self._selected()
             if chosen is not None:
@@ -330,9 +371,9 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
 
     @on(DataTable.RowSelected, "#duplicate_table")
     def row_selected(self, event: DataTable.RowSelected) -> None:
-        # Selecting a row stays in Duplicate Review. Only Location navigates.
+        # Click/Enter toggles a marked file without leaving the result screen.
         event.stop()
-        self._show_selected_details()
+        self.action_toggle_mark()
 
     @on(DataTable.RowHighlighted, "#duplicate_table")
     def row_highlighted(self, event: DataTable.RowHighlighted) -> None:
