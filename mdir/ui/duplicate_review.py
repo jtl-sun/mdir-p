@@ -247,17 +247,18 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._marked.add(key)
         return True
 
-    def action_toggle_mark(self) -> None:
-        if self.focused is not self.query_one("#duplicate_table", DataTable) and (
-            self.focused is not self.query_one("#duplicate_mark", Button)
-        ):
-            # Space is reserved for the result list, not other buttons.
-            return
+    def _mark_current_row(self) -> None:
+        """Toggle the highlighted file regardless of whether the user clicked a button."""
         table = self.query_one("#duplicate_table", DataTable)
         row = table.cursor_row
         if self._toggle_marked_row(self._selected()):
             self._operation_message = ""
             self._show_page(select_row=row)
+
+    def action_toggle_mark(self) -> None:
+        # Space only marks when the result table owns keyboard focus.
+        if self.focused is self.query_one("#duplicate_table", DataTable):
+            self._mark_current_row()
 
     def _mark_direction(self, step: int) -> None:
         table = self.query_one("#duplicate_table", DataTable)
@@ -532,9 +533,10 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         elif button_id == "duplicate_delete":
             self._confirm_recycle_selected()
         elif button_id == "duplicate_mark":
-            self.action_toggle_mark()
+            self._mark_current_row()
         elif button_id == "duplicate_clear_marks":
             self._marked.clear()
+            self._operation_message = ""
             self._show_page(
                 select_row=self.query_one("#duplicate_table", DataTable).cursor_row
             )
@@ -568,9 +570,9 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
 
     @on(DataTable.RowSelected, "#duplicate_table")
     def row_selected(self, event: DataTable.RowSelected) -> None:
-        # Click/Enter toggles a marked file without leaving the result screen.
+        # Click/Enter toggles a mark even if mouse focus has moved.
         event.stop()
-        self.action_toggle_mark()
+        self._mark_current_row()
 
     @on(DataTable.RowHighlighted, "#duplicate_table")
     def row_highlighted(self, event: DataTable.RowHighlighted) -> None:
