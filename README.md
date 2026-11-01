@@ -1,3 +1,11 @@
+## 2.26.53 - Where duplicate scan results appear
+
+Press **Ctrl+Shift+D** from the currently open folder (e.g. `G:\\`); after confirming, an in-app **Duplicate Search — IN PROGRESS** window explicitly shows what is happening. SHA-256 scanning of a large music library can take some time; the counter reports verified files and the number of matching-size candidates to be checked. The program then checks visually similar images (if Pillow is installed, up to 5,000 images).
+
+**The result list is NOT the footer status message.** On successful completion, the progress window closes and the separate **Duplicate Review** result window opens automatically with exact duplicate groups, filenames, original folder locations, review labels, notes, and CSV export. This happens even when there are no duplicates. The current search results are not automatically saved; use **Export CSV** to keep an independent report in the user's `%LOCALAPPDATA%\\mDIR-P\\reports` folder. Manually saved Keep/Review/Candidate labels and notes remain in `duplicate_reviews.json`.
+
+**Cancel Scan** (or Escape) safely interrupts the search without deleting files. A cancelled search will not open partial results, and no automatic deletion occurs at any point.
+
 ## 2.26.52 - Recursive Duplicate Review searches the current folder
 
 **Ctrl+Shift+D** always searches the **current open directory** plus all accessible subfolders, regardless of the selected row. For example, at `G:\\`, a highlighted `G:\\Audiobooks` folder no longer restricts the scan: all of `G:\\` is examined. To search only Audiobooks, enter `G:\\Audiobooks` first and then start Duplicate Review.
