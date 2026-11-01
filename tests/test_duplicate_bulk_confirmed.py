@@ -67,10 +67,16 @@ class MarkedBatchIntegrationTests(unittest.IsolatedAsyncioTestCase):
                     await pilot.click("#confirm_yes")
                     for _ in range(200):
                         await pilot.pause(0.05)
-                        if len(screen.results) == 17 and not screen._recycling:
+                        if not screen.results and not screen._recycling:
                             break
                     self.assertEqual(len(observed), 17)
-                    self.assertEqual(len(screen.results), 17)
+                    self.assertEqual(len(screen.results), 0)
+                    self.assertEqual(screen.exact_groups, 0)
+                    self.assertEqual(screen._resolved_groups, 17)
+                    self.assertIn(
+                        "RECYCLED: 17 file(s)",
+                        str(screen.query_one("#duplicate_result_notice").render()),
+                    )
                     self.assertEqual(len(screen._marked), 0)
                     self.assertTrue(all(p.is_file() for p in originals))
                     self.assertTrue(all(not p.exists() for p in copies))
