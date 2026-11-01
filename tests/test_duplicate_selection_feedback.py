@@ -75,6 +75,41 @@ class VisibleMarkAndDeletionFeedbackTests(unittest.IsolatedAsyncioTestCase):
                 screen.dismiss(None)
                 await pilot.pause()
 
+    async def test_many_marks_use_short_confirmation_with_visible_action_buttons(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            rows = []
+            for group_id in range(10):
+                original = root / f"album-{group_id}-original.m4a"
+                duplicate = root / f"album-{group_id}-copy.m4a"
+                original.write_bytes(b"track" + bytes([group_id]))
+                duplicate.write_bytes(b"track" + bytes([group_id]))
+                size = original.stat().st_size
+                rows.extend([
+                    (f"Exact {group_id}", original, size),
+                    (f"Exact {group_id}", duplicate, size),
+                ])
+            screen = DuplicateReviewScreen(root, rows, 10, 0, root / "notes.json")
+            app = App()
+            async with app.run_test(size=(115, 34)) as pilot:
+                app.push_screen(screen)
+                await pilot.pause()
+                screen._marked = {(g, p) for g, p, _ in rows if "copy" in p.name}
+                screen._show_page()
+                await pilot.click("#duplicate_delete_marked")
+                await pilot.pause()
+                confirmation = app.screen
+                self.assertIsNot(confirmation, screen)
+                self.assertLessEqual(len(confirmation.message.splitlines()), 9)
+                self.assertLessEqual(confirmation.preferred_height, 16)
+                self.assertIsNotNone(confirmation.query_one("#confirm_yes"))
+                await pilot.press("escape")
+                await pilot.pause()
+                self.assertIs(app.screen, screen)
+                self.assertTrue(all(path.exists() for _, path, _ in rows))
+                screen.dismiss(None)
+                await pilot.pause()
+
     async def test_row_select_does_not_depend_on_button_focus(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
