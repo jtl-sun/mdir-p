@@ -1,3 +1,11 @@
+## 2.26.51
+
+- Upgrade Ctrl+Shift+D duplicate search to a non-destructive paginated review screen (150 records per page), suitable for large result lists.
+- Keep/Review/Candidate are manual review labels only. The tool never deletes, moves, or hard-links a discovered file.
+- Save per-file review reasons and preserve original paths in a local JSON manifest. If a reviewed file changes in size or modification time, flag it for re-review.
+- Export all found paths, group identities, notes and review labels as UTF-8 CSV (Excel-compatible) for later reference.
+- Preserve exact SHA-256 duplicate groups separately from visually similar images, which may not contain identical bytes.
+
 ## 2.26.50
 
 - Reduce redraw artifacts during large background Copy/Move/ZIP operations: when the independent Windows progress window is open, avoid duplicating each progress update on the terminal status line.
