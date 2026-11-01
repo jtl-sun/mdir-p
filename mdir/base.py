@@ -1490,6 +1490,8 @@ class BaseApp(AIShellApp):
         exact_groups: int,
         similar_groups: int,
         source_side: str,
+        scan_warnings: list[str],
+        scan_stats: dict[str, int],
     ) -> None:
         """Open the read-only duplicate list and persist manual decisions only."""
         def selected(path: Path | None) -> None:
@@ -1502,7 +1504,9 @@ class BaseApp(AIShellApp):
 
         try:
             review = DuplicateReviewScreen(
-                root, rows, exact_groups, similar_groups, self._duplicate_review_path
+                root, rows, exact_groups, similar_groups, self._duplicate_review_path,
+                scan_warnings=scan_warnings,
+                scan_stats=scan_stats,
             )
         except (ValueError, OSError) as exc:
             # Never overwrite a malformed or inaccessible user review file.
@@ -1538,11 +1542,15 @@ class BaseApp(AIShellApp):
     @work(thread=True, exclusive=True, group="mdir-duplicates", exit_on_error=False)
     def _run_duplicate_search(self, root: Path, source_side: str) -> None:
         try:
+            scan_warnings: list[str] = []
+            scan_stats: dict[str, int] = {}
             groups = find_exact_duplicates(
                 root,
-                progress=lambda count, path: self.call_from_thread(
+                scan_errors=scan_warnings,
+                scan_stats=scan_stats,
+                progress=lambda count, phase: self.call_from_thread(
                     self.set_status,
-                    f"Duplicate search: scanned {count:,} files [{path}]",
+                    f"Duplicate search: {count:,} files - {phase}",
                 ),
             )
             similar_groups = find_similar_images(root)
@@ -1575,6 +1583,8 @@ class BaseApp(AIShellApp):
                 len(groups),
                 len(similar_groups),
                 source_side,
+                scan_warnings,
+                scan_stats,
             )
         except Exception as exc:
             self.call_from_thread(self.set_status, f"Duplicate search failed: {exc}")
