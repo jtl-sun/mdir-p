@@ -6,6 +6,7 @@ deletes, relocates, edits or marks any discovered file.
 from __future__ import annotations
 
 from pathlib import Path
+import re
 from threading import Event
 
 from textual import on
@@ -13,6 +14,29 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Static
+
+
+_HASH_PROGRESS = re.compile(r"SHA-256:\s*([\d,]+)/([\d,]+)")
+
+def duplicate_scan_status(description: str, count: int = 0) -> str:
+    """Format honest phase-specific progress for the live footer.
+
+    Directory discovery and similar-image enumeration have unknown totals;
+    never invent an overall percentage for those phases.
+    """
+    matched = _HASH_PROGRESS.search(description)
+    if matched:
+        done = int(matched.group(1).replace(",", ""))
+        total = int(matched.group(2).replace(",", ""))
+        percentage = min(100.0, done * 100.0 / total) if total else 100.0
+        return f"DUP SCAN SHA-256 {percentage:.1f}% ({done:,}/{total:,}) [Ctrl+Alt+D]"
+    if description.startswith("SHA-256 done"):
+        return "DUP SCAN: checking similar images (total unknown) [Ctrl+Alt+D]"
+    if "Scan complete:" in description:
+        return "DUP SCAN: preparing SHA-256 candidates [Ctrl+Alt+D]"
+    if "similar" in description.lower():
+        return "DUP SCAN: checking similar images (total unknown) [Ctrl+Alt+D]"
+    return f"DUP SCAN: discovering files ({count:,} found; total unknown) [Ctrl+Alt+D]"
 
 
 class DuplicateScanProgressScreen(ModalScreen[None]):
@@ -34,7 +58,7 @@ class DuplicateScanProgressScreen(ModalScreen[None]):
     #duplicate_scan_phase { height: 4; color: $foreground; }
     #duplicate_scan_help { height: 3; color: $text-muted; }
     #duplicate_scan_actions { height: 3; align-horizontal: right; }
-    #duplicate_scan_actions Button { min-width: 20; }
+    #duplicate_scan_actions Button { min-width: 17; margin-left: 2; }
     """
 
     def __init__(self, root: Path, cancel_event: Event) -> None:
@@ -55,10 +79,12 @@ class DuplicateScanProgressScreen(ModalScreen[None]):
             yield Static(
                 "The Duplicate Review results window opens automatically after "
                 "SHA-256 verification and optional similar-image matching finish.\n"
-                "No files will be deleted or changed.",
+                "Background lets you use mDIR during the scan. Ctrl+Alt+D reopens "
+                "this view. No files are changed.",
                 id="duplicate_scan_help",
             )
             with Horizontal(id="duplicate_scan_actions"):
+                yield Button("Background", id="duplicate_scan_background")
                 yield Button("Cancel Scan", id="duplicate_scan_cancel", variant="error")
 
     def on_mount(self) -> None:
@@ -68,7 +94,9 @@ class DuplicateScanProgressScreen(ModalScreen[None]):
         self.progress_count = count
         self.progress_phase = description
         if self.is_mounted:
-            self.query_one("#duplicate_scan_phase", Static).update(description)
+            self.query_one("#duplicate_scan_phase", Static).update(
+                f"{duplicate_scan_status(description, count)}\n{description}"
+            )
 
     def request_cancel(self) -> None:
         if self.cancel_event.is_set():
@@ -81,6 +109,11 @@ class DuplicateScanProgressScreen(ModalScreen[None]):
         if self.is_mounted:
             self.query_one("#duplicate_scan_phase", Static).update(self.progress_phase)
             self.query_one("#duplicate_scan_cancel", Button).disabled = True
+
+    @on(Button.Pressed, "#duplicate_scan_background")
+    def background_clicked(self, event: Button.Pressed) -> None:
+        event.stop()
+        self.app._background_duplicate_scan(self)
 
     @on(Button.Pressed, "#duplicate_scan_cancel")
     def cancel_clicked(self, event: Button.Pressed) -> None:
