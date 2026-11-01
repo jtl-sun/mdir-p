@@ -1,3 +1,15 @@
+# mDIR-P 2.26.53
+
+**Duplicate Search progress and results visibility**
+
+1. Open the folder or drive root (for example `G:\\`) and press **Ctrl+Shift+D**.
+2. After confirming, a dedicated **Duplicate Search — IN PROGRESS** window shows the search root and scan stage. When content hashes begin, the display shows verified/total SHA-256 candidates.
+3. Once exact duplicates and optional visually similar images have been checked, a **Duplicate Review** window opens automatically, including when no matches were found.
+4. In the results window, **Keep** marks an intentional copy, **Review** leaves a copy undecided, **Candidate** is only a reminder to inspect it; **Location** opens its original folder and **Export CSV** creates a report with all paths and review notes.
+5. **Cancel Scan** (or Escape) asks the scanner to stop without changing any files. Cancelled searches do not present incomplete results as finished.
+
+The results are displayed **after the scan**, not continuously while the hashes are calculated. Keep mDIR running during the search. Previously saved review notes remain untouched.
+
 # mDIR-P 2.26.52
 
 **Drive-root recursive duplicate scan fix**
