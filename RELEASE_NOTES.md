@@ -1,3 +1,14 @@
+# mDIR-P 2.26.51
+
+**Safe Duplicate Review (Ctrl+Shift+D)**
+
+- Scans the active folder tree or a selected subfolder for byte-identical duplicates (SHA-256) and visually similar images (shown separately, not guaranteed identical).
+- Review each copy as **Keep** (intentional), **Review** (undecided), or **Candidate** (possible redundant copy). These are *labels only*. mDIR does not delete or move duplicates automatically.
+- Add a reason such as “buyer-approved reference,” “album backup,” or “project dependency.” Open the original folder directly from a result row.
+- Save labels to the per-user `duplicate_reviews.json` without changing file contents; changed files revert to Review while preserving earlier notes.
+- Export a CSV manifest with *every* matching file's complete original path, group, label and note, including deliberately kept copies.
+- Limit only the displayed results to 150 per page, not the complete scan or the exported report. On very large music folders, full SHA-256 hashing may take considerable time and disk I/O.
+
 # mDIR-P 2.26.50
 
 - Fix intermittent stale rows and visual artifacts after background progress-window or modal transitions, particularly while copying or moving large batches of music files with multilingual filenames.
