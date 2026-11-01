@@ -1,3 +1,11 @@
+# mDIR-P 2.26.50
+
+- Fix intermittent stale rows and visual artifacts after background progress-window or modal transitions, particularly while copying or moving large batches of music files with multilingual filenames.
+- Avoid unnecessary terminal redraws when a separate native progress window is already showing live transfer details.
+- Guard asynchronous folder refreshes against races during ongoing copy/move operations and restore a clean view after progress dialogs close.
+- Keep existing theme settings, marked-file behavior, file operations, and Unicode filenames.
+- **Large-folder guidance:** no 20,000-file limit; this is only a large-directory optimization threshold. Hundreds of thousands of files in one folder remain performance-dependent and are not certified by this release.
+
 # mDIR-P 2.26.49
 
 - Correct the **Norton Commander** active-pane contrast: active working pane is darker navy while the inactive pane stays classic royal blue; cyan active selection remains unchanged.
