@@ -1,3 +1,15 @@
+# mDIR-P 2.26.54
+
+**Duplicate Review — Delete Selected (Windows Recycle Bin)**
+
+- In the Ctrl+Shift+D results, select a file row, compare its full path and other remaining copies, then click **Delete Selected**.
+- Confirm the exact file name, full path, group, file size and an alternative surviving copy. This confirmation moves **only one file** to the **Windows Recycle Bin**, never permanently deletes.
+- The selected file and a surviving copy are independently rehashed using SHA-256 immediately before recycling, and the selected file's metadata must remain stable. Files marked **Keep**, visually **Similar** images, and the last group copy are protected.
+- On the first confirmed deletion, mDIR automatically exports a timestamped pre-cleanup CSV to `%LOCALAPPDATA%\\mDIR-P\\reports`, including all original paths and user notes.
+- Following successful recycle, the selected result disappears from the list, which remains open for further review. In Windows, restore recycled files from the Recycle Bin if necessary.
+- **Important:** Moving a duplicate file to the Recycle Bin may break references to that particular path in playlists, project files or other applications. Verify that the selected path is not required before confirming.
+- Existing Keep/Review/Candidate labels and manual Export CSV remain supported. No bulk-delete button is included.
+
 # mDIR-P 2.26.53
 
 **Duplicate Search progress and results visibility**

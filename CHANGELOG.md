@@ -1,3 +1,11 @@
+## 2.26.54
+
+- Add **Delete Selected** directly to Ctrl+Shift+D Duplicate Review. Click a row, compare its full original path, then confirm exactly one file to send to the Windows Recycle Bin.
+- No permanent deletion or automatic bulk cleanup: a full-path confirmation is required and a pre-cleanup CSV with all scanned matches is saved before the first recycle.
+- Rehash the selected file and a surviving exact-duplicate copy with SHA-256, rejecting changed, missing, non-exact, or inaccessible copies. Never recycle the final remaining group member or a deliberately marked KEEP file.
+- Visually similar (perceptual) image groups are not eligible for recycling, even if their appearance matches.
+- Keep the result screen open and update the list after recycling, without rescanning the entire drive. The existing Location and Export CSV options remain available.
+
 ## 2.26.53
 
 - Show a dedicated **Duplicate Search — IN PROGRESS** dialog for Ctrl+Shift+D rather than only a rapidly changing footer status message.

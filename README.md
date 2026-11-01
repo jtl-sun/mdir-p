@@ -1,3 +1,11 @@
+## 2.26.54 - Delete an individually selected exact duplicate in Duplicate Review
+
+In the Ctrl+Shift+D **Duplicate Review** list, highlight a row. Its complete original path and the number of remaining listed copies are shown below the table. **Delete Selected** is available only for an **Exact** SHA-256 group with another existing listed copy, excluding **Keep** files and files changed since review. Clicking the button opens a **second confirmation** identifying the full selected path and a copy that will remain.
+
+On confirmation, mDIR saves a timestamped **pre-cleanup CSV** of the full result list to `%LOCALAPPDATA%\\mDIR-P\\reports` (first deletion in the current session). The selected file and another remaining duplicate are freshly SHA-256 hashed; only after they still match is that one selected file sent to the **Windows Recycle Bin**. The app does not permanently delete anything in this workflow, including large files; failed recycle operations stop safely. The result window stays open and the row disappears if recycling succeeds.
+
+**Caution:** Byte-identical files can still serve different roles, and other documents may refer to a particular location. Check paths before recycling. **Keep** continues to protect intentional copies, **Candidate** remains a label, and **Similar** image matches cannot be recycled here. No batch or automatic deletion is performed.
+
 ## 2.26.53 - Where duplicate scan results appear
 
 Press **Ctrl+Shift+D** from the currently open folder (e.g. `G:\\`); after confirming, an in-app **Duplicate Search — IN PROGRESS** window explicitly shows what is happening. SHA-256 scanning of a large music library can take some time; the counter reports verified files and the number of matching-size candidates to be checked. The program then checks visually similar images (if Pillow is installed, up to 5,000 images).
