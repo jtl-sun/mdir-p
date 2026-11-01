@@ -1,3 +1,13 @@
+# mDIR-P 2.26.57
+
+**Windows Terminal display repair**
+
+Windows Terminal may occasionally leave fragments of popup borders and stale file rows visible when a progress dialog or Workspace popup appears over a large file list. This release avoids drawing 500-row automatic folder updates behind translucent modals, restores deferred updates on return, and forces a layout-aware repaint after dialogs close.
+
+If terminal artifacts remain, press **Ctrl+Alt+R** in the main two-pane window to redraw cached panes without touching any files. This is a display repair, not a filesystem operation. Changing terminal size may also force a redraw.
+
+No changes to duplicate-file scan results, Keep/Review/Candidate labels, recycling safeguards, or other file data. The exact cause of terminal-host-specific rendering glitches can also depend on Windows Terminal/GPU drivers; real Windows Terminal testing is still important.
+
 # mDIR-P 2.26.56
 
 **Duplicate Review — clearer multiselection and cleanup errors**
