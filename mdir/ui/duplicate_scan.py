@@ -75,12 +75,15 @@ class DuplicateScanProgressScreen(ModalScreen[None]):
                 f"Search root: {self.root}\nIncludes this directory and all accessible subdirectories.",
                 id="duplicate_scan_root",
             )
-            yield Static(self.progress_phase, id="duplicate_scan_phase")
             yield Static(
-                "The Duplicate Review results window opens automatically after "
-                "SHA-256 verification and optional similar-image matching finish.\n"
-                "Background lets you use mDIR during the scan. Ctrl+Alt+D reopens "
-                "this view. No files are changed.",
+                f"{duplicate_scan_status(self.progress_phase, self.progress_count)}\n"
+                f"{self.progress_phase}",
+                id="duplicate_scan_phase",
+            )
+            yield Static(
+                "Foreground mode opens Duplicate Review automatically at completion.\n"
+                "Background mode lets you work in mDIR. Ctrl+Alt+D reopens "
+                "progress or completed results. No files are changed.",
                 id="duplicate_scan_help",
             )
             with Horizontal(id="duplicate_scan_actions"):
