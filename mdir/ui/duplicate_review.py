@@ -89,12 +89,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
 
     def _summary_text(self) -> str:
         return (
-            f"Recursive scope: {self.root} (root + all accessible subfolders)\\n"
+            f"Recursive scope: {self.root} (root + all accessible subfolders)\n"
             f"Original scan: {self.scan_stats.get('files_scanned', 0):,} files; "
             f"SHA-256 hashed {self.scan_stats.get('files_hashed', 0):,}. "
             f"Current matches: {self.exact_groups:,} exact groups, "
             f"{self.similar_groups:,} similar image groups; "
-            f"{len(self.results):,} duplicate rows.\\n"
+            f"{len(self.results):,} duplicate rows.\n"
             "Results update immediately after recycling. "
             "Keep is protected. Click or Space to mark for bulk cleanup."
         )
@@ -121,7 +121,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._show_page(select_row=row_position)
         self.query_one("#duplicate_result_notice", Static).update(
             f"RECYCLED: {self._recycle_count:,} file(s) this session | "
-            f"Resolved groups: {self._resolved_groups:,}\\n"
+            f"Resolved groups: {self._resolved_groups:,}\n"
             f"RESULTS REFRESHED: {self.exact_groups:,} exact groups, "
             f"{len(self.results):,} rows remain. {hidden:,} old rows removed."
         )
