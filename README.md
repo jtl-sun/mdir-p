@@ -1,3 +1,9 @@
+## 2.26.50 - Background transfer display stability
+
+- Keep terminal panes clean after switching between the fullscreen progress modal and the independent Windows background progress window. Repaint visible cells on return without rescanning a directory.
+- Suppress duplicate live status redraws under the native progress window and prevent stale automatic folder refreshes from overwriting newer rows.
+- Large directory handling is optimized from **20,000 entries**; this is a threshold, **not a maximum file count**. For music libraries containing 100,000–330,000 files (roughly 500 GB–1 TB at 3–10 MB/file), the filesystem may accommodate them, but memory use and sorting/render speed vary considerably. No 100,000+ file guarantee is made without a benchmark on the target PC. For smoother routine use, consider folders of roughly 5,000–20,000 files each.
+
 ## 2.26.49 - Stable theme switching and Norton focus
 
 **Norton Commander** now follows the same active-panel direction as Basic and
