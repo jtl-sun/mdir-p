@@ -347,24 +347,43 @@ def find_exact_duplicates(
     *,
     cancel_event: Event | None = None,
     progress: Callable[[int, str], None] | None = None,
+    scan_errors: list[str] | None = None,
+    scan_stats: dict[str, int] | None = None,
 ) -> list[list[Path]]:
-    """Find exact duplicates with size grouping before expensive SHA-256 reads."""
+    """Find exact duplicates recursively, reporting unreadable locations.
+
+    os.walk(root) includes root and every normal descendant directory.
+    Reparse/symlink directories are not followed to avoid cycles or escaping
+    the chosen root. Errors must not silently look like a complete scan.
+    """
+    if not root.is_dir():
+        raise NotADirectoryError(f"Cannot access search directory: {root}")
     by_size: dict[int, list[Path]] = {}
     scanned = 0
-    for directory, _, names in os.walk(root):
+
+    def walk_error(error: OSError) -> None:
+        if scan_errors is not None:
+            scan_errors.append(f"{error.filename or root}: {error.strerror or error}")
+
+    for directory, _, names in os.walk(root, onerror=walk_error, followlinks=False):
         for name in names:
             if cancel_event and cancel_event.is_set():
                 return []
             path = Path(directory) / name
             try:
                 by_size.setdefault(path.stat().st_size, []).append(path)
-            except OSError:
+            except OSError as exc:
+                if scan_errors is not None:
+                    scan_errors.append(f"{path}: {exc}")
                 continue
             scanned += 1
             if progress and scanned % 250 == 0:
-                progress(scanned, str(path.parent))
+                progress(scanned, f"scanning {path.parent}")
 
+    if scan_stats is not None:
+        scan_stats["files_scanned"] = scanned
     by_digest: dict[tuple[int, str], list[Path]] = {}
+    hashed = 0
     for size, paths in by_size.items():
         if len(paths) < 2:
             continue
@@ -376,9 +395,16 @@ def find_exact_duplicates(
                 with path.open("rb") as stream:
                     for block in iter(lambda: stream.read(1024 * 1024), b""):
                         digest.update(block)
-            except OSError:
+            except OSError as exc:
+                if scan_errors is not None:
+                    scan_errors.append(f"{path}: {exc}")
                 continue
+            hashed += 1
+            if progress and (hashed % 25 == 0 or hashed == 1):
+                progress(hashed, f"SHA-256 hashing {path.parent}")
             by_digest.setdefault((size, digest.hexdigest()), []).append(path)
+    if scan_stats is not None:
+        scan_stats["files_hashed"] = hashed
     return [paths for paths in by_digest.values() if len(paths) > 1]
 
 
