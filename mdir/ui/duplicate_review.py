@@ -194,10 +194,11 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             return
         group, path, _ = chosen
         decision = self.store.get(path)
-        other_copies = sum(
-            1 for item_group, other, _ in self.results
-            if item_group == group and other != path and other.is_file()
-        )
+        other_listed = [
+            other for item_group, other, _ in self.results
+            if item_group == group and other != path
+        ]
+        other_copies = sum(1 for other in other_listed if other.is_file())
         button.disabled = (
             self._recycling or not group.startswith("Exact ")
             or decision.status == "keep" or decision.changed
@@ -218,7 +219,11 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             f"Selected: {group} | {path}\n"
             f"{summary}{warning}\n"
             f"Other available copies for this row: {other_copies:,}. "
-            "Keep an unmarked copy per group."
+            + (
+                "Another listed copy is missing or inaccessible; re-scan this folder."
+                if other_listed and not other_copies
+                else "Keep an unmarked copy per group."
+            )
         )
         self.query_one("#duplicate_feedback", Static).update(
             f"{self._operation_message}\n{details}"
