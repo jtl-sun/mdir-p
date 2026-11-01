@@ -4,6 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from threading import Event
+from rich.text import Text
 from textual.binding import Binding
 
 from textual import on, work
@@ -47,7 +48,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     #duplicate_warnings { height: 2; color: $warning; text-overflow: ellipsis; }
     #duplicate_table { height: 1fr; min-height: 4; }
     #duplicate_page { height: 1; color: $text-muted; }
-    #duplicate_feedback { height: 2; color: $text-muted; }
+    #duplicate_feedback { height: 4; color: $foreground; }
     #duplicate_actions_primary, #duplicate_actions_secondary {
         height: 3; align-horizontal: right;
     }
@@ -81,6 +82,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._predelete_report: Path | None = None
         self._marked: set[tuple[str, Path]] = set()
         self._batch_stop = Event()
+        self._operation_message = ""
 
     def compose(self) -> ComposeResult:
         with Vertical(id="duplicate_dialog"):
@@ -128,7 +130,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
 
     def on_mount(self) -> None:
         table = self.query_one("#duplicate_table", DataTable)
-        table.add_columns("Mark", "Group", "Status", "File name", "Original folder", "Bytes", "Note")
+        table.add_column("Mark", width=8)
+        table.add_columns("Group", "Status", "File name", "Original folder", "Bytes", "Note")
         self._show_page()
         if self.results:
             table.focus()
@@ -143,8 +146,11 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             decision = self.store.get(path)
             status = ("REVIEW*" if decision.changed else decision.status.upper())
             table.add_row(
-                "[x]" if (group, path) in self._marked else "[ ]",
-                group, status, path.name, str(path.parent),
+                Text("✓ MARK", style="bold green") if (group, path) in self._marked
+                else Text("—", style="dim"),
+                group, status,
+                Text(path.name, style="bold" if (group, path) in self._marked else ""),
+                str(path.parent),
                 f"{size:,}", decision.note[:55],
             )
         self.query_one("#duplicate_page", Static).update(
@@ -168,6 +174,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         return self.results[index] if 0 <= index < len(self.results) else None
 
     def _feedback(self, message: str) -> None:
+        """Keep important warnings visible; highlighting a row must not erase them."""
+        self._operation_message = message
         self.query_one("#duplicate_feedback", Static).update(message)
 
     def _show_selected_details(self) -> None:
@@ -195,10 +203,26 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             or decision.status == "keep" or decision.changed
             or other_copies == 0
         )
-        self._feedback(
+        safe, blocked = plan_marked_exact_duplicates(
+            self.results, self._marked, self.store
+        ) if self._marked else ([], [])
+        summary = (
+            f"Marked: {len(self._marked):,} | Eligible to recycle: {len(safe):,} "
+            f"| Protected/unavailable: {len(self._marked) - len(safe):,}"
+        )
+        warning = (
+            " | All selected copies in a group? Unmark one to keep."
+            if self._marked and not safe else ""
+        )
+        details = (
             f"Selected: {group} | {path}\n"
-            f"Marked: {len(self._marked):,} | Other listed copies: {other_copies} | "
-            "Delete sends this file to Windows Recycle Bin after verification."
+            f"{summary}{warning}\n"
+            f"Other available copies for this row: {other_copies:,}. "
+            "Keep an unmarked copy per group."
+        )
+        self.query_one("#duplicate_feedback", Static).update(
+            f"{self._operation_message}\n{details}"
+            if self._operation_message else details
         )
 
     def _toggle_marked_row(self, row: tuple[str, Path, int] | None) -> bool:
@@ -232,6 +256,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         table = self.query_one("#duplicate_table", DataTable)
         row = table.cursor_row
         if self._toggle_marked_row(self._selected()):
+            self._operation_message = ""
             self._show_page(select_row=row)
 
     def _mark_direction(self, step: int) -> None:
@@ -248,6 +273,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             next_row = self.results[index]
             if (next_row[0], next_row[1]) not in self._marked:
                 self._toggle_marked_row(next_row)
+        self._operation_message = ""
         self._show_page(select_row=dest)
 
     def action_mark_up(self) -> None:
