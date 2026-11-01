@@ -172,6 +172,9 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         )
 
     def _label_selected(self, label: str, note: str | None = None) -> None:
+        if self._recycling:
+            self._feedback("A selected duplicate is being recycled; finish first.")
+            return
         chosen = self._selected()
         if chosen is None:
             return
@@ -284,7 +287,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.page = min(self.page, max_page)
         self._show_page(select_row=selected_row)
         self._feedback(
-            f"Moved to Recycle Bin: {chosen[1]}\\n"
+            f"Moved to Recycle Bin: {chosen[1]}\n"
             f"Remaining verified copy: {survivor} | "
             f"Pre-cleanup CSV: {self._predelete_report}"
         )
