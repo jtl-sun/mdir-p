@@ -380,8 +380,16 @@ def find_exact_duplicates(
             if progress and scanned % 250 == 0:
                 progress(scanned, f"scanning {path.parent}")
 
+    candidate_total = sum(len(paths) for paths in by_size.values() if len(paths) > 1)
     if scan_stats is not None:
         scan_stats["files_scanned"] = scanned
+        scan_stats["hash_candidates"] = candidate_total
+    if progress:
+        progress(
+            0,
+            f"Scan complete: {scanned:,} files. "
+            f"SHA-256 verification starting for {candidate_total:,} equal-size candidates.",
+        )
     by_digest: dict[tuple[int, str], list[Path]] = {}
     hashed = 0
     for size, paths in by_size.items():
@@ -393,15 +401,24 @@ def find_exact_duplicates(
             digest = hashlib.sha256()
             try:
                 with path.open("rb") as stream:
-                    for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    while True:
+                        if cancel_event is not None and cancel_event.is_set():
+                            return []
+                        block = stream.read(1024 * 1024)
+                        if not block:
+                            break
                         digest.update(block)
             except OSError as exc:
                 if scan_errors is not None:
                     scan_errors.append(f"{path}: {exc}")
                 continue
             hashed += 1
-            if progress and (hashed % 25 == 0 or hashed == 1):
-                progress(hashed, f"SHA-256 hashing {path.parent}")
+            if progress and (hashed % 25 == 0 or hashed == 1 or hashed == candidate_total):
+                progress(
+                    hashed,
+                    f"SHA-256: {hashed:,}/{candidate_total:,} candidate files verified. "
+                    f"Current folder: {path.parent}",
+                )
             by_digest.setdefault((size, digest.hexdigest()), []).append(path)
     if scan_stats is not None:
         scan_stats["files_hashed"] = hashed
@@ -467,6 +484,8 @@ def find_similar_images(
         by_dimensions.setdefault(dimensions, []).append(index)
     for indices in by_dimensions.values():
         for offset, first in enumerate(indices):
+            if cancel_event is not None and cancel_event.is_set():
+                return []
             for second in indices[offset + 1 :]:
                 if (images[first][1] ^ images[second][1]).bit_count() <= max_distance:
                     union(first, second)
