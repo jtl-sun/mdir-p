@@ -312,22 +312,19 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self.app.notify(message, severity="warning", timeout=10)
             return
         total_bytes = sum(row[2] for row in safe)
-        paths = "\n".join(str(row[1]) for row in safe[:8])
-        more = f"\n... plus {len(safe) - 8} more marked paths" if len(safe) > 8 else ""
         blocked_count = len(self._marked) - len(safe)
-        warning = (
-            f"\n{blocked_count:,} marked files are excluded from this batch. "
-            f"First reason: {skipped[0] if skipped else 'Protected copy'}"
-            if blocked_count else ""
-        )
+        exact_group_count = len({row[0] for row in safe})
         message = (
-            f"Recycle {len(safe):,} MARKED EXACT files ({total_bytes:,} bytes)?\n"
-            "Each group MUST retain at least one UNMARKED file.\n"
-            "Selected files (first 8; all paths saved to CSV):\n"
-            f"{paths}{more}{warning}\n"
-            "Each file is reverified with SHA-256 before recycling.\n"
-            "Windows Recycle Bin only. Links to old paths may break.\n"
-            "Do you want to continue?"
+            f"Recycle {len(safe):,} exact duplicate file(s) "
+            f"({total_bytes:,} bytes) from {exact_group_count:,} group(s)?\n"
+            f"First selected file: {safe[0][1].name}\n"
+            f"Original path: {safe[0][1]}\n"
+            f"Other eligible files: {len(safe) - 1:,}; "
+            f"excluded marked files: {blocked_count:,}.\n"
+            "At least one unmarked copy remains in each group.\n"
+            "All original paths will be saved to a CSV before recycling.\n"
+            "Each file is SHA-256 reverified. Links may break.\n"
+            "Proceed with Windows Recycle Bin only?"
         )
         def confirmed(ok: bool) -> None:
             if not ok:
