@@ -227,12 +227,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self._feedback("Cannot recycle the last remaining copy in a group.")
             return
         message = (
-            f"Move THIS ONE FILE to the Windows Recycle Bin?\\n"
-            f"File: {path}\\n"
-            f"Size: {size:,} bytes | Group: {group}\\n"
-            f"Another copy to keep: {others[0]}\\n"
-            "The content will be verified again. Other files remain untouched.\\n"
-            "A CSV report of all scanned duplicates is saved first.\\n"
+            f"Move THIS ONE FILE to the Windows Recycle Bin?\n"
+            f"File: {path}\n"
+            f"Size: {size:,} bytes | Group: {group}\n"
+            f"Another copy to keep: {others[0]}\n"
+            "The content will be verified again. Other files remain untouched.\n"
+            "A CSV report of all scanned duplicates is saved first.\n"
             "This may break applications that reference the selected path."
         )
         def confirmed(ok: bool) -> None:
@@ -296,6 +296,9 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     def button_pressed(self, event: Button.Pressed) -> None:
         event.stop()
         button_id = event.button.id
+        if self._recycling:
+            self._feedback("Recycling is still in progress; review controls are locked.")
+            return
         if button_id in {"duplicate_keep", "duplicate_candidate", "duplicate_review"}:
             self._label_selected(button_id.removeprefix("duplicate_"))
         elif button_id == "duplicate_note":
@@ -337,4 +340,5 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._show_selected_details()
 
     def key_escape(self) -> None:
-        self.dismiss(None)
+        if not self._recycling:
+            self.dismiss(None)
