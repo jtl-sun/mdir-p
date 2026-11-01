@@ -607,13 +607,15 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
                 self.native_preview.suspend(wait=True)
             self._sync_thumbnails()
         else:
-            if self._modal_was_open:
-                self._modal_was_open = False
-                # Translucent modal overlays can leave stale line segments in
-                # the Windows Terminal compositor after the screen is popped.
-                self.call_after_refresh(self._redraw_after_modal)
+            # Resume the native Preview *before* requesting any bulk layout
+            # repaint or filesystem poll. Otherwise a newly renamed path can
+            # remain preview-suspended while the repaint takes priority.
             if self._preview_modal_suspended:
                 self.call_after_refresh(self._resume_preview_after_modal)
+            if self._modal_was_open:
+                self._modal_was_open = False
+                # Repair stale border segments after modal dismissal.
+                self.call_after_refresh(self._redraw_after_modal)
 
     def _redraw_after_modal(self) -> None:
         if not self.is_running or len(self.screen_stack) != 1 or self._closing:
