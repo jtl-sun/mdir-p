@@ -1,3 +1,11 @@
+## 2.26.58
+
+- Immediately refresh **Duplicate Review** after every successful Delete Selected or Recycle All Marked operation: remove recycled/missing rows and resolved exact-duplicate groups (including the surviving one-copy row, which is no longer a duplicate).
+- Update **current exact/similar group totals, result rows, page counter, marked count and action buttons**. Keep original scan statistics labeled as such; do not rehash or rescan the entire drive just to refresh the list.
+- Add a prominent persistent success banner showing **RECYCLED N**, **RESOLVED GROUPS N** and **RESULTS REFRESHED** with remaining row count; keep pre-cleanup CSV and per-file failure reports.
+- Preserve other marked files that remain valid, original files, Keep labels and SHA-256 verification. Results may be cleared when no duplicates remain, while surviving originals remain on disk.
+- Add tests for two- and three-copy groups, partial results refresh, marked selection, single-file recycle and 17-file confirmed batch recycling.
+
 ## 2.26.57
 
 - Fix marked duplicate batch UX: **Recycle All Marked (N)** clearly processes ALL marked files on one approval, instead of confusing batch selection with single-file Delete Selected.
