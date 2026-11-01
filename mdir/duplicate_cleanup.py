@@ -104,3 +104,95 @@ def recycle_selected_exact_duplicate(
         recycle = send_to_recycle_bin
     recycle(path)
     return surviving
+
+
+def plan_marked_exact_duplicates(
+    rows: Iterable[DuplicateRow],
+    marked: Iterable[tuple[str, Path]],
+    store: DuplicateReviewStore,
+) -> tuple[list[DuplicateRow], list[str]]:
+    """Preflight a batch without selecting which original the user must keep.
+
+    For every exact group at least one *unmarked* existing copy is required.
+    If every file in a group is marked, exclude the entire group and ask the
+    user to unmark one. This never silently picks a survivor for them.
+    """
+    listing = list(rows)
+    selected = set(marked)
+    grouped: dict[str, list[DuplicateRow]] = {}
+    for row in listing:
+        if row[0].startswith("Exact "):
+            grouped.setdefault(row[0], []).append(row)
+
+    safe: list[DuplicateRow] = []
+    skipped: list[str] = []
+    for group, members in grouped.items():
+        picked = [row for row in members if (row[0], row[1]) in selected]
+        if not picked:
+            continue
+        survivors = [
+            row for row in members
+            if (row[0], row[1]) not in selected and row[1].is_file()
+        ]
+        if not survivors:
+            skipped.append(
+                f"{group}: all remaining copies are marked or unavailable. "
+                "Unmark at least one copy to keep."
+            )
+            continue
+        for row in picked:
+            decision = store.get(row[1])
+            if decision.status == "keep" or decision.changed:
+                skipped.append(f"{group}: KEEP/changed file skipped: {row[1]}")
+            elif not row[1].is_file() or row[1].is_symlink():
+                skipped.append(f"{group}: unavailable or linked file: {row[1]}")
+            else:
+                safe.append(row)
+
+    for group, path in selected:
+        if not group.startswith("Exact "):
+            skipped.append(f"{group}: visually similar (not exact): {path}")
+        elif group not in grouped or not any(
+            row[1] == path for row in grouped[group]
+        ):
+            skipped.append(f"{group}: row no longer exists: {path}")
+
+    return safe, skipped
+
+
+def recycle_marked_exact_duplicates(
+    root: Path,
+    rows: Iterable[DuplicateRow],
+    selected: Iterable[DuplicateRow],
+    store: DuplicateReviewStore,
+    *,
+    recycle: Callable[[Path], None] | None = None,
+    on_progress: Callable[[int, int, Path], None] | None = None,
+    cancel_event=None,
+) -> tuple[list[DuplicateRow], list[str]]:
+    """Reverify and recycle batch entries sequentially; never delete all copies.
+
+    A fresh copy of the in-memory rows is pruned only after each successful
+    recycle. Every next file is independently rehashed against a surviving
+    copy. Failures are reported without attempting permanent deletion.
+    """
+    remaining = list(rows)
+    picked = list(selected)
+    succeeded: list[DuplicateRow] = []
+    failures: list[str] = []
+    for index, row in enumerate(picked, start=1):
+        if cancel_event is not None and cancel_event.is_set():
+            failures.append(f"Stopped by user with {len(picked) - index + 1} unprocessed")
+            break
+        try:
+            recycle_selected_exact_duplicate(
+                root, remaining, row, store, recycle=recycle
+            )
+        except (OSError, ValueError) as exc:
+            failures.append(f"{row[1]}: {exc}")
+        else:
+            remaining.remove(row)
+            succeeded.append(row)
+        if on_progress is not None:
+            on_progress(index, len(picked), row[1])
+    return succeeded, failures
