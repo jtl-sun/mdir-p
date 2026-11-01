@@ -1,3 +1,13 @@
+# mDIR-P 2.26.58
+
+**Duplicate Review — show immediately what was recycled**
+
+After clicking **Delete Selected** or **Recycle All Marked (N)** and confirming Windows Recycle Bin cleanup, the Duplicate Review window now updates automatically in place. Successfully recycled files disappear; when an exact group is reduced to one surviving file, that *group also disappears* from the duplicate-only list because it is no longer a duplicate. The surviving file is **not deleted** and remains accessible from its original folder.
+
+The top of the window shows a persistent **RECYCLED / RESULTS REFRESHED** success banner, including cumulative files recycled in the current review session, resolved duplicate groups, and remaining result rows. Current group and row totals, paging, marks, and delete buttons also refresh. Original scanned file count remains labeled as an original snapshot. The app does **not** launch another expensive SHA-256 scan of the whole drive to update the result list.
+
+If some files fail to recycle, their rows remain available to inspect and the failure count/reason remain visible. A pre-cleanup CSV is saved before any action. No file is permanently deleted automatically, and original Keep/Review/Candidate records and protections remain unchanged.
+
 # mDIR-P 2.26.57
 
 **Bulk recycle all marked exact duplicates in one confirmation**
