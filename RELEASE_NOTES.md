@@ -1,3 +1,13 @@
+# mDIR-P 2.26.52
+
+**Drive-root recursive duplicate scan fix**
+
+- At `G:\\`, **Ctrl+Shift+D** now examines all accessible files directly in `G:\\` and every subdirectory, even when the cursor highlights a child folder. At `G:\\Music`, it scans that folder and its descendants.
+- A confirmation dialog now identifies the exact root about to be searched.
+- The results show the scan root, file counts and warnings about inaccessible folders or files. An incomplete scan is never silently presented as a complete one.
+- SHA-256 verification remains read-only. Candidate, Review and Keep remain non-destructive labels.
+- The optional visually similar image comparison still has its separate 5,000-image limit. This limit does **not** apply to exact duplicate detection.
+
 # mDIR-P 2.26.51
 
 **Safe Duplicate Review (Ctrl+Shift+D)**
