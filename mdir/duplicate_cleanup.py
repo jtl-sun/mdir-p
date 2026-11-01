@@ -196,3 +196,33 @@ def recycle_marked_exact_duplicates(
         if on_progress is not None:
             on_progress(index, len(picked), row[1])
     return succeeded, failures
+
+
+def refreshed_duplicate_review(
+    rows: Iterable[DuplicateRow],
+    recycled: Iterable[DuplicateRow],
+) -> tuple[list[DuplicateRow], int, int]:
+    """Return current duplicate groups after confirmed recycle operations.
+
+    Do not rescan or hash the drive: refresh only the already reviewed rows,
+    discarding recycled/missing files and resolved one-copy groups. Preserve
+    original order so the current page and remaining marks remain meaningful.
+    A group with only its protected last copy is no longer a duplicate.
+    """
+    removed = {(group, path) for group, path, _ in recycled}
+    available: list[DuplicateRow] = []
+    counts: dict[str, int] = {}
+    original_groups: set[str] = set()
+    for group, path, size in rows:
+        original_groups.add(group)
+        if (group, path) in removed or not path.is_file():
+            continue
+        available.append((group, path, size))
+        counts[group] = counts.get(group, 0) + 1
+    visible = [row for row in available if counts[row[0]] >= 2]
+    resolved_groups = len(original_groups - {
+        row[0] for row in visible
+    })
+    # Recycled, missing, and last surviving copies no longer shown as matches.
+    hidden_rows = len(list(rows)) - len(visible) if isinstance(rows, list) else 0
+    return visible, resolved_groups, hidden_rows
