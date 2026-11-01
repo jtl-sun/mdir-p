@@ -66,11 +66,11 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         with Vertical(id="duplicate_dialog"):
             yield Label("Duplicate Review — NO AUTOMATIC DELETION", id="duplicate_title")
             yield Static(
-                f"Recursive scope: {self.root} (root + all accessible subfolders)\\n"
+                f"Recursive scope: {self.root} (root + all accessible subfolders)\n"
                 f"Scanned {self.scan_stats.get('files_scanned', 0):,} files; "
                 f"SHA-256 hashed {self.scan_stats.get('files_hashed', 0):,}. "
                 f"{self.exact_groups:,} exact groups; {self.similar_groups:,} similar "
-                f"image groups (max 5,000 images). {len(self.results):,} rows.\\n"
+                f"image groups (max 5,000 images). {len(self.results):,} rows.\n"
                 "Keep = intentional copy; Candidate = label only. No automatic deletion.",
                 id="duplicate_summary",
             )
