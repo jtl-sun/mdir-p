@@ -71,7 +71,7 @@ class DuplicateReviewStore:
         if not saved:
             return ReviewDecision()
         status = saved.get("status", "review")
-        if status not in STATUSES:
+        if not isinstance(status, str) or status not in STATUSES:
             status = "review"
         note = str(saved.get("note", ""))
         try:
