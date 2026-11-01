@@ -77,6 +77,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.scan_stats = dict(scan_stats or {})
         self.page = 0
         self._recycling = False
+        self._batch_running = False
         self._predelete_report: Path | None = None
         self._marked: set[tuple[str, Path]] = set()
         self._batch_stop = Event()
@@ -179,7 +180,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.query_one("#duplicate_clear_marks", Button).disabled = (
             self._recycling or not self._marked
         )
-        self.query_one("#duplicate_stop_cleanup", Button).disabled = not self._recycling
+        self.query_one("#duplicate_stop_cleanup", Button).disabled = not self._batch_running
         button.disabled = self._recycling or chosen is None
         if chosen is None:
             return
@@ -294,6 +295,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 return
             self._batch_stop.clear()
             self._recycling = True
+            self._batch_running = True
             self._show_selected_details()
             self._feedback(f"Recycling 0/{len(safe):,} marked files ...")
             self._run_recycle_marked(tuple(safe))
@@ -346,6 +348,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         report: Path,
     ) -> None:
         self._recycling = False
+        self._batch_running = False
         row_position = self.query_one("#duplicate_table", DataTable).cursor_row
         for row in succeeded:
             try:
@@ -377,6 +380,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self._feedback(f"Could not save review: {exc}")
             return
         selected_row = self.query_one("#duplicate_table", DataTable).cursor_row
+        if decision.status == "keep":
+            self._marked.discard((chosen[0], chosen[1]))
         self._show_page(select_row=selected_row)
         self._feedback(
             f"Saved {decision.status.upper()} for {chosen[1].name}. "
@@ -464,6 +469,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
 
     def _recycle_failed(self, message: str) -> None:
         self._recycling = False
+        self._batch_running = False
         self._show_selected_details()
         self._feedback(f"NOT RECYCLED: {message}")
 
@@ -476,6 +482,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self.results.remove(chosen)
         except ValueError:
             pass
+        self._marked.discard((chosen[0], chosen[1]))
         max_page = max(0, (len(self.results) - 1) // self.PAGE_SIZE)
         self.page = min(self.page, max_page)
         self._show_page(select_row=selected_row)
