@@ -1,3 +1,13 @@
+## 2.26.51 - Safe duplicate review
+
+Open **Ctrl+Shift+D** on a selected folder (or the current pane's folder) to review duplicates recursively. The exact duplicate finder hashes equal-sized files with SHA-256; any **Similar** image group is a perceptual resemblance, **not** verified identical content. Files with different names can be exact duplicates, and two files with the same name can have different content.
+
+The review screen shows **150 entries per page**. Select each copy and choose **Keep** for intentional backups/linked project references, **Review** if uncertain, or **Candidate** for possible removal after manual inspection. **None of these buttons delete or move files.** Add a **Note** explaining why the file was retained. **Location** jumps to the original file in mDIR, while **Export CSV** saves a full list of groups, full paths, decisions and notes (including Keep copies) under the per-user `reports` directory. On Windows, the manifest is stored at `%LOCALAPPDATA%\\mDIR-P\\duplicate_reviews.json`.
+
+Keep notes are attached to full file paths and file size/modified-time fingerprints. A changed file is flagged for Review while the old note stays visible. Renamed/moved files appear as new paths; the exported CSV preserves the previous record for audit. Files aren't automatically deleted, replaced with shortcuts, or changed to hard links; those operations could break dependent documents and are deliberately excluded.
+
+Scanning 100,000+ large files may require significant disk reads, especially if many files share the same size. Use a selected subfolder for more targeted runs, and keep a full backup before any unrelated manual cleanup.
+
 ## 2.26.50 - Background transfer display stability
 
 - Keep terminal panes clean after switching between the fullscreen progress modal and the independent Windows background progress window. Repaint visible cells on return without rescanning a directory.
