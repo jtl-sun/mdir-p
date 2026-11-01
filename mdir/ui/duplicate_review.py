@@ -203,7 +203,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             or decision.status == "keep" or decision.changed
             or other_copies == 0
         )
-        safe, blocked = plan_marked_exact_duplicates(
+        safe, _reasons = plan_marked_exact_duplicates(
             self.results, self._marked, self.store
         ) if self._marked else ([], [])
         summary = (
@@ -290,23 +290,30 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self.results, self._marked, self.store
         )
         if not safe:
-            self._feedback(
-                f"Nothing can be recycled: {skipped[0] if skipped else 'No safe rows.'}"
+            message = (
+                f"Deletion blocked: {len(self._marked):,} marked, 0 eligible. "
+                + (skipped[0] if skipped else
+                   "Leave at least one unmarked, accessible copy in each Exact group.")
             )
+            self._feedback(message)
+            self.app.notify(message, severity="warning", timeout=10)
             return
         if len(safe) > self.MAX_BATCH:
-            self._feedback(
+            message = (
                 f"Marked {len(safe):,} eligible files. Maximum is "
                 f"{self.MAX_BATCH} per confirmation; unmark some first."
             )
+            self._feedback(message)
+            self.app.notify(message, severity="warning", timeout=10)
             return
         total_bytes = sum(row[2] for row in safe)
         paths = "\n".join(str(row[1]) for row in safe[:8])
         more = f"\n... plus {len(safe) - 8} more marked paths" if len(safe) > 8 else ""
+        blocked_count = len(self._marked) - len(safe)
         warning = (
-            f"\n{len(skipped)} selected files will NOT be recycled. "
-            f"First: {skipped[0]}"
-            if skipped else ""
+            f"\n{blocked_count:,} marked files are excluded from this batch. "
+            f"First reason: {skipped[0] if skipped else 'Protected copy'}"
+            if blocked_count else ""
         )
         message = (
             f"Recycle {len(safe):,} MARKED EXACT files ({total_bytes:,} bytes)?\n"
@@ -393,6 +400,11 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             + (f"First issue: {failures[0]}" if failures else
                "Remaining original copies were protected.")
         )
+        if failures:
+            self.app.notify(
+                f"{len(failures)} file(s) NOT recycled. First: {failures[0]}",
+                severity="warning", timeout=12,
+            )
 
     def _label_selected(self, label: str, note: str | None = None) -> None:
         if self._recycling:
@@ -499,6 +511,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._batch_running = False
         self._show_selected_details()
         self._feedback(f"NOT RECYCLED: {message}")
+        self.app.notify(f"Recycle failed: {message}", severity="error", timeout=10)
 
     def _recycle_completed(
         self, chosen: tuple[str, Path, int], survivor: Path
