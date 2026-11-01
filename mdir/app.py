@@ -219,6 +219,14 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
     """ + MDIR_THEME_CSS
     BINDINGS = FastFileManagerApp.BINDINGS + [
         Binding(
+            "ctrl+alt+r",
+            "redraw_screen",
+            "Repair screen rendering",
+            show=False,
+            priority=True,
+            id="mdir.force-screen-redraw",
+        ),
+        Binding(
             "ctrl+alt+d",
             "show_duplicate_progress",
             "Duplicate progress/results",
@@ -254,6 +262,7 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
         self._file_shortcuts = {}
         self._shortcut_watch_ready = False
         self._preview_modal_suspended = False
+        self._modal_was_open = False
         self._preview_path = None
         self._shift_left_latched = False
         self._terminal_window_handle = 0
@@ -592,12 +601,35 @@ class MDirApp(ThumbnailAppMixin, FastFileManagerApp):
 
     def _preview_screen_changed(self, screen) -> None:
         if len(self.screen_stack) > 1:
+            self._modal_was_open = True
             if self.preview_mode:
                 self._preview_modal_suspended = True
                 self.native_preview.suspend(wait=True)
             self._sync_thumbnails()
-        elif self._preview_modal_suspended:
-            self.call_after_refresh(self._resume_preview_after_modal)
+        else:
+            if self._modal_was_open:
+                self._modal_was_open = False
+                # Translucent modal overlays can leave stale line segments in
+                # the Windows Terminal compositor after the screen is popped.
+                self.call_after_refresh(self._redraw_after_modal)
+            if self._preview_modal_suspended:
+                self.call_after_refresh(self._resume_preview_after_modal)
+
+    def _redraw_after_modal(self) -> None:
+        if not self.is_running or len(self.screen_stack) != 1 or self._closing:
+            return
+        self._refresh_post_progress_view()
+        # Repaint once after the screen-pop frame has settled.
+        self.set_timer(0.06, self._refresh_post_progress_view)
+        # Background directory updates are held while modals are active.
+        self._poll_directory_changes()
+
+    def action_redraw_screen(self) -> None:
+        """Ctrl+Alt+R repairs stale display cells without reloading files."""
+        if len(self.screen_stack) != 1:
+            return
+        self._refresh_post_progress_view()
+        self.set_timer(0.06, self._refresh_post_progress_view)
 
     def _resume_preview_after_modal(self) -> None:
         if len(self.screen_stack) != 1 or self._closing:
