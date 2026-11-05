@@ -466,15 +466,28 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 self.root, self.results, chosen, self.store, folder,
                 cancel_event=self._batch_stop,
                 on_progress=lambda index, total, path: self.app.call_from_thread(
-                    self._batch_progress, index, total, path
+                    self._quarantine_progress, index, total, path
                 ),
             )
         except (OSError, ValueError) as exc:
-            self.app.call_from_thread(self._recycle_failed, str(exc))
+            self.app.call_from_thread(self._quarantine_failed, str(exc))
             return
         self.app.call_from_thread(
             self._quarantine_completed, moved, failures, journal
         )
+
+    def _quarantine_progress(self, done: int, total: int, path: Path) -> None:
+        self._feedback(
+            f"Moving duplicates to quarantine: {done:,}/{total:,} "
+            f"({100 * done / total:.1f}%)\\nLast processed: {path}"
+        )
+
+    def _quarantine_failed(self, message: str) -> None:
+        self._recycling = False
+        self._batch_running = False
+        self._show_selected_details()
+        self._feedback(f"QUARANTINE MOVE NOT STARTED: {message}")
+        self.app.notify(f"Quarantine move failed: {message}", severity="error", timeout=12)
 
     def _quarantine_completed(
         self,
