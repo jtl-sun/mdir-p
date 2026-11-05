@@ -18,9 +18,10 @@ moving is complete.
 destination on the same drive. Cross-volume moves are blocked rather than
 copy/delete behind your back. The program verifies each file against a
 remaining original copy before moving. Similar-looking images are not eligible
-for automated moving. Files are **not deleted** by Quarantine. If the
-quarantine folder is inside the scan root, exclude it from subsequent scans
-by scanning a narrower folder; otherwise its contents may show up as duplicates.
+for automated moving. Files are **not deleted** by Quarantine. The quarantine folder receives a `.mdir-quarantine-folder` marker and is
+excluded from subsequent exact/similar duplicate scans, even when it resides
+inside the scanned root. Do not delete that marker while keeping quarantined
+files there.
 The CSV supports manual restore; a dedicated restore UI is not yet provided.
 
 ## 2.26.58 - Automatic refresh after confirmed duplicate recycling
