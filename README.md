@@ -1,3 +1,29 @@
+## Duplicate Quarantine (proposed next release)
+
+In **Ctrl+Shift+D → Duplicate Review**, click **Smart Select** to mark the
+extra copies in each **Exact (SHA-256)** duplicate group. One available copy
+per group stays in its original directory; explicitly **KEEP**-marked files
+are never selected. Review or change marks before proceeding.
+
+Click **Move to Folder**, enter an absolute destination path (such as
+`G:\\mDir_Quarantine`), then confirm once. Files are moved **without
+overwriting** existing destination files. Naming collisions receive
+`name-(01).ext`, `name-(02).ext`, etc. The destination contains an
+`mdir-quarantine-YYYYMMDD-*.csv` journal with each moved file's original
+absolute path, destination, group, size, SHA-256 and timestamp for later
+manual review and restoration. The Duplicate Review results refresh when
+moving is complete.
+
+**Safety / current limits:** Same-filesystem moves only, including a selected
+destination on the same drive. Cross-volume moves are blocked rather than
+copy/delete behind your back. The program verifies each file against a
+remaining original copy before moving. Similar-looking images are not eligible
+for automated moving. Files are **not deleted** by Quarantine. The quarantine folder receives a `.mdir-quarantine-folder` marker and is
+excluded from subsequent exact/similar duplicate scans, even when it resides
+inside the scanned root. Do not delete that marker while keeping quarantined
+files there.
+The CSV supports manual restore; a dedicated restore UI is not yet provided.
+
 ## 2.26.58 - Automatic refresh after confirmed duplicate recycling
 
 When files have been moved to the Windows Recycle Bin, the **Duplicate Review** result list refreshes automatically. It removes successfully recycled entries and also hides the sole surviving file of a now-resolved duplicate group. **The survivor remains in its original folder** and is not removed. Current duplicate group count, remaining rows, marked selections, and page counters are recalculated; the top banner reports **RECYCLED N / RESULTS REFRESHED**, so you can distinguish successful deletion from merely marking candidates.

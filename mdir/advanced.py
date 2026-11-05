@@ -365,7 +365,11 @@ def find_exact_duplicates(
         if scan_errors is not None:
             scan_errors.append(f"{error.filename or root}: {error.strerror or error}")
 
-    for directory, _, names in os.walk(root, onerror=walk_error, followlinks=False):
+    for directory, dirs, names in os.walk(root, onerror=walk_error, followlinks=False):
+        if (Path(directory) / ".mdir-quarantine-folder").exists():
+            dirs.clear()
+            continue
+        dirs[:] = [d for d in dirs if not (Path(directory) / d / ".mdir-quarantine-folder").exists()]
         for name in names:
             if cancel_event and cancel_event.is_set():
                 return []
@@ -440,7 +444,11 @@ def find_similar_images(
 
     extensions = {".bmp", ".gif", ".jpeg", ".jpg", ".png", ".tif", ".tiff", ".webp"}
     images: list[tuple[Path, int, tuple[int, int]]] = []
-    for directory, _, names in os.walk(root):
+    for directory, dirs, names in os.walk(root):
+        if (Path(directory) / ".mdir-quarantine-folder").exists():
+            dirs.clear()
+            continue
+        dirs[:] = [d for d in dirs if not (Path(directory) / d / ".mdir-quarantine-folder").exists()]
         for name in names:
             if cancel_event and cancel_event.is_set():
                 return []

@@ -14,6 +14,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Label, Static
 
 from ..duplicate_review import DuplicateReviewStore, export_duplicate_report
+from ..duplicate_quarantine import smart_select_duplicates, move_marked_to_quarantine
 from ..duplicate_cleanup import (
     recycle_selected_exact_duplicate,
     plan_marked_exact_duplicates,
@@ -50,11 +51,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     #duplicate_table { height: 1fr; min-height: 4; }
     #duplicate_page { height: 1; color: $text-muted; }
     #duplicate_feedback { height: 4; color: $foreground; }
-    #duplicate_actions_primary, #duplicate_actions_secondary {
+    #duplicate_actions_primary, #duplicate_actions_secondary, #duplicate_actions_quarantine {
         height: 3; align-horizontal: right;
     }
     #duplicate_actions_primary Button,
-    #duplicate_actions_secondary Button {
+    #duplicate_actions_secondary Button,
+    #duplicate_actions_quarantine Button {
         min-width: 11; height: 3; margin-left: 1;
     }
     """
@@ -85,6 +87,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._batch_stop = Event()
         self._operation_message = ""
         self._recycle_count = 0
+        self._quarantine_count = 0
         self._resolved_groups = 0
 
     def _summary_text(self) -> str:
@@ -100,14 +103,17 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         )
 
     def _refresh_after_recycle(
-        self, recycled: list[tuple[str, Path, int]],
+        self, recycled: list[tuple[str, Path, int]], *, quarantined: bool = False,
     ) -> tuple[int, int]:
         """Update duplicate results and selection without a full-drive rescan."""
         row_position = self.query_one("#duplicate_table", DataTable).cursor_row
         self.results, resolved, hidden = refreshed_duplicate_review(
             self.results, recycled
         )
-        self._recycle_count += len(recycled)
+        if quarantined:
+            self._quarantine_count += len(recycled)
+        else:
+            self._recycle_count += len(recycled)
         self._resolved_groups += resolved
         groups = {name for name, _, _ in self.results}
         self.exact_groups = sum(name.startswith("Exact ") for name in groups)
@@ -120,7 +126,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.query_one("#duplicate_summary", Static).update(self._summary_text())
         self._show_page(select_row=row_position)
         self.query_one("#duplicate_result_notice", Static).update(
-            f"RECYCLED: {self._recycle_count:,} file(s) this session | "
+            f"RECYCLED: {self._recycle_count:,} file(s) | "
+            f"QUARANTINED: {self._quarantine_count:,} file(s) this session | "
             f"Resolved groups: {self._resolved_groups:,}\n"
             f"RESULTS REFRESHED: {self.exact_groups:,} exact groups, "
             f"{len(self.results):,} rows remain. {hidden:,} old rows removed."
@@ -164,6 +171,9 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 yield Button("Next", id="duplicate_next")
                 yield Button("Export CSV", id="duplicate_export")
                 yield Button("Close", id="duplicate_close")
+            with Horizontal(id="duplicate_actions_quarantine"):
+                yield Button("Smart Select", id="duplicate_smart_select")
+                yield Button("Move to Folder", id="duplicate_move_marked")
 
     def on_mount(self) -> None:
         table = self.query_one("#duplicate_table", DataTable)
@@ -221,6 +231,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         batch_button = self.query_one("#duplicate_delete_marked", Button)
         batch_button.disabled = self._recycling or not self._marked
         batch_button.label = f"Recycle All Marked ({len(self._marked):,})"
+        self.query_one("#duplicate_move_marked", Button).disabled = self._recycling or not self._marked
+        self.query_one("#duplicate_smart_select", Button).disabled = self._recycling or not self.results
         self.query_one("#duplicate_mark", Button).disabled = self._recycling or chosen is None
         self.query_one("#duplicate_clear_marks", Button).disabled = (
             self._recycling or not self._marked
@@ -381,6 +393,134 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 yes_label=f"Recycle All {len(safe):,}", cancel_label="Cancel",
             ),
             confirmed,
+        )
+
+    def _smart_select(self) -> None:
+        selected = smart_select_duplicates(self.results, self.store)
+        self._marked = {(group, path) for group, path, _ in selected}
+        self._feedback(
+            f"Smart Select: {len(selected):,} exact duplicate copies marked. "
+            "At least one existing copy remains per group; KEEP files protected. "
+            "Review the marked files before moving."
+        )
+        self._show_page(select_row=self.query_one("#duplicate_table", DataTable).cursor_row)
+
+    def _choose_quarantine_folder(self) -> None:
+        if self._recycling or not self._marked:
+            return
+        safe, skipped = plan_marked_exact_duplicates(
+            self.results, self._marked, self.store
+        )
+        if skipped or len(safe) != len(self._marked):
+            message = "Cannot move selected files: " + (
+                skipped[0] if skipped else "Keep one unmarked copy per group."
+            )
+            self._feedback(message)
+            self.app.notify(message, severity="warning", timeout=10)
+            return
+
+        def folder_entered(raw: str | None) -> None:
+            if not raw:
+                return
+            folder = Path(raw.strip().strip('"'))
+            if not folder.is_absolute():
+                self._feedback("Enter an absolute destination folder path.")
+                return
+            total = sum(row[2] for row in safe)
+            message = (
+                f"MOVE {len(safe):,} EXACT DUPLICATES TO QUARANTINE?\\n"
+                f"Destination: {folder}\\n"
+                f"Total file size: {total:,} bytes.\\n"
+                "One verified matching copy remains in its original folder.\\n"
+                "Filename collisions use -(01), -(02), etc.\\n"
+                "Original paths are written to a CSV journal.\\n"
+                "Only same-filesystem moves are supported.\\n"
+                "Confirm moving all marked duplicate copies?"
+            )
+
+            def confirmed(ok: bool) -> None:
+                if not ok:
+                    return
+                self._recycling = True
+                self._batch_running = True
+                self._batch_stop.clear()
+                self._show_selected_details()
+                self._feedback(f"Moving 0/{len(safe):,} selected files ...")
+                self._run_move_marked(tuple(safe), folder)
+
+            self.app.push_screen(
+                CompactConfirmScreen(
+                    message, title="Move Marked Duplicates?",
+                    yes_label=f"Move All {len(safe):,}", cancel_label="Cancel",
+                ),
+                confirmed,
+            )
+
+        self.app.push_screen(
+            CompactPromptScreen("Quarantine destination (full folder path):"),
+            folder_entered,
+        )
+
+    @work(
+        thread=True, exclusive=True, group="duplicate-marked-quarantine",
+        exit_on_error=False,
+    )
+    def _run_move_marked(
+        self, chosen: tuple[tuple[str, Path, int], ...], folder: Path,
+    ) -> None:
+        try:
+            moved, failures, journal = move_marked_to_quarantine(
+                self.root, self.results, chosen, self.store, folder,
+                cancel_event=self._batch_stop,
+                on_progress=lambda index, total, path: self.app.call_from_thread(
+                    self._quarantine_progress, index, total, path
+                ),
+            )
+        except (OSError, ValueError) as exc:
+            self.app.call_from_thread(self._quarantine_failed, str(exc))
+            return
+        self.app.call_from_thread(
+            self._quarantine_completed, moved, failures, journal
+        )
+
+    def _quarantine_progress(self, done: int, total: int, path: Path) -> None:
+        self._feedback(
+            f"Moving duplicates to quarantine: {done:,}/{total:,} "
+            f"({100 * done / total:.1f}%)\\nLast processed: {path}"
+        )
+
+    def _quarantine_failed(self, message: str) -> None:
+        self._recycling = False
+        self._batch_running = False
+        self._show_selected_details()
+        self._feedback(f"QUARANTINE MOVE NOT STARTED: {message}")
+        self.app.notify(f"Quarantine move failed: {message}", severity="error", timeout=12)
+
+    def _quarantine_completed(
+        self,
+        moved: list[tuple[str, Path, int]],
+        failures: list[str],
+        journal: Path,
+    ) -> None:
+        self._recycling = False
+        self._batch_running = False
+        resolved, _hidden = self._refresh_after_recycle(moved, quarantined=True)
+        self.query_one("#duplicate_result_notice", Static).update(
+            f"QUARANTINED: {len(moved):,} moved to review folder; "
+            f"{len(failures):,} failed/unprocessed.\\n"
+            f"RESULTS REFRESHED: {resolved:,} groups resolved; "
+            f"{len(self.results):,} rows remain."
+        )
+        self._feedback(
+            f"Quarantine complete: {len(moved):,} moved; "
+            f"{len(failures):,} failed/unprocessed.\\n"
+            f"Original-path journal: {journal}\\n"
+            + (f"First issue: {failures[0]}" if failures else
+               "Review files in the destination folder before deleting.")
+        )
+        self.app.notify(
+            f"Quarantine: {len(moved):,} moved; {len(failures):,} failed.",
+            severity="warning" if failures else "information", timeout=12,
         )
 
     def _batch_progress(self, done: int, total: int, path: Path) -> None:
@@ -581,6 +721,10 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
             self._confirm_recycle_selected()
         elif button_id == "duplicate_mark":
             self._mark_current_row()
+        elif button_id == "duplicate_smart_select":
+            self._smart_select()
+        elif button_id == "duplicate_move_marked":
+            self._choose_quarantine_folder()
         elif button_id == "duplicate_clear_marks":
             self._marked.clear()
             self._operation_message = ""
