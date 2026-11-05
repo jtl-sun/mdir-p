@@ -51,11 +51,12 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     #duplicate_table { height: 1fr; min-height: 4; }
     #duplicate_page { height: 1; color: $text-muted; }
     #duplicate_feedback { height: 4; color: $foreground; }
-    #duplicate_actions_primary, #duplicate_actions_secondary {
+    #duplicate_actions_primary, #duplicate_actions_secondary, #duplicate_actions_quarantine {
         height: 3; align-horizontal: right;
     }
     #duplicate_actions_primary Button,
-    #duplicate_actions_secondary Button {
+    #duplicate_actions_secondary Button,
+    #duplicate_actions_quarantine Button {
         min-width: 11; height: 3; margin-left: 1;
     }
     """
@@ -86,6 +87,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self._batch_stop = Event()
         self._operation_message = ""
         self._recycle_count = 0
+        self._quarantine_count = 0
         self._resolved_groups = 0
 
     def _summary_text(self) -> str:
@@ -101,14 +103,17 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         )
 
     def _refresh_after_recycle(
-        self, recycled: list[tuple[str, Path, int]],
+        self, recycled: list[tuple[str, Path, int]], *, quarantined: bool = False,
     ) -> tuple[int, int]:
         """Update duplicate results and selection without a full-drive rescan."""
         row_position = self.query_one("#duplicate_table", DataTable).cursor_row
         self.results, resolved, hidden = refreshed_duplicate_review(
             self.results, recycled
         )
-        self._recycle_count += len(recycled)
+        if quarantined:
+            self._quarantine_count += len(recycled)
+        else:
+            self._recycle_count += len(recycled)
         self._resolved_groups += resolved
         groups = {name for name, _, _ in self.results}
         self.exact_groups = sum(name.startswith("Exact ") for name in groups)
@@ -121,7 +126,8 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
         self.query_one("#duplicate_summary", Static).update(self._summary_text())
         self._show_page(select_row=row_position)
         self.query_one("#duplicate_result_notice", Static).update(
-            f"RECYCLED: {self._recycle_count:,} file(s) this session | "
+            f"RECYCLED: {self._recycle_count:,}; QUARANTINED: "
+            f"{self._quarantine_count:,} file(s) this session | "
             f"Resolved groups: {self._resolved_groups:,}\n"
             f"RESULTS REFRESHED: {self.exact_groups:,} exact groups, "
             f"{len(self.results):,} rows remain. {hidden:,} old rows removed."
@@ -158,15 +164,16 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
                 yield Button("Delete Selected", id="duplicate_delete", variant="error")
             with Horizontal(id="duplicate_actions_secondary"):
                 yield Button("Mark Row", id="duplicate_mark")
-                yield Button("Smart Select", id="duplicate_smart_select")
                 yield Button("Clear Marks", id="duplicate_clear_marks")
                 yield Button("Recycle Marked", id="duplicate_delete_marked", variant="error")
-                yield Button("Move to Folder", id="duplicate_move_marked")
                 yield Button("Stop Cleanup", id="duplicate_stop_cleanup")
                 yield Button("Prev", id="duplicate_prev")
                 yield Button("Next", id="duplicate_next")
                 yield Button("Export CSV", id="duplicate_export")
                 yield Button("Close", id="duplicate_close")
+            with Horizontal(id="duplicate_actions_quarantine"):
+                yield Button("Smart Select", id="duplicate_smart_select")
+                yield Button("Move to Folder", id="duplicate_move_marked")
 
     def on_mount(self) -> None:
         table = self.query_one("#duplicate_table", DataTable)
@@ -497,7 +504,7 @@ class DuplicateReviewScreen(ModalScreen[Path | None]):
     ) -> None:
         self._recycling = False
         self._batch_running = False
-        resolved, _hidden = self._refresh_after_recycle(moved)
+        resolved, _hidden = self._refresh_after_recycle(moved, quarantined=True)
         self.query_one("#duplicate_result_notice", Static).update(
             f"QUARANTINED: {len(moved):,} moved to review folder; "
             f"{len(failures):,} failed/unprocessed.\\n"
