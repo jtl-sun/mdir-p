@@ -90,6 +90,18 @@ class QuarantineTests(unittest.TestCase):
         rows = [("Similar 1", p, size) for _, p, size in rows]
         self.assertEqual(smart_select_duplicates(rows, self.store), [])
 
+    def test_quarantine_tree_is_excluded_from_future_scans(self):
+        from mdir.advanced import find_exact_duplicates
+        rows = self.make_group()
+        selected = smart_select_duplicates(rows, self.store)
+        moved, failures, _journal = move_marked_to_quarantine(
+            self.root, rows, selected, self.store, self.root / "Quarantine"
+        )
+        self.assertFalse(failures)
+        self.assertEqual(len(moved), 2)
+        self.assertTrue((self.root / "Quarantine" / ".mdir-quarantine-folder").exists())
+        self.assertEqual(find_exact_duplicates(self.root), [])
+
     def test_collision_suffix_preserves_extension(self):
         file = self.root / "archive.tar.gz"
         (self.quarantine / file.name).write_bytes(b"x")
