@@ -18,6 +18,8 @@ from .duplicate_cleanup import (
 )
 from .duplicate_review import DuplicateReviewStore
 
+QUARANTINE_MARKER = ".mdir-quarantine-folder"
+
 
 def smart_select_duplicates(
     rows: Iterable[DuplicateRow], store: DuplicateReviewStore,
@@ -109,6 +111,8 @@ def move_marked_to_quarantine(
             "Quarantine must be on the same filesystem as selected files. "
             "Cross-drive moves are not supported by this safe-move version."
         )
+    # This marker allows future duplicate scans to skip the quarantine tree.
+    (directory / QUARANTINE_MARKER).touch(exist_ok=True)
     journal = directory / ("mdir-quarantine-" +
                 datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".csv")
     moved: list[DuplicateRow] = []
