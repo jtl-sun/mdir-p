@@ -1,3 +1,7 @@
+## 2.26.59 - Fast USB/external drive detection
+
+Windows drive letters are refreshed approximately every 2 seconds. Detection reads the Windows logical-drive bitmask without waiting for removable-device capacity or volume labels. Capacity updates remain asynchronous. A connected drive can appear before the operating system finishes mounting it; file access latency also depends on the USB drive, port, cable, power and filesystem health.
+
 ## 2.26.58 - Automatic refresh after confirmed duplicate recycling
 
 When files have been moved to the Windows Recycle Bin, the **Duplicate Review** result list refreshes automatically. It removes successfully recycled entries and also hides the sole surviving file of a now-resolved duplicate group. **The survivor remains in its original folder** and is not removed. Current duplicate group count, remaining rows, marked selections, and page counters are recalculated; the top banner reports **RECYCLED N / RESULTS REFRESHED**, so you can distinguish successful deletion from merely marking candidates.
