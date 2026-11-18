@@ -2411,7 +2411,7 @@ class MDir(App):
         self.set_status("")
 
         # Automatic drive hot-plug detection.
-        self.set_interval(5.0, self.auto_detect_drives)
+        self.set_interval(2.0, self.auto_detect_drives)
 
     def on_unmount(self) -> None:
         self._save_paths()
