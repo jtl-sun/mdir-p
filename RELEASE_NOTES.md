@@ -1,3 +1,14 @@
+# mDIR-P 2.26.59
+
+**Faster detection of USB and external drives**
+
+- Poll Windows drive-letter changes approximately every 2 seconds rather than applying the previous 30-second throttle.
+- Detect drive letters with the Windows logical-drive bitmask without waiting for slow capacity reads from disconnected, sleeping, or removable devices.
+- Keep free/total capacity reads in the existing background worker and avoid querying volume names when opening the drive picker.
+- Add regression coverage for enumeration without disk access and for hotplug polling frequency.
+
+A new drive letter may become visible before the USB device itself is ready to open. Hardware, cables, USB power, Windows mounting and disk health may still affect the time to display files. Existing file operations and duplicate management have not been changed in this release.
+
 # mDIR-P 2.26.58
 
 **Duplicate Review — show immediately what was recycled**
