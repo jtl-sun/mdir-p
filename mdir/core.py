@@ -200,65 +200,30 @@ def safe_folder_size(path: Path, max_files: int = 20000) -> tuple[int, int, bool
 
 
 def list_windows_drives() -> list[str]:
-    """Return currently usable Windows drive letters.
+    """List Windows drive letters without accessing the disks themselves.
 
-    Unlike GetLogicalDrives() alone, removable / optical drives are only
-    returned when media is actually available. This prevents a physically
-    removed USB drive from remaining in the toolbar.
+    GetLogicalDrives reports DOS drive-letter mappings without querying each
+    removable drive's capacity or filesystem. Calling disk_usage here caused
+    USB, sleeping disk and optical drives to block the entire enumeration for
+    tens of seconds. Capacity and accessibility are checked separately only
+    when needed. A letter can be shown before the media is ready; opening it
+    must report an error instead of deleting or modifying anything.
     """
     if os.name != "nt":
         return []
-
     try:
         import ctypes
 
-        kernel32 = ctypes.windll.kernel32
-        mask = kernel32.GetLogicalDrives()
-        drives: list[str] = []
-
-        # Windows GetDriveType values.
-        DRIVE_REMOVABLE = 2
-        DRIVE_FIXED = 3
-        DRIVE_REMOTE = 4
-        DRIVE_CDROM = 5
-        DRIVE_RAMDISK = 6
-
-        for index in range(26):
-            if not (mask & (1 << index)):
-                continue
-
-            letter = chr(ord("A") + index)
-            drive = f"{letter}:"
-            root = drive + "\\"
-            dtype = int(kernel32.GetDriveTypeW(root))
-
-            if dtype in {DRIVE_FIXED, DRIVE_REMOTE, DRIVE_RAMDISK}:
-                drives.append(drive)
-                continue
-
-            if dtype in {DRIVE_REMOVABLE, DRIVE_CDROM}:
-                # A drive letter may remain registered even after media is
-                # removed. disk_usage succeeds only while media is usable.
-                try:
-                    shutil.disk_usage(root)
-                    drives.append(drive)
-                except OSError:
-                    pass
-
-        return drives
-
-    except Exception:
-        # Fallback: include only roots whose capacity can actually be queried.
-        drives = []
-        for index in range(26):
-            drive = f"{chr(ord('A') + index)}:"
-            root = drive + "\\"
-            try:
-                shutil.disk_usage(root)
-                drives.append(drive)
-            except OSError:
-                pass
-        return drives
+        mask = int(ctypes.windll.kernel32.GetLogicalDrives())
+        if mask == 0:
+            return []
+        return [
+            f"{chr(ord('A') + index)}:"
+            for index in range(26)
+            if mask & (1 << index)
+        ]
+    except (AttributeError, OSError, ValueError):
+        return []
 
 
 def drive_usage_text(drive: str) -> str:
