@@ -2060,7 +2060,7 @@ class BaseApp(AIShellApp):
         current_drive = (pane.current_path.drive or drives[0]).upper()
         choices = [
             (
-                f"{drive}  {windows_volume_label(drive) or '(No label)'}",
+                drive,
                 drive,
             )
             for drive in drives
