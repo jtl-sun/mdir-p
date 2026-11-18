@@ -1,3 +1,9 @@
+## 2.26.59
+
+- Reduce Windows drive hot-plug detection latency by polling a lightweight drive-letter enumeration every 2 seconds instead of a 30-second throttle.
+- Eliminate slow filesystem/disk-usage probes from drive enumeration; preserve background capacity lookup.
+- Prevent the drive picker from blocking on USB volume-label retrieval; test enumeration with a simulated nonresponsive capacity query.
+
 ## 2.26.58
 
 - Immediately refresh **Duplicate Review** after every successful Delete Selected or Recycle All Marked operation: remove recycled/missing rows and resolved exact-duplicate groups (including the surviving one-copy row, which is no longer a duplicate).
