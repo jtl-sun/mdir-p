@@ -1,3 +1,9 @@
+## 2.26.61
+
+- Avoid drive-root ZIP defaults (notably C:\\) when the opposite pane is on a Windows drive root; use the active source directory for safer defaults.
+- Give clear permission errors for unwritable destinations, report archive preparation and support cancellation during ZIP enumeration.
+- Add end-to-end 22-file F9 ZIP UI test and destination safeguards; preserve source files on errors.
+
 ## 2.26.60
 
 - Use regular-weight monospace terminal text in popup filename/path entry widgets and while focused, improving consistency with file panes.
