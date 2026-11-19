@@ -1,3 +1,9 @@
+## 2.26.61 — F9 ZIP regression fix
+
+F9 ZIP creation uses a writable-looking source-folder default when the opposite pane points at a Windows drive root, rather than creating a ZIP at the drive root such as `C:\\work_sheet.zip`. The destination is always editable. During preparation mDir shows a scanning stage and allows cancelling; permission failures display an actionable message. Integration tests now verify the full 22-file ZIP creation flow, not just the menu command.
+
+**Quick functional check:** (1) select 22 harmless files and press F9; verify the destination is appropriate, create ZIP and confirm the ZIP opens; (2) extract the ZIP to a test folder; (3) separately test copy, move, rename, MkDir, file preview, and Recycle Bin with expendable files before using important data.
+
 ## 2.26.60 - Consistent popup input typography
 
 Copy, Rename/Move (F6), MkDir and related popup filename/path inputs now request regular-weight terminal text to match the main file list. The text selection renderer avoids changing cached Rich Text between redraws. Windows Terminal owns the actual font, so confirm appearance in your terminal settings after upgrading.

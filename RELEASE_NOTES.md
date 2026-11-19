@@ -1,3 +1,13 @@
+# mDIR-P 2.26.61
+
+**F9 ZIP compression usability and safe destination fix**
+
+- Prevent the ZIP dialog from defaulting to an often protected Windows drive root (for example C:\\work_sheet.zip) when the opposite pane is at a drive root; instead default to the current source folder, or the user profile folder if both panes are roots. Explicit destination paths remain editable.
+- Explain access-denied ZIP failures clearly, including a suggestion to choose a writable destination.
+- Display "Scanning files for ZIP" during archive preparation, with cancellation support before compression begins. Keep existing in-progress and per-file progress UI.
+- Add end-to-end Windows UI regression coverage: 22 marked files -> F9 -> Create ZIP -> background progress -> valid ZIP with 22 entries and unchanged original files.
+- Preserve existing copy, move, rename, directory creation, deletion, extraction, preview and duplicate management behavior. Existing automated CI checks cover these areas; physical Windows Terminal and removable-drive workflows require user acceptance testing.
+
 # mDIR-P 2.26.60
 
 **Popup filename/path input typography consistency**
