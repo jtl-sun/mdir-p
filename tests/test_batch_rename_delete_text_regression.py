@@ -74,5 +74,51 @@ class BatchDeleteTextTests(unittest.TestCase):
         self.assertEqual(conflict.read_bytes(), b"existing")
 
 
+class BatchRenameUIIntegrationTests(unittest.IsolatedAsyncioTestCase):
+    async def test_start_rename_really_changes_files_and_refreshes_pane(self):
+        from mdir.app import MDirApp
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            paths = [
+                root / "SpecSheet_A_Document.pdf.pdf",
+                root / "SpecSheet_A_Document.pdf.xlsx",
+            ]
+            for path in paths:
+                path.write_bytes(b"sample")
+
+            app = MDirApp()
+            app.left_start = root
+            app.right_start = root
+            app._save_paths = lambda: None
+            async with app.run_test(size=(130, 38)) as pilot:
+                for _ in range(100):
+                    if app.left.initial_listing_complete:
+                        break
+                    await pilot.pause(0.03)
+                self.assertTrue(app.left.initial_listing_complete)
+                app.left.marked = set(paths)
+                app.set_active("left")
+                app.action_batch_rename()
+                await pilot.pause()
+                screen = app.screen
+                self.assertIsInstance(screen, BatchRenameScreen)
+                screen.query_one("#find_text").value = "_Document.pdf"
+                await pilot.pause()
+                self.assertEqual(screen._options().find_text, "_Document.pdf")
+                self.assertTrue(screen._options().delete_found_text)
+                self.assertTrue(await pilot.click("#rename_start"))
+                for _ in range(100):
+                    if (root / "SpecSheet_A.pdf").is_file() and (
+                        root / "SpecSheet_A.xlsx"
+                    ).is_file():
+                        break
+                    await pilot.pause(0.03)
+                self.assertTrue((root / "SpecSheet_A.pdf").is_file())
+                self.assertTrue((root / "SpecSheet_A.xlsx").is_file())
+                self.assertFalse(any(p.exists() for p in paths))
+                app.exit()
+
+
 if __name__ == "__main__":
     unittest.main()
