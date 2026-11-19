@@ -484,6 +484,20 @@ class BaseApp(AIShellApp):
                 return
         self.action_compress_zip()
 
+    @staticmethod
+    def _preferred_zip_directory(source_dir: Path, opposite_dir: Path) -> Path:
+        """Avoid defaulting ZIP output to the root of a Windows drive.
+
+        A passive pane at C:\\ or another drive root often cannot be written
+        by a standard Windows user. Prefer the source directory in that
+        specific case, but honor any ordinary opposite-pane folder.
+        """
+        if os.name == "nt" and opposite_dir.drive and opposite_dir.parent == opposite_dir:
+            if source_dir.drive and source_dir.parent == source_dir:
+                return Path.home()
+            return source_dir
+        return opposite_dir
+
     def action_compress_zip(self) -> None:
         """Create a ZIP from the active pane in the opposite pane by default."""
         source_side = self.active_side
@@ -503,7 +517,9 @@ class BaseApp(AIShellApp):
         # opposite pane. Fall back to the source directory only if that pane's
         # current path has disappeared or is no longer a directory (for
         # example, after a removable drive was disconnected).
-        destination_directory = destination_pane.current_path
+        destination_directory = self._preferred_zip_directory(
+            source_pane.current_path, destination_pane.current_path
+        )
         try:
             if not destination_directory.is_dir():
                 destination_directory = source_pane.current_path
@@ -541,6 +557,9 @@ class BaseApp(AIShellApp):
             )
             self._archive_last_snapshot = None
             self.push_screen(screen)
+            self.set_status(
+                f"Preparing ZIP: {len(items):,} selected item(s) -> {request.destination}"
+            )
             screen.call_after_refresh(
                 self._create_zip_in_background,
                 tuple(items), request, source_side, tracker,
@@ -589,7 +608,9 @@ class BaseApp(AIShellApp):
         if error or result is None:
             message = error or "Unknown ZIP creation error"
             self.set_status(f"ZIP creation failed: {message}")
-            self.notify(message, title="Create ZIP failed")
+            self.notify(
+                message, title="Create ZIP failed", severity="error", timeout=15,
+            )
             return
 
         final_path = request.destination
