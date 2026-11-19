@@ -1,3 +1,12 @@
+# mDIR-P 2.26.60
+
+**Popup filename/path input typography consistency**
+
+- Normalize the shared ThinCursorInput used by Copy, Rename/Move (F6), MkDir and similar dialogs to regular-weight terminal text, including when focused, to avoid visual glyph-spacing differences from the main file list.
+- Do not mutate the cached Rich text when drawing highlighted selections, preventing repeated render side effects.
+- Add headless UI regression tests for Copy Save As and F6-style path input; actual visual font spacing must be confirmed in Windows Terminal because the host controls the physical font.
+- No changes to file operations, filename rules, or duplicate cleanup.
+
 # mDIR-P 2.26.59
 
 **Faster detection of USB and external drives**

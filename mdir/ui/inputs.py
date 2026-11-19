@@ -19,6 +19,16 @@ class ThinCursorInput(Input):
     text consequently has exactly the same width with the cursor on or off.
     """
 
+    # Use regular terminal glyphs in filename inputs to match file panes.
+    # Bold can use different glyph metrics in Windows Terminal.
+    DEFAULT_CSS = """
+    ThinCursorInput {
+        text-style: none;
+    }
+    ThinCursorInput:focus {
+        text-style: none;
+    }
+    """
     _STEADY_BAR = "\x1b[6 q"
     _SHOW_CURSOR = "\x1b[?25h"
     _HIDE_CURSOR = "\x1b[?25l"
@@ -75,7 +85,8 @@ class ThinCursorInput(Input):
                 self.get_component_rich_style("input--placeholder")
             )
         else:
-            content = self._value
+            # Never mutate the cached Rich Text while drawing a selection.
+            content = self._value.copy()
             value_length = len(self.value)
             suggestion = self._suggestion
             show_suggestion = (

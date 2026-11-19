@@ -1,3 +1,7 @@
+## 2.26.60 - Consistent popup input typography
+
+Copy, Rename/Move (F6), MkDir and related popup filename/path inputs now request regular-weight terminal text to match the main file list. The text selection renderer avoids changing cached Rich Text between redraws. Windows Terminal owns the actual font, so confirm appearance in your terminal settings after upgrading.
+
 ## 2.26.59 - Fast USB/external drive detection
 
 Windows drive letters are refreshed approximately every 2 seconds. Detection reads the Windows logical-drive bitmask without waiting for removable-device capacity or volume labels. Capacity updates remain asynchronous. A connected drive can appear before the operating system finishes mounting it; file access latency also depends on the USB drive, port, cable, power and filesystem health.
