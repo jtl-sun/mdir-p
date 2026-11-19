@@ -144,7 +144,17 @@ def create_zip_archive(
                 "Save the ZIP outside the folder being compressed: "
                 f"{source}"
             )
-    destination.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+    except PermissionError as exc:
+        raise ArchiveError(
+            f"Cannot write ZIP to {destination.parent}: access denied. "
+            "Choose a folder you can write to, such as Documents."
+        ) from exc
+    except OSError as exc:
+        raise ArchiveError(
+            f"Cannot prepare ZIP destination {destination.parent}: {exc}"
+        ) from exc
 
     entries = list(_archive_entries(items, destination)) if tracker is not None else _archive_entries(items, destination)
     if tracker is not None:
@@ -209,6 +219,11 @@ def create_zip_archive(
         temporary_path = None
     except ArchiveError:
         raise
+    except PermissionError as exc:
+        raise ArchiveError(
+            f"Cannot create ZIP in {destination.parent}: access denied. "
+            "Choose a writable folder, such as Documents."
+        ) from exc
     except (OSError, zipfile.BadZipFile) as exc:
         raise ArchiveError(f"Could not create ZIP: {exc}") from exc
     finally:
