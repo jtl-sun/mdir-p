@@ -1,3 +1,9 @@
+## 2.26.60
+
+- Use regular-weight monospace terminal text in popup filename/path entry widgets and while focused, improving consistency with file panes.
+- Avoid mutating Textual cached Rich Text while painting input selections.
+- Test Copy and Rename/Move popup input styles and values. Keep file operations unchanged.
+
 ## 2.26.59
 
 - Reduce Windows drive hot-plug detection latency by polling a lightweight drive-letter enumeration every 2 seconds instead of a 30-second throttle.
