@@ -156,14 +156,23 @@ def create_zip_archive(
             f"Cannot prepare ZIP destination {destination.parent}: {exc}"
         ) from exc
 
-    entries = list(_archive_entries(items, destination)) if tracker is not None else _archive_entries(items, destination)
     if tracker is not None:
-        tracker.set_totals(
-            items=len(entries),
-            bytes_total=sum(
-                source.stat().st_size for source, _, is_dir in entries if not is_dir
-            ),
-        )
+        # A large selected folder may take time to enumerate. Show which
+        # stage is running and let Cancel/Pause work during that stage.
+        tracker.begin_item("Scanning files for ZIP...", 0)
+        entries = []
+        total_bytes = 0
+        for index, entry in enumerate(_archive_entries(items, destination), 1):
+            tracker.checkpoint()
+            source, _, is_directory = entry
+            entries.append(entry)
+            if not is_directory:
+                total_bytes += source.stat().st_size
+            if index % 100 == 0:
+                tracker.begin_item(f"Scanning files for ZIP: {index:,} found", 0)
+        tracker.set_totals(items=len(entries), bytes_total=total_bytes)
+    else:
+        entries = _archive_entries(items, destination)
     temporary_path: Optional[Path] = None
     files = directories = bytes_processed = 0
     try:
