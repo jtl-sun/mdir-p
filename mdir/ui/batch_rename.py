@@ -214,7 +214,9 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
         super().__init__()
         self.items = list(items)
         self.regex_enabled = False
-        self.delete_found_text = False
+        # Removing a substring is the default; users explicitly turn this OFF
+        # when they want to supply replacement text instead.
+        self.delete_found_text = True
         self.append_counter = False
 
     def compose(self) -> ComposeResult:
@@ -236,16 +238,16 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
                 yield Input(value="[E]", id="extension_pattern", classes="field_input")
             with Horizontal(classes="field_row"):
                 yield Label("Find:", classes="field_label")
-                yield Input(id="find_text", classes="field_input")
+                yield Input(placeholder="Text to remove from filenames", id="find_text", classes="field_input")
                 yield Label("Replace:", classes="field_label")
                 yield Input(
-                    placeholder="Disabled while Delete is ON",
+                    placeholder="Turn Delete OFF to replace instead",
                     id="replace_text",
                     classes="field_input",
                 )
             with Horizontal(id="frequent_row"):
                 yield Label("Quick options:", classes="frequent_label")
-                yield Button("Delete found text: OFF", id="delete_text_toggle")
+                yield Button("Delete found text: ON", id="delete_text_toggle")
                 yield Button("End number: OFF", id="append_counter_toggle")
                 yield Label("Separator:", id="separator_label")
                 yield Input(value="_", id="counter_separator")
@@ -266,6 +268,7 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
     def on_mount(self) -> None:
         table = self.query_one("#rename_preview", DataTable)
         table.add_columns("Current name", "New name", "Location")
+        self.query_one("#replace_text", Input).disabled = self.delete_found_text
         self._refresh_preview()
         self.query_one("#name_pattern", Input).focus()
 
@@ -303,7 +306,11 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
             ))
         else:
             changed = sum(pair.source != pair.target for pair in pairs)
-            status.update(f"Ready: {changed} item(s) will be renamed.")
+            action = (
+                "Remove matching text" if self.delete_found_text and self._options().find_text
+                else "Rename"
+            )
+            status.update(f"Ready: {changed} item(s) will be renamed. {action}.")
 
     @on(Input.Changed)
     def input_changed(self, _event: Input.Changed) -> None:
@@ -364,6 +371,13 @@ class BatchRenameScreen(ModalScreen[list[RenamePair] | None]):
             pairs, errors = build_rename_pairs(self.items, self._options())
             if errors:
                 self.app.notify(errors[0], title="Batch rename blocked")
+                return
+            changed = [pair for pair in pairs if pair.source != pair.target]
+            if not changed:
+                self.app.notify(
+                    "No filenames match the requested change.",
+                    title="Batch rename: nothing to change", severity="warning",
+                )
                 return
             self.dismiss(pairs)
 

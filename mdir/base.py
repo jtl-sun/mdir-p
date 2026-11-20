@@ -342,7 +342,23 @@ class BaseApp(AIShellApp):
             try:
                 apply_rename_pairs(changed)
             except Exception as exc:
-                self.set_status(f"Batch rename failed and was rolled back: {exc}")
+                message = f"Batch rename failed; no success reported. {exc}"
+                self.set_status(message)
+                self.notify(message, title="Batch rename error", severity="error", timeout=15)
+                return
+
+            # Verify the requested names are on disk before announcing success.
+            missing_targets = [
+                pair.target for pair in changed if not pair.target.exists()
+            ]
+            if missing_targets:
+                message = (
+                    f"Batch rename verification failed: "
+                    f"{len(missing_targets)} target(s) not found; "
+                    f"first: {missing_targets[0]}"
+                )
+                self.set_status(message)
+                self.notify(message, title="Check renamed files", severity="error", timeout=15)
                 return
 
             self.active.marked.clear()
@@ -350,7 +366,11 @@ class BaseApp(AIShellApp):
                 keep_name=changed[0].target.name if len(changed) == 1 else None
             )
             self.passive.refresh_listing()
-            self.set_status(f"Renamed {len(changed)} item(s).")
+            self.set_status(f"Batch rename complete: {len(changed)} file(s) renamed.")
+            self.notify(
+                f"{len(changed)} file(s) renamed successfully.",
+                title="Batch rename complete", timeout=8,
+            )
 
         self.push_screen(BatchRenameScreen(items), rename_requested)
 

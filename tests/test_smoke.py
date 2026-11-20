@@ -1388,7 +1388,7 @@ class PackageSmokeTests(unittest.IsolatedAsyncioTestCase):
                 preview = app.screen.query_one("#rename_preview")
                 self.assertEqual(preview.row_count, 2)
                 options = app.screen._options()
-                self.assertFalse(options.delete_found_text)
+                self.assertTrue(options.delete_found_text)
                 self.assertFalse(options.append_counter)
                 self.assertEqual(options.counter_separator, "_")
                 self.assertEqual(options.name_pattern, "[N]")
